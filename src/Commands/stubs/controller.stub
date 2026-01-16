@@ -1,0 +1,85 @@
+<?php
+
+namespace {{NAMESPACE}}\Http\Controllers;
+
+use Illuminate\Http\Request;
+
+class {{CLASS}} extends Controller
+{
+    /**
+     * 显示资源列表
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function index()
+    {
+        $items = []; // 获取数据逻辑
+
+        return $this->success($items, '获取成功');
+    }
+
+    /**
+     * 存储新创建的资源
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            // 验证规则
+        ]);
+
+        // 创建逻辑
+
+        return $this->success($validated, '创建成功', 201);
+    }
+
+    /**
+     * 显示指定资源
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function show($id)
+    {
+        $item = []; // 获取单条数据逻辑
+
+        if (! $item) {
+            return $this->error('资源不存在', 404);
+        }
+
+        return $this->success($item, '获取成功');
+    }
+
+    /**
+     * 更新指定资源
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function update(Request $request, $id)
+    {
+        $validated = $request->validate([
+            // 验证规则
+        ]);
+
+        // 更新逻辑
+
+        return $this->success($validated, '更新成功');
+    }
+
+    /**
+     * 删除指定资源
+     *
+     * @param  int  $id
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy($id)
+    {
+        // 删除逻辑
+
+        return $this->success(null, '删除成功');
+    }
+}

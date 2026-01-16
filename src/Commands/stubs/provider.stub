@@ -1,0 +1,56 @@
+<?php
+
+namespace {{NAMESPACE}};
+
+use Illuminate\Support\ServiceProvider;
+
+class {{CLASS}} extends ServiceProvider
+{
+    /**
+     * 注册服务
+     *
+     * @return void
+     */
+    public function register(): void
+    {
+        $this->mergeConfigFrom(
+            module_path('{{LOWER_NAME}}', 'Config/config.php'),
+            '{{LOWER_NAME}}'
+        );
+    }
+
+    /**
+     * 启动服务
+     *
+     * @return void
+     */
+    public function boot(): void
+    {
+        // 加载路由
+        $this->loadRoutesFrom(module_path('{{LOWER_NAME}}', 'Routes'));
+
+        // 加载视图
+        $this->loadViewsFrom(module_path('{{LOWER_NAME}}', 'Resources/views'), '{{LOWER_NAME}}');
+
+        // 加载迁移
+        $this->loadMigrationsFrom(module_path('{{LOWER_NAME}}', 'Database/Migrations'));
+
+        // 加载语言文件
+        $this->loadTranslationsFrom(module_path('{{LOWER_NAME}}', 'Resources/lang'), '{{LOWER_NAME}}');
+
+        // 发布配置文件
+        $this->publishes([
+            module_path('{{LOWER_NAME}}', 'Config/config.php') => config_path('{{LOWER_NAME}}.php'),
+        ], '{{LOWER_NAME}}-config');
+
+        // 发布视图文件
+        $this->publishes([
+            module_path('{{LOWER_NAME}}', 'Resources/views') => resource_path('views/vendor/{{LOWER_NAME}}'),
+        ], '{{LOWER_NAME}}-views');
+
+        // 发布资产文件
+        $this->publishes([
+            module_path('{{LOWER_NAME}}', 'Resources/assets') => public_path('modules/{{LOWER_NAME}}'),
+        ], '{{LOWER_NAME}}-assets');
+    }
+}

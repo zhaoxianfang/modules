@@ -1,0 +1,33 @@
+<?php
+
+namespace {{NAMESPACE}}\Http\Middleware;
+
+use Closure;
+use Illuminate\Http\Request;
+
+/**
+ * {{CLASS}} 中间件
+ *
+ * 自定义中间件逻辑
+ */
+class {{CLASS}}
+{
+    /**
+     * 处理请求
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure  $next
+     * @return mixed
+     */
+    public function handle(Request $request, Closure $next)
+    {
+        // 中间件逻辑
+
+        // 示例：验证请求
+        // if (! $request->has('token')) {
+        //     return response()->json(['message' => 'Token required'], 401);
+        // }
+
+        return $next($request);
+    }
+}

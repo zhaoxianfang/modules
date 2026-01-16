@@ -1,0 +1,49 @@
+<?php
+
+namespace {{NAMESPACE}}\Tests;
+
+use Tests\TestCase;
+
+/**
+ * {{CLASS}} 测试类
+ *
+ * {{NAME}} 模块的单元测试
+ */
+class {{CLASS}} extends TestCase
+{
+    /**
+     * 测试示例
+     *
+     * @return void
+     */
+    public function test_example(): void
+    {
+        $this->assertTrue(true);
+    }
+
+    /**
+     * 测试路由
+     *
+     * @return void
+     */
+    // public function test_route(): void
+    // {
+    //     $response = $this->get(route('{{LOWER_NAME}}.index'));
+    //
+    //     $response->assertStatus(200);
+    // }
+
+    /**
+     * 测试模型
+     *
+     * @return void
+     */
+    // public function test_model_creation(): void
+    // {
+    //     $model = \{{NAMESPACE}}\Models\TestModel::factory()->create();
+    //
+    //     $this->assertDatabaseHas('test_models', [
+    //         'id' => $model->id,
+    //     ]);
+    // }
+}

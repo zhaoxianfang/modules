@@ -1,0 +1,91 @@
+# {{NAME}} 模块
+
+## 描述
+
+这里是 {{NAME}} 模块的描述。
+
+## 安装
+
+1. 将模块复制到 `Modules/{{NAME}}` 目录
+2. 配置模块设置: `config/{{LOWER_NAME}}.php`
+3. 运行迁移: `php artisan migrate`
+4. 发布资源: `php artisan vendor:publish --tag={{LOWER_NAME}}-assets`
+
+## 使用
+
+### 路由
+
+模块路由已自动注册，可以通过以下方式访问:
+
+- Web 路由: `{{LOWER_NAME}}.*`
+- API 路由: `api.{{LOWER_NAME}}.*`
+- Admin 路由: `admin.{{LOWER_NAME}}.*`
+
+### 视图
+
+使用模块视图命名空间:
+
+```php
+return view('{{LOWER_NAME}}::view.name');
+```
+
+### 配置
+
+访问模块配置:
+
+```php
+$value = config('{{LOWER_NAME}}.config.key');
+```
+
+## 文件结构
+
+```
+Modules/{{NAME}}/
+├── Config/
+│   └── config.php
+├── Database/
+│   ├── Migrations/
+│   └── Seeders/
+├── Http/
+│   ├── Controllers/
+│   ├── Middleware/
+│   └── Requests/
+├── Models/
+├── Providers/
+│   └── {{NAME}}ServiceProvider.php
+├── Resources/
+│   ├── assets/
+│   ├── lang/
+│   └── views/
+├── Routes/
+│   ├── admin.php
+│   ├── api.php
+│   └── web.php
+├── Events/
+├── Listeners/
+└── Tests/
+```
+
+## 开发
+
+### 创建控制器
+
+```bash
+php artisan module:make-controller {{NAME}} ControllerName --type=web
+```
+
+### 创建模型
+
+```bash
+php artisan module:make-model {{NAME}} ModelName --migration
+```
+
+### 创建迁移
+
+```bash
+php artisan module:make-migration {{NAME}} create_table_name
+```
+
+## 许可证
+
+MIT

@@ -1,0 +1,21 @@
+@extends('layouts.app')
+
+@section('title', '{{NAME}} 模块')
+
+@section('content')
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4>欢迎来到 {{NAME}} 模块</h4>
+                </div>
+                <div class="card-body">
+                    <p>这是 {{NAME}} 模块的欢迎页面。</p>
+                    <p>您可以在此开始开发您的模块功能。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection

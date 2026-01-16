@@ -1,0 +1,32 @@
+<?php
+
+namespace {{NAMESPACE}}\Database\Seeders;
+
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+
+/**
+ * {{CLASS}} 数据填充器
+ *
+ * 用于填充测试数据
+ */
+class {{CLASS}} extends Seeder
+{
+    /**
+     * 运行数据库种子
+     *
+     * @return void
+     */
+    public function run(): void
+    {
+        // 示例：创建测试数据
+        // \{{NAMESPACE}}\Models\User::factory(10)->create();
+
+        // 示例：手动创建数据
+        // DB::table('users')->insert([
+        //     'name' => 'Test User',
+        //     'email' => 'test@example.com',
+        //     'password' => bcrypt('password'),
+        // ]);
+    }
+}

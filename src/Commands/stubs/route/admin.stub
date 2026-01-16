@@ -1,0 +1,27 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| Admin 路由
+|--------------------------------------------------------------------------
+|
+| 在这里注册 {{NAME}} 模块的后台管理路由
+| 这些路由会自动应用 web 和 admin 中间件组
+| 路由前缀: {{LOWER_NAME}}
+| 路由名称前缀: {{LOWER_NAME}}.
+| 控制器命名空间: {{NAMESPACE}}\Http\Controllers\Admin
+|
+| 示例:
+| Route::get('', [DashboardController::class, 'index'])->name('dashboard');
+| Route::resource('items', ItemController::class)->names('items');
+*/
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('', function () {
+        return view('{{LOWER_NAME}}::admin.dashboard');
+    })->name('dashboard');
+
+    Route::resource('items', ItemController::class)->names('items');
+});

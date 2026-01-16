@@ -1,0 +1,55 @@
+<?php
+
+namespace {{NAMESPACE}}\Listeners;
+
+use {{NAMESPACE}}\Events\{{EVENT}};
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\InteractsWithQueue;
+
+/**
+ * {{CLASS}} 监听器
+ *
+ * 监听 {{EVENT}} 事件
+ */
+class {{CLASS}} implements ShouldQueue
+{
+    use InteractsWithQueue;
+
+    /**
+     * 创建新监听器实例
+     *
+     * @return void
+     */
+    public function __construct()
+    {
+        //
+    }
+
+    /**
+     * 处理事件
+     *
+     * @param  {{NAMESPACE}}\Events\{{EVENT}}  $event
+     * @return void
+     */
+    public function handle({{EVENT}} $event): void
+    {
+        // 处理事件逻辑
+        // \Log::info('Event handled: ' . get_class($event));
+    }
+
+    /**
+     * 处理失败事件
+     *
+     * @param  {{NAMESPACE}}\Events\{{EVENT}}  $event
+     * @param  \Throwable  $exception
+     * @return void
+     */
+    public function failed({{EVENT}} $event, \Throwable $exception): void
+    {
+        // 处理失败逻辑
+        // \Log::error('Listener failed', [
+        //     'event' => get_class($event),
+        //     'error' => $exception->getMessage(),
+        // ]);
+    }
+}

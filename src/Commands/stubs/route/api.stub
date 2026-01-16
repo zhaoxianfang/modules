@@ -1,0 +1,34 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
+
+/*
+|--------------------------------------------------------------------------
+| API 路由
+|--------------------------------------------------------------------------
+|
+| 在这里注册 {{NAME}} 模块的 API 路由
+| 这些路由会自动应用 api 中间件组
+| 路由前缀: {{LOWER_NAME}}
+| 路由名称前缀: {{LOWER_NAME}}.
+| 控制器命名空间: {{NAMESPACE}}\Http\Controllers\Api
+|
+| 示例:
+| Route::get('', [ApiController::class, 'index'])->name('index');
+| Route::get('{id}', [ApiController::class, 'show'])->name('show');
+*/
+
+Route::get('', function () {
+    return response()->json([
+        'module' => '{{NAME}}',
+        'version' => '1.0.0',
+        'message' => 'Welcome to {{NAME}} API',
+    ]);
+})->name('index');
+
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user', function (Request $request) {
+        return $request->user();
+    })->name('user');
+});
