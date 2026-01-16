@@ -1,0 +1,54 @@
+<?php
+
+namespace {{namespace}}\Notifications;
+
+use Illuminate\Bus\Queueable;
+use Illuminate\Notifications\Notification;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
+
+class {{class}} extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    /**
+     * 创建新的通知实例。
+     */
+    public function __construct()
+    {
+        //
+    }
+
+    /**
+     * 获取通知的传递渠道。
+     *
+     * @return array<int, string>
+     */
+    public function via(object $notifiable): array
+{
+        return ['mail'];
+    }
+
+    /**
+     * 获取通知的邮件表示形式。
+     */
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+                    ->line('通知的简介。')
+                    ->action('通知操作', url('/'))
+                    ->line('感谢您使用我们的应用程序！');
+    }
+
+    /**
+     * 获取通知的数组表示形式。
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            //
+        ];
+    }
+}

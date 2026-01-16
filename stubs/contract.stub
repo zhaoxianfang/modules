@@ -1,0 +1,8 @@
+<?php
+
+namespace {{namespace}};
+
+interface {{class}}
+{
+    // 在此定义您的契约方法
+}

@@ -1,0 +1,50 @@
+<?php
+
+namespace {{namespace}};
+
+use zxf\Modules\AbstractModule;
+
+class {{class}} extends AbstractModule
+{
+    /**
+     * {@inheritDoc}
+     */
+    public function getName(): string
+    {
+        return '{{name}}';
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getPriority(): int
+    {
+        return 0;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function register(): void
+    {
+        //
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function boot(): void
+    {
+        //
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getProviders(): array
+    {
+        return [
+            {{namespace}}\Providers\{{class}}ServiceProvider::class,
+        ];
+    }
+}

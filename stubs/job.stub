@@ -1,0 +1,30 @@
+<?php
+
+namespace {{namespace}}\Jobs;
+
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\SerializesModels;
+
+class {{class}} implements ShouldQueue
+{
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * 创建新的作业实例。
+     */
+    public function __construct()
+    {
+        //
+    }
+
+    /**
+     * 执行作业。
+     */
+    public function handle(): void
+    {
+        //
+    }
+}

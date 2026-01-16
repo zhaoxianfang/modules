@@ -1,0 +1,24 @@
+<?php
+
+namespace {{namespace}};
+
+use Illuminate\Broadcasting\Channel as BaseChannel;
+
+class {{class}} extends BaseChannel
+{
+    /**
+     * 创建新的频道实例。
+     */
+    public function __construct()
+    {
+        //
+    }
+
+    /**
+     * 验证用户对频道的访问权限。
+     */
+    public function join(): bool
+    {
+        return true;
+    }
+}

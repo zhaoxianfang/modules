@@ -1,0 +1,51 @@
+{
+  "name": "zxf/modules",
+  "description": "A modern, industrial-grade modular system for Laravel 11+",
+  "license": "MIT",
+  "keywords": ["laravel", "module", "modular", "package", "modules"],
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11 || ^12",
+        "illuminate/console": "^11 || ^12",
+        "illuminate/filesystem": "^11 || ^12",
+        "illuminate/database": "^11 || ^12",
+        "illuminate/view": "^11 || ^12",
+        "illuminate/routing": "^11 || ^12",
+        "illuminate/events": "^11 || ^12",
+        "illuminate/cache": "^11 || ^12",
+        "illuminate/contracts": "^11 || ^12"
+    },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0",
+    "orchestra/testbench": "^9.0"
+  },
+    "autoload": {
+        "psr-4": {
+            "zxf\\Modules\\": "src/"
+        },
+        "files": [
+            "src/helper.php"
+        ]
+    },
+  "autoload-dev": {
+    "psr-4": {
+      "zxf\\Modules\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "zxf\\Modules\\ModulesServiceProvider"
+      ],
+      "aliases": {
+        "Module": "zxf\\Modules\\Facades\\Module"
+      }
+    }
+  },
+  "scripts": {
+    "test": "phpunit",
+    "test-coverage": "phpunit --coverage-html coverage"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

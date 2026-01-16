@@ -1,0 +1,49 @@
+<?php
+
+namespace {{namespace}};
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Observer as EloquentObserver;
+
+class {{class}} extends EloquentObserver
+{
+    /**
+     * 处理模型“created”事件。
+     */
+    public function created(Model $model): void
+    {
+        //
+    }
+
+    /**
+     * 处理模型“updated”事件。
+     */
+    public function updated(Model $model): void
+    {
+        //
+    }
+
+    /**
+     * 处理模型“deleted”事件。
+     */
+    public function deleted(Model $model): void
+    {
+        //
+    }
+
+    /**
+     * 处理模型“restored”事件。
+     */
+    public function restored(Model $model): void
+    {
+        //
+    }
+
+    /**
+     * 处理模型“force deleted”事件。
+     */
+    public function forceDeleted(Model $model): void
+    {
+        //
+    }
+}
