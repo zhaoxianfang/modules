@@ -133,4 +133,11 @@ interface ModuleInterface
      * @return array
      */
     public function getRouteFiles(): array;
+
+    /**
+     * 获取模块配置（直接从文件读取）
+     *
+     * @return array
+     */
+    public function getModuleConfig(): array;
 }

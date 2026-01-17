@@ -65,15 +65,21 @@ class ControllerMakeCommand extends Command
 
         if (File::exists($controllerPath) && ! $force) {
             $this->error("Controller [{$controllerName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing controller.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($controllerPath) && $force) {
+            $this->warn("Overwriting existing controller [{$controllerName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
         $stubGenerator = new StubGenerator($moduleName);
 
         $stubGenerator->addReplacement('{{CLASS}}', $controllerName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', '\\' . Str::studly($type));
 
         // 确保控制器目录存在
         $controllerDir = $module->getPath('Http/Controllers/' . Str::studly($type));
@@ -84,13 +90,11 @@ class ControllerMakeCommand extends Command
         // 选择 stub 文件
         $stubFile = $plain ? 'controller.plain.stub' : 'controller.stub';
 
-        // 如果没有 plain stub，使用普通的 controller.stub
-        $stubPath = __DIR__ . '/stubs/' . $stubFile;
-        if (! file_exists($stubPath)) {
-            $stubFile = 'controller.stub';
-        }
-
-        $result = $stubGenerator->generate($stubFile, 'Http/Controllers/' . Str::studly($type) . '/' . $controllerName . '.php', $force);
+        $result = $stubGenerator->generate(
+            $stubFile,
+            'Http/Controllers/' . Str::studly($type) . '/' . $controllerName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Controller [{$controllerName}] created successfully in module [{$moduleName}].");

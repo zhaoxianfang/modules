@@ -24,7 +24,6 @@ class ListenerMakeCommand extends Command
                             {module : 模块名称}
                             {name : 监听器类名称}
                             {--event= : 要监听的事件类}
-                            {--queued : 是否使用队列处理}
                             {--force : 覆盖已存在的监听器类}';
 
     /**
@@ -44,7 +43,6 @@ class ListenerMakeCommand extends Command
         $moduleName = Str::studly($this->argument('module'));
         $listenerName = Str::studly($this->argument('name'));
         $eventName = $this->option('event');
-        $queued = $this->option('queued');
         $force = $this->option('force');
 
         $module = Module::find($moduleName);
@@ -59,20 +57,40 @@ class ListenerMakeCommand extends Command
 
         if (File::exists($listenerPath) && ! $force) {
             $this->error("Listener [{$listenerName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing listener.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($listenerPath) && $force) {
+            $this->warn("Overwriting existing listener [{$listenerName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $listenerName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
-        if ($eventName) {
-            $eventName = "\\" . $namespace . "\\" . $moduleName . "\\Events\\" . Str::studly($eventName);
+        // 如果没有指定事件，使用通用事件类
+        if (empty($eventName)) {
+            $eventName = 'GenericEvent';
+            // 创建通用事件类
+            $eventStub = new StubGenerator($moduleName);
+            $eventStub->addReplacement('{{CLASS}}', $eventName);
+            $eventStub->addReplacement('{{NAMESPACE}}', $namespace);
+            $eventStub->addReplacement('{{NAME}}', $moduleName);
+
+            // 确保事件目录存在
+            $eventDir = $module->getPath('Events');
+            if (! is_dir($eventDir)) {
+                File::makeDirectory($eventDir, 0755, true);
+            }
+
+            $eventStub->generate('event.stub', 'Events/' . $eventName . '.php', true);
         } else {
-            $eventName = "\\Illuminate\\Events\\Dispatcher";
+            $eventName = Str::studly($eventName);
         }
 
         $stubGenerator->addReplacement('{{EVENT}}', $eventName);
@@ -83,7 +101,11 @@ class ListenerMakeCommand extends Command
             File::makeDirectory($listenerDir, 0755, true);
         }
 
-        $result = $stubGenerator->generate('listener.stub', 'Listeners/' . $listenerName . '.php', $force);
+        $result = $stubGenerator->generate(
+            'listener.stub',
+            'Listeners/' . $listenerName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Listener [{$listenerName}] created successfully in module [{$moduleName}].");

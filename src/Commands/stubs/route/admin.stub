@@ -1,27 +1,32 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin;
 
 /*
 |--------------------------------------------------------------------------
-| Admin 路由
+| {{NAME}} 模块的 Admin 路由
 |--------------------------------------------------------------------------
 |
-| 在这里注册 {{NAME}} 模块的后台管理路由
-| 这些路由会自动应用 web 和 admin 中间件组
-| 路由前缀: {{LOWER_NAME}}
-| 路由名称前缀: {{LOWER_NAME}}.
-| 控制器命名空间: {{NAMESPACE}}\Http\Controllers\Admin
+| 在这里注册 {{NAME}} 模块的 Admin 路由
+| 这些路由会自动应用 admin 中间件组
+| {{ROUTE_PREFIX_COMMENT}}
+| {{ROUTE_NAME_PREFIX_COMMENT}}
+| 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin
 |
-| 示例:
-| Route::get('', [DashboardController::class, 'index'])->name('dashboard');
-| Route::resource('items', ItemController::class)->names('items');
+| 注意：路由文件不包含路由组声明，路由前缀和名称前缀由 RouteLoader
+| 根据 modules.php 配置自动添加。如需自定义，请修改 modules.php 配置。
 */
 
-Route::middleware(['auth'])->group(function () {
-    Route::get('', function () {
-        return view('{{LOWER_NAME}}::admin.dashboard');
-    })->name('dashboard');
+Route::prefix('{{ROUTE_PREFIX_VALUE}}')
+    ->name('{{ROUTE_NAME_PREFIX_VALUE}}')
+    ->group(function () {
+        Route::get('', [Admin\{{NAME}}Controller::class, 'index'])->name('list');
+        // Route::get('{id}', [Admin\{{NAME}}Controller::class, 'show'])->name('show');
+        // Route::post('', [Admin\{{NAME}}Controller::class, 'store'])->name('store');
+        // Route::put('{id}', [Admin\{{NAME}}Controller::class, 'update'])->name('update');
+        // Route::delete('{id}', [Admin\{{NAME}}Controller::class, 'destroy'])->name('destroy');
 
-    Route::resource('items', ItemController::class)->names('items');
-});
+        // OR 资源路由
+        // Route::resource('{{LOWER_NAME}}', Admin\{{NAME}}Controller::class)->names('admin.{{LOWER_NAME}}');
+    });

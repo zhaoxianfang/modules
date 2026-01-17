@@ -168,7 +168,7 @@ $config = module_get_config('settings');
 显式传递模块名：
 
 ```php
-$value = module_config('Blog', 'common.name', 'default');
+$value = module_config('common.name', 'default', 'Blog');
 ```
 
 ## 路径处理
@@ -306,7 +306,7 @@ $value = module_config('common.name');
 
 ```php
 // ✅ 推荐：在不确定场景下显式传递
-$value = module_config('Blog', 'common.name', 'default');
+$value = module_config('common.name', 'default', 'Blog');
 
 // ⚠️ 不推荐：依赖自动检测
 $value = module_config('common.name', 'default');
@@ -336,7 +336,7 @@ $value = module_config('common.name', 'default');
 
 ```php
 $moduleName = 'Blog';
-$value = module_config($moduleName . '.common.name', 'default');
+$value = module_config('common.name', 'default',$moduleName);
 ```
 
 ### Q: 性能影响如何？

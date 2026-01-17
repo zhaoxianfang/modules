@@ -6,6 +6,8 @@
 
 - 🚀 **现代化架构**：专为 Laravel 11+ 和 PHP 8.2+ 设计
 - 🎯 **配置驱动**：通过 config 控制所有模块行为，无需 JSON 文件
+- ⚙️ **模块启用/禁用**：通过配置文件控制模块是否启用，禁用时完全不加载模块组件
+- 🔧 **动态路由生成**：路由前缀和名称前缀根据配置动态生成到路由文件
 - 📦 **自动发现**：自动发现模块的服务提供者、路由、命令等
 - 🔌 **灵活配置**：支持多路由中间件组、控制器命名空间映射
 - 🛠️ **功能完整**：支持路由、视图、配置、迁移、命令、事件等完整功能
@@ -18,7 +20,7 @@
 - 🌍 **路由映射**：灵活的路由控制器命名空间映射
 - 📂 **多路径扫描**：支持多个模块目录扫描
 - 🎯 **智能检测**：自动检测当前模块，支持嵌套配置读取
-- ⚡ **高性能**：静态缓存机制，避免重复计算
+- ⚡ **高性能**：优化的核心函数，保证生产环境高效运行
 - 📖 **完整文档**：详细的文档和使用示例
 
 ## 安装
@@ -165,6 +167,52 @@ $files = module_config_files();
 
 更多 Helper 函数请参考 [HELPER_FUNCTIONS.md](HELPER_FUNCTIONS.md)。
 
+## 模块启用/禁用
+
+每个模块都可以通过配置文件控制是否启用。禁用模块后，该模块的所有组件（路由、服务提供者、视图等）都不会被加载。
+
+### 配置启用状态
+
+编辑 `Modules/Blog/Config/blog.php`：
+
+```php
+return [
+    'enabled' => true,  // 设置为 false 可禁用此模块
+    'name' => 'Blog',
+    'version' => '1.0.0',
+    'description' => 'Blog 模块',
+    'author' => '',
+    'options' => [],
+];
+```
+
+### 检查模块状态
+
+```php
+use zxf\Modules\Facades\Module;
+
+// 检查特定模块
+if (Module::find('Blog')->isEnabled()) {
+    // Blog 模块已启用
+}
+
+// 使用助手函数
+if (module_enabled('Blog')) {
+    // Blog 模块已启用
+}
+
+// 在模块内部检查当前模块
+if (module_enabled()) {
+    // 当前模块已启用
+}
+```
+
+**重要说明：**
+- 模块启用状态在加载前直接从配置文件读取，不依赖 Laravel config
+- 禁用模块后，无法访问其路由、视图等任何组件
+- 如果 `enabled` 未配置，默认为启用
+
+
 ## 智能当前模块检测
 
 ### 获取当前模块名称
@@ -192,7 +240,7 @@ class PostController extends Controller
 #### 方式 1：指定模块名称（传统方式）
 
 ```php
-$value = module_config('Blog', 'config.key', 'default');
+$value = module_config('config.key', 'default', 'Blog');
 ```
 
 #### 方式 2：使用当前模块（智能方式）
@@ -259,7 +307,7 @@ $path = module_path('Blog', 'Models/Post.php');
 
 ```php
 // 方式 1：指定模块名称
-$value = module_config('Blog', 'config.key', 'default');
+$value = module_config('config.key', 'default', 'Blog');
 
 // 方式 2：使用当前模块（推荐）
 $value = module_config('common.name', 'hello');

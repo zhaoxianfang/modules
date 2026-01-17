@@ -2,33 +2,32 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Http\Request;
+use \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api;
 
 /*
 |--------------------------------------------------------------------------
-| API 路由
+| {{NAME}} 模块的 API 路由
 |--------------------------------------------------------------------------
 |
 | 在这里注册 {{NAME}} 模块的 API 路由
 | 这些路由会自动应用 api 中间件组
-| 路由前缀: {{LOWER_NAME}}
-| 路由名称前缀: {{LOWER_NAME}}.
-| 控制器命名空间: {{NAMESPACE}}\Http\Controllers\Api
+| {{ROUTE_PREFIX_COMMENT}}
+| {{ROUTE_NAME_PREFIX_COMMENT}}
+| 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Api
 |
-| 示例:
-| Route::get('', [ApiController::class, 'index'])->name('index');
-| Route::get('{id}', [ApiController::class, 'show'])->name('show');
+| 注意：路由文件不包含路由组声明，路由前缀和名称前缀由 RouteLoader
+| 根据 modules.php 配置自动添加。如需自定义，请修改 modules.php 配置。
 */
 
-Route::get('', function () {
-    return response()->json([
-        'module' => '{{NAME}}',
-        'version' => '1.0.0',
-        'message' => 'Welcome to {{NAME}} API',
-    ]);
-})->name('index');
+Route::prefix('{{ROUTE_PREFIX_VALUE}}')
+    ->name('{{ROUTE_NAME_PREFIX_VALUE}}')
+    ->group(function () {
+        Route::get('', [Api\{{NAME}}Controller::class, 'index'])->name('list');
+        // Route::get('{id}', [Api\{{NAME}}Controller::class, 'show'])->name('show');
+        // Route::post('', [Api\{{NAME}}Controller::class, 'store'])->name('store');
+        // Route::put('{id}', [Api\{{NAME}}Controller::class, 'update'])->name('update');
+        // Route::delete('{id}', [Api\{{NAME}}Controller::class, 'destroy'])->name('destroy');
 
-Route::middleware('auth:sanctum')->group(function () {
-    Route::get('/user', function (Request $request) {
-        return $request->user();
-    })->name('user');
-});
+        // OR 资源路由
+        // Route::apiResource('{{LOWER_NAME}}', Api\{{NAME}}Controller::class)->names('api.{{LOWER_NAME}}');
+    });

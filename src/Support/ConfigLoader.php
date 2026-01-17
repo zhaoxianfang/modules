@@ -3,7 +3,6 @@
 namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 
 /**
  * 配置加载器类
@@ -120,7 +119,7 @@ class ConfigLoader
      */
     public static function getConfigKey(string $moduleName, string $configFile): string
     {
-        return Str::camel($moduleName) . '.' . $configFile;
+        return strtolower($moduleName) . '.' . $configFile;
     }
 
     /**

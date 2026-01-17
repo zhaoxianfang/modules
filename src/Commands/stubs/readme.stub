@@ -42,7 +42,7 @@ $value = config('{{LOWER_NAME}}.config.key');
 ```
 Modules/{{NAME}}/
 ├── Config/
-│   └── config.php
+│   └── {{LOWER_NAME}}.php
 ├── Database/
 │   ├── Migrations/
 │   └── Seeders/

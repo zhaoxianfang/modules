@@ -55,15 +55,21 @@ class RequestMakeCommand extends Command
 
         if (File::exists($requestPath) && ! $force) {
             $this->error("Request [{$requestName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing request.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($requestPath) && $force) {
+            $this->warn("Overwriting existing request [{$requestName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $requestName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
         // 确保请求类目录存在
         $requestDir = $module->getPath('Http/Requests');
@@ -71,7 +77,11 @@ class RequestMakeCommand extends Command
             File::makeDirectory($requestDir, 0755, true);
         }
 
-        $result = $stubGenerator->generate('request.stub', 'Http/Requests/' . $requestName . '.php', $force);
+        $result = $stubGenerator->generate(
+            'request.stub',
+            'Http/Requests/' . $requestName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Request [{$requestName}] created successfully in module [{$moduleName}].");

@@ -24,8 +24,7 @@ class MigrationMakeCommand extends Command
                             {module : 模块名称}
                             {name : 迁移名称}
                             {--create= : 要创建的表名}
-                            {--table= : 要修改的表名}
-                            {--force : 覆盖已存在的迁移文件}';
+                            {--table= : 要修改的表名}';
 
     /**
      * 命令描述
@@ -54,14 +53,22 @@ class MigrationMakeCommand extends Command
             return Command::FAILURE;
         }
 
-        $timestamp = date('Y_m_d_His');
-        $filename = $timestamp . '_' . $migrationName . '.php';
-        $migrationPath = $module->getMigrationsPath() . DIRECTORY_SEPARATOR . $filename;
-
         // 确保迁移目录存在
         $migrationDir = $module->getMigrationsPath();
         if (! is_dir($migrationDir)) {
             File::makeDirectory($migrationDir, 0755, true);
+        }
+
+        $timestamp = date('Y_m_d_His');
+        $filename = $timestamp . '_' . $migrationName . '.php';
+        $migrationPath = $migrationDir . DIRECTORY_SEPARATOR . $filename;
+
+        // 检查迁移文件是否已存在
+        if (File::exists($migrationPath)) {
+            $this->error("Migration [{$filename}] already exists in module [{$moduleName}].");
+            $this->line('Tip: Use a different migration name or delete the existing migration manually.');
+
+            return Command::FAILURE;
         }
 
         $tableName = $createTable ?: $table;
@@ -70,7 +77,7 @@ class MigrationMakeCommand extends Command
         $stubGenerator->addReplacement('{{CLASS}}', Str::studly($migrationName));
         $stubGenerator->addReplacement('{{TABLE}}', $tableName ?: 'table_name');
 
-        $result = $stubGenerator->generate('migration.stub', 'Database/Migrations/' . $filename);
+        $result = $stubGenerator->generate('migration.stub', 'Database/Migrations/' . $filename, false);
 
         if ($result) {
             $this->info("Migration [{$filename}] created successfully in module [{$moduleName}].");

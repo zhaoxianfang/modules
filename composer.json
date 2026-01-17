@@ -1,8 +1,8 @@
 {
   "name": "zxf/modules",
-  "description": "A modern, industrial-grade modular system for Laravel 11+",
+  "description": "一个适用于Laravel 11+版本的现代化、多模块化扩展",
   "license": "MIT",
-  "keywords": ["laravel", "module", "modular", "package", "modules"],
+  "keywords": ["laravel", "module", "modular", "package", "modules", "zxf"],
     "require": {
       "php": ">=8.2",
       "laravel/framework": ">=11.0"

@@ -53,12 +53,23 @@ class RouteMakeCommand extends Command
             return Command::FAILURE;
         }
 
+        if (! in_array($type, ['web', 'api', 'admin'])) {
+            $this->error("Invalid route type [{$type}]. Valid types are: web, api, admin");
+
+            return Command::FAILURE;
+        }
+
         $routePath = $module->getRoutesPath() . DIRECTORY_SEPARATOR . $routeName . '.php';
 
         if (File::exists($routePath) && ! $force) {
             $this->error("Route file [{$routeName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing file.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($routePath) && $force) {
+            $this->warn("Overwriting existing route file [{$routeName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -75,6 +86,12 @@ class RouteMakeCommand extends Command
             $content = $this->getGenericRouteContent($moduleName, $routeName, $type);
         } else {
             $content = $stubGenerator->getStubContent($stubPath);
+        }
+
+        // 确保路由目录存在
+        $routeDir = $module->getRoutesPath();
+        if (! is_dir($routeDir)) {
+            File::makeDirectory($routeDir, 0755, true);
         }
 
         $result = File::put($routePath, $content);
@@ -101,7 +118,6 @@ class RouteMakeCommand extends Command
     protected function getGenericRouteContent(string $moduleName, string $routeName, string $type): string
     {
         $lowerName = strtolower($moduleName);
-        $namespace = config('modules.namespace', 'Modules');
 
         return "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\n/*\n|--------------------------------------------------------------------------\n| {$routeName} Routes ({$type})\n|--------------------------------------------------------------------------\n|\n| 在这里注册 {$moduleName} 模块的 {$routeName} 路由\n| 路由前缀: {$lowerName}\n| 路由名称前缀: {$lowerName}.\n|\n*/\n\nRoute::prefix('{$lowerName}')\n    ->name('{$lowerName}.')\n    ->group(function () {\n        // 在这里定义路由\n        Route::get('/', function () {\n            return response()->json([\n                'message' => 'Welcome to {$moduleName} {$routeName} routes',\n            ]);\n        })->name('{$routeName}');\n    });\n";
     }

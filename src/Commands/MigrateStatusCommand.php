@@ -4,7 +4,7 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
+use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 
 class MigrateStatusCommand extends Command
@@ -140,11 +140,11 @@ class MigrateStatusCommand extends Command
     /**
      * 获取迁移状态
      *
-     * @param mixed $module
+     * @param ModuleInterface $module
      * @param string $migrationPath
      * @return array
      */
-    protected function getMigrationStatus($module, string $migrationPath): array
+    protected function getMigrationStatus(ModuleInterface $module, string $migrationPath): array
     {
         $files = glob($migrationPath . DIRECTORY_SEPARATOR . '*.php');
 

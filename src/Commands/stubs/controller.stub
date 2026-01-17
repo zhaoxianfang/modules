@@ -1,10 +1,10 @@
 <?php
 
-namespace {{NAMESPACE}}\Http\Controllers;
+namespace {{NAMESPACE}}\{{NAME}}\Http\Controllers{{CONTROLLER_SUBNAMESPACE}};
 
 use Illuminate\Http\Request;
 
-class {{CLASS}} extends Controller
+class {{CLASS}} extends \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Controller
 {
     /**
      * 显示资源列表
@@ -13,9 +13,7 @@ class {{CLASS}} extends Controller
      */
     public function index()
     {
-        $items = []; // 获取数据逻辑
-
-        return $this->success($items, '获取成功');
+        return view('{{LOWER_NAME}}::welcome');
     }
 
     /**
@@ -43,13 +41,7 @@ class {{CLASS}} extends Controller
      */
     public function show($id)
     {
-        $item = []; // 获取单条数据逻辑
-
-        if (! $item) {
-            return $this->error('资源不存在', 404);
-        }
-
-        return $this->success($item, '获取成功');
+        return $this->success(['id' => $id], '获取成功');
     }
 
     /**

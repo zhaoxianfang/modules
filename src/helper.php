@@ -1,12 +1,7 @@
 <?php
 
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\App;
-use Illuminate\Support\Facades\File;
 use zxf\Modules\Contracts\RepositoryInterface;
-use zxf\Modules\Contracts\ModuleInterface;
-use zxf\Modules\Support\ConfigLoader;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * ============================================================================
@@ -33,76 +28,54 @@ if (! function_exists('module_name')) {
      * 获取当前所在的模块名称
      *
      * 通过文件路径精确检测当前代码所在的模块，无需传递参数
-     * PHP 8.2+ 优化：使用只读属性和改进的缓存机制
      *
-     * @return string|null 返回模块名称（StudlyCase），如果在模块外则返回 null
+     * @return string 返回模块名称（StudlyCase），如果在模块外则返回 'App'
      *
      * @example
      * // 在 Blog/Http/Controllers/PostController.php 中调用
      * $moduleName = module_name(); // 'Blog'
      */
-    function module_name(): ?string
+    function module_name(): string
     {
-        // 请求级别缓存 - 使用 null 作为未解析标记
         static $result = null;
-        static $resolved = false;
 
-        // 已解析，直接返回
-        if ($resolved) {
+        if ($result !== null) {
             return $result;
         }
 
-        // 容器缓存检查（跨请求持久化）
-        $cacheKey = 'modules.current_module_name';
-        if (function_exists('app') && app()->bound($cacheKey)) {
-            $result = app($cacheKey);
-            $resolved = true;
-            return $result;
-        }
+        $modulePath = rtrim(str_replace('\\', '/',
+                config('modules.path', base_path('Modules'))
+            ), '/') . '/';
 
-        // 获取并缓存模块路径配置
-        static $modulePath = null;
-        $modulePath ??= strtr(config('modules.path', base_path('Modules')), ['\\' => '/']);
-
-        // 获取调用栈（优化深度）
-        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 12);
+        // 优化：获取足够的调用栈深度
+        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
 
         foreach ($backtrace as $trace) {
-            $filePath = $trace['file'] ?? null;
+            $file = $trace['file'] ?? '';
 
-            // 跳过无效路径和 vendor 目录
-            if (! $filePath || ! is_string($filePath) || str_contains($filePath, 'vendor/')) {
+            if (!is_string($file) || str_contains($file, '/vendor/')) {
                 continue;
             }
 
-            // 标准化路径
-            $filePath = strtr($filePath, ['\\' => '/']);
+            $file = str_replace('\\', '/', $file);
 
-            // 检查是否在模块路径下
-            if (! str_starts_with($filePath, $modulePath . '/')) {
-                continue;
-            }
+            if (str_starts_with($file, $modulePath)) {
+                $relative = substr($file, strlen($modulePath));
+                $segments = explode('/', $relative, 2);
+                $moduleDir = $segments[0] ?? '';
 
-            // 提取模块名（优化字符串操作）
-            $relativePath = substr($filePath, strlen($modulePath) + 1);
-            $moduleName = Str::studly(explode('/', $relativePath, 2)[0] ?? '');
+                if ($moduleDir) {
+                    $moduleName = \Illuminate\Support\Str::studly($moduleDir);
 
-            // 验证模块是否存在
-            if ($moduleName && module_exists($moduleName)) {
-                $result = $moduleName;
-                $resolved = true;
-
-                // 容器缓存（请求级别）
-                if (function_exists('app')) {
-                    app()->instance($cacheKey, $moduleName);
+                    if ($moduleName && module_exists($moduleName)) {
+                        $result = $moduleName;
+                        return $moduleName;
+                    }
                 }
-
-                return $moduleName;
             }
         }
 
-        $resolved = true;
-        return null;
+        return 'App';
     }
 }
 
@@ -112,16 +85,16 @@ if (! function_exists('module_path')) {
      *
      * PHP 8.2+ 优化：简化逻辑，缓存 Repository 实例
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $path    子路径（可选）
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
-     * module_path('Blog', 'Models/Post.php')
-     * module_path(null, 'Config/common.php') // 使用当前模块
+     * module_path('Models/Post.php', 'Blog')
+     * module_path('Config/common.php') // 使用当前模块
      */
-    function module_path(?string $module = null, string $path = ''): string
+    function module_path(string $path = '', ?string $module = null): string
     {
         // 缓存 Repository 实例
         static $repository = null;
@@ -130,7 +103,7 @@ if (! function_exists('module_path')) {
         $module ??= module_name();
 
         if (empty($module)) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
         return $repository->getModulePath($module, $path);
@@ -139,92 +112,62 @@ if (! function_exists('module_path')) {
 
 if (! function_exists('module_config')) {
     /**
-     * 获取模块配置值
+     * 获取模块配置值（PHP 8.2+ / Laravel 11+ 无缓存简化版）
      *
-     * 支持两种用法：
-     * 1. 传统方式：module_config('Blog', 'key', 'default') - 获取 Blog 模块的配置
-     * 2. 智能方式：module_config('common.name', 'hello') - 获取当前模块的 Config/common.php 中 name 的值，默认为 hello
+     * 支持三种用法：
+     * 1. 获取整个配置文件：module_config('common') - 获取当前模块的 Config/common.php 的所有配置
+     * 2. 获取特定配置：module_config('common.name', 'hello') - 获取当前模块的 Config/common.php 中 name 的值
+     * 3. 指定模块：module_config('common.name', 'default', 'Blog') - 获取指定模块的配置
      *
-     * 智能方式支持嵌套配置，如：module_config('settings.cache.enabled', true)
-     * PHP 8.2+ 优化：改进的缓存策略和嵌套配置读取
-     *
-     * @param  string  $module   模块名称或配置文件路径
-     * @param  string  $key      配置键或默认值
-     * @param  mixed   $default  默认值（可选）
+     * @param  string       $key      配置键或配置文件名
+     * @param  mixed        $default  默认值
+     * @param  string|null  $module   模块名称（可选）
      * @return mixed
      *
-     * @example
-     * // 在 Blog 模块的控制器中
-     * $name = module_config('common.name', 'hello'); // 读取 Blog/Config/common.php 的 name
-     * $enabled = module_config('settings.cache.enabled', false); // 读取嵌套配置
-     *
-     * // 传统方式
-     * $value = module_config('Blog', 'common.name', 'default');
+     * @throws RuntimeException 当指定模块不存在时抛出
      */
-    function module_config(string $module, $key, mixed $default = null): mixed
+    function module_config(string $key, mixed $default = null, ?string $module = null): mixed
     {
-        // 请求级别配置缓存
-        static $configCache = [];
+        static $cache = [];
 
-        try {
-            // 智能模式：module_config('common.name', 'default')
-            if (str_contains($module, '.') && ! str_starts_with($module, '\\')) {
-                [$configFile, $configKey] = explode('.', $module, 2);
-                $configKey ??= '';
+        $useModule = $module ?? module_name();
 
-                $currentModule = module_name();
-                if (! $currentModule || ! module_exists($currentModule)) {
-                    return $key;
-                }
-
-                $cacheKey = "{$currentModule}.{$configFile}.{$configKey}";
-
-                // 缓存命中
-                if (array_key_exists($cacheKey, $configCache)) {
-                    return $configCache[$cacheKey];
-                }
-
-                // 读取配置
-                $configData = config(strtolower($currentModule) . '.' . $configFile, []);
-
-                if (! is_array($configData)) {
-                    $configCache[$cacheKey] = $key;
-                    return $key;
-                }
-
-                // 嵌套配置读取（优化）
-                if ($configKey === '') {
-                    $result = $configData;
-                } elseif (str_contains($configKey, '.')) {
-                    $result = $configData;
-                    foreach (explode('.', $configKey) as $segment) {
-                        $result = is_array($result) ? ($result[$segment] ?? $key) : $key;
-                        if ($result === $key) {
-                            break;
-                        }
-                    }
-                } else {
-                    $result = array_key_exists($configKey, $configData) ? $configData[$configKey] : $key;
-                }
-
-                $configCache[$cacheKey] = $result;
-                return $result;
-            }
-
-            // 传统模式：module_config('Blog', 'key', 'default')
-            if (! module_exists($module)) {
-                throw new \RuntimeException("模块 '{$module}' 不存在");
-            }
-
-            $configKey = ConfigLoader::getConfigKey($module, $key);
-            $result = config($configKey, $default);
-            $configCache["{$module}.{$key}"] = $result;
-
-            return $result;
-
-        } catch (\Throwable $e) {
-            return $default ?? $key;
+        // 验证模块
+        if (!$useModule) {
+            return $default;
         }
+
+        // 指定模块时的验证
+        if ($module !== null) {
+            if (!module_exists($module)) {
+                throw new RuntimeException("模块 '{$module}' 不存在");
+            }
+        }
+        // 自动检测模块时的验证
+        elseif (!module_exists($useModule)) {
+            return $default;
+        }
+
+        // 构建缓存键
+        $cacheKey = "config:{$useModule}:{$key}:" . ($default === null ? 'null' : md5(serialize($default)));
+
+        // 检查缓存
+        if (array_key_exists($cacheKey, $cache)) {
+            return $cache[$cacheKey];
+        }
+
+        // 获取配置
+        $fullKey = strtolower($useModule) . '.' . $key;
+        $configValue = config($fullKey, $default);
+
+        // 特殊处理整个配置文件
+        if (!str_contains($key, '.') && empty($configValue) && $default !== null) {
+            $configValue = $default;
+        }
+
+        // 缓存结果
+        $cache[$cacheKey] = $configValue;
+        return $configValue;
     }
 }
 
@@ -338,15 +281,15 @@ if (! function_exists('module_view_path')) {
      *
      * PHP 8.2+ 优化：使用 null 合并运算符
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $view    视图名称
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
      *
      * @example
-     * $viewPath = module_view_path('Blog', 'post.index'); // 'blog::post.index'
-     * $viewPath = module_view_path(null, 'post.index'); // 使用当前模块
+     * $viewPath = module_view_path('post.index', 'Blog'); // 'blog::post.index'
+     * $viewPath = module_view_path('post.index'); // 使用当前模块
      */
-    function module_view_path(?string $module = null, string $view = ''): string
+    function module_view_path(string $view = '', ?string $module = null): string
     {
         $module ??= module_name() ?? 'default';
         return strtolower($module) . '::' . $view;
@@ -359,15 +302,15 @@ if (! function_exists('module_route_path')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $route   路由名称
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
      *
      * @example
-     * $routePath = module_route_path('Blog', 'post.index'); // 'blog.post.index'
-     * $routePath = module_route_path('Blog', ''); // 'blog.'
+     * $routePath = module_route_path('post.index', 'Blog'); // 'blog.post.index'
+     * $routePath = module_route_path('', 'Blog'); // 'blog.'
      */
-    function module_route_path(?string $module = null, string $route = ''): string
+    function module_route_path(string $route = '', ?string $module = null): string
     {
         $module ??= module_name() ?? 'default';
         $prefix = strtolower($module) . '.';
@@ -440,9 +383,9 @@ if (! function_exists('module_namespace')) {
 
         try {
             $moduleInstance = App::make(RepositoryInterface::class)->find($module);
-            return $moduleInstance?->getClassNamespace() ?? $defaultNamespace . '\\' . Str::studly($module);
+            return $moduleInstance?->getClassNamespace() ?? $defaultNamespace . '\\' . $module;
         } catch (\Throwable) {
-            return $defaultNamespace . '\\' . Str::studly($module);
+            return $defaultNamespace . '\\' . $module;
         }
     }
 }
@@ -453,15 +396,15 @@ if (! function_exists('module_url')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $path    路径
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
      *
      * @example
-     * $url = module_url('Blog', 'posts/1'); // 'http://example.com/blog/posts/1'
-     * $url = module_url(null, 'posts/1'); // 使用当前模块
+     * $url = module_url('posts/1', 'Blog'); // 'http://example.com/blog/posts/1'
+     * $url = module_url('posts/1'); // 使用当前模块
      */
-    function module_url(?string $module = null, string $path = ''): string
+    function module_url(string $path = '', ?string $module = null): string
     {
         $module ??= module_name() ?? 'default';
         return url(strtolower($module) . '/' . ltrim($path, '/'));
@@ -474,17 +417,17 @@ if (! function_exists('module_route')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $route   路由名称
      * @param  array       $params  参数
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
      *
      * @example
-     * $url = module_route('Blog', 'posts.index'); // route('blog.posts.index')
-     * $url = module_route('Blog', 'posts.show', ['id' => 1]); // route('blog.posts.show', ['id' => 1])
-     * $url = module_route(null, 'posts.index'); // 使用当前模块
+     * $url = module_route('posts.index', [], 'Blog'); // route('blog.posts.index')
+     * $url = module_route('posts.show', ['id' => 1], 'Blog'); // route('blog.posts.show', ['id' => 1])
+     * $url = module_route('posts.index'); // 使用当前模块
      */
-    function module_route(?string $module = null, string $route = '', array $params = []): string
+    function module_route(string $route = '', array $params = [], ?string $module = null): string
     {
         $module ??= module_name() ?? 'default';
         return route(strtolower($module) . '.' . $route, $params);
@@ -497,15 +440,15 @@ if (! function_exists('module_asset')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $asset   资源路径
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
      *
      * @example
-     * $url = module_asset('Blog', 'css/style.css'); // 'http://example.com/modules/blog/css/style.css'
-     * $url = module_asset(null, 'js/app.js'); // 使用当前模块
+     * $url = module_asset('css/style.css', 'Blog'); // 'http://example.com/modules/blog/css/style.css'
+     * $url = module_asset('js/app.js'); // 使用当前模块
      */
-    function module_asset(?string $module = null, string $asset = ''): string
+    function module_asset(string $asset = '', ?string $module = null): string
     {
         $module ??= module_name() ?? 'default';
         return asset('modules/' . strtolower($module) . '/' . ltrim($asset, '/'));
@@ -518,16 +461,16 @@ if (! function_exists('module_view')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $view    视图名称
      * @param  array       $data    数据
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return \Illuminate\View\View
      *
      * @example
-     * return module_view('Blog', 'post.index', ['posts' => $posts]);
-     * return module_view(null, 'post.index', compact('posts')); // 使用当前模块
+     * return module_view('post.index', ['posts' => $posts], 'Blog');
+     * return module_view('post.index', compact('posts')); // 使用当前模块
      */
-    function module_view(?string $module = null, string $view = '', array $data = []): \Illuminate\View\View
+    function module_view(string $view = '', array $data = [], ?string $module = null): \Illuminate\View\View
     {
         $module ??= module_name() ?? 'default';
         return view(strtolower($module) . '::' . $view, $data);
@@ -540,17 +483,17 @@ if (! function_exists('module_lang')) {
      *
      * PHP 8.2+ 优化：简化逻辑，添加返回类型
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $key     翻译键
      * @param  array       $replace 替换参数
      * @param  string|null  $locale  语言环境
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string|array
      *
      * @example
-     * $message = module_lang('Blog', 'messages.welcome'); // trans('blog::messages.welcome')
-     * $message = module_lang(null, 'messages.welcome'); // 使用当前模块
+     * $message = module_lang('messages.welcome', [], null, 'Blog'); // trans('blog::messages.welcome')
+     * $message = module_lang('messages.welcome'); // 使用当前模块
      */
-    function module_lang(?string $module = null, string $key = '', array $replace = [], ?string $locale = null): string|array
+    function module_lang(string $key = '', array $replace = [], ?string $locale = null, ?string $module = null): string|array
     {
         $module ??= module_name() ?? 'default';
         return trans(strtolower($module) . '::' . $key, $replace, $locale);
@@ -585,15 +528,15 @@ if (! function_exists('module_class')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $class   类名
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
      *
      * @example
-     * $className = module_class('Blog', 'Http\Controllers\PostController');
-     * $className = module_class(null, 'Models\Post'); // 使用当前模块
+     * $className = module_class('Http\Controllers\PostController', 'Blog');
+     * $className = module_class('Models\Post'); // 使用当前模块
      */
-    function module_class(?string $module = null, string $class = ''): string
+    function module_class(string $class = '', ?string $module = null): string
     {
         return module_namespace($module) . '\\' . $class;
     }
@@ -605,16 +548,16 @@ if (! function_exists('module_has_config')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @param  string      $configFile  配置文件名（如 'common'）
      * @param  string      $key        配置键（如 'name'）
+     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @return bool
      *
      * @example
-     * if (module_has_config('Blog', 'common', 'name')) { }
-     * if (module_has_config(null, 'common', 'name')) { }
+     * if (module_has_config('common', 'name', 'Blog')) { }
+     * if (module_has_config('common', 'name')) { }
      */
-    function module_has_config(?string $module = null, string $configFile = '', string $key = ''): bool
+    function module_has_config(string $configFile = '', string $key = '', ?string $module = null): bool
     {
         try {
             $module ??= module_name();
@@ -642,24 +585,24 @@ if (! function_exists('module_config_path')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module      模块名称（可选，不传则使用当前模块）
      * @param  string      $configFile  配置文件名
+     * @param  string|null  $module      模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
-     * $path = module_config_path('Blog', 'common.php');
-     * $path = module_config_path(null, 'common.php'); // 使用当前模块
+     * $path = module_config_path('common.php', 'Blog');
+     * $path = module_config_path('common.php'); // 使用当前模块
      */
-    function module_config_path(?string $module = null, string $configFile = 'config.php'): string
+    function module_config_path(string $configFile = 'config.php', ?string $module = null): string
     {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Config/' . $configFile);
+        return module_path('Config/' . $configFile, $module);
     }
 }
 
@@ -669,15 +612,15 @@ if (! function_exists('module_has_view')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $view    视图名称
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return bool
      *
      * @example
-     * if (module_has_view('Blog', 'post.index')) { }
-     * if (module_has_view(null, 'post.index')) { }
+     * if (module_has_view('post.index', 'Blog')) { }
+     * if (module_has_view('post.index')) { }
      */
-    function module_has_view(?string $module = null, string $view = ''): bool
+    function module_has_view(string $view = '', ?string $module = null): bool
     {
         try {
             $module ??= module_name();
@@ -695,24 +638,24 @@ if (! function_exists('module_routes_path')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @param  string      $route   路由文件名（如 'web'）
+     * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
-     * $path = module_routes_path('Blog', 'web'); // '.../Blog/Routes/web.php'
-     * $path = module_routes_path(null, 'api'); // 使用当前模块
+     * $path = module_routes_path('web', 'Blog'); // '.../Blog/Routes/web.php'
+     * $path = module_routes_path('api'); // 使用当前模块
      */
-    function module_routes_path(?string $module = null, string $route = 'web'): string
+    function module_routes_path(string $route = 'web', ?string $module = null): string
     {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Routes/' . $route . '.php');
+        return module_path('Routes/' . $route . '.php', $module);
     }
 }
 
@@ -724,7 +667,7 @@ if (! function_exists('module_migrations_path')) {
      *
      * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
      * $path = module_migrations_path('Blog'); // '.../Blog/Database/Migrations'
@@ -735,10 +678,10 @@ if (! function_exists('module_migrations_path')) {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Database/Migrations');
+        return module_path('Database/Migrations', $module);
     }
 }
 
@@ -750,7 +693,7 @@ if (! function_exists('module_models_path')) {
      *
      * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
      * $path = module_models_path('Blog'); // '.../Blog/Models'
@@ -761,10 +704,10 @@ if (! function_exists('module_models_path')) {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Models');
+        return module_path('Models', $module);
     }
 }
 
@@ -774,24 +717,24 @@ if (! function_exists('module_controllers_path')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @param  string      $controller  控制器类型（web/api/admin）
+     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
-     * $path = module_controllers_path('Blog', 'Web'); // '.../Blog/Http/Controllers/Web'
-     * $path = module_controllers_path(null, 'Api'); // 使用当前模块
+     * $path = module_controllers_path('Web', 'Blog'); // '.../Blog/Http/Controllers/Web'
+     * $path = module_controllers_path('Api'); // 使用当前模块
      */
-    function module_controllers_path(?string $module = null, string $controller = 'Web'): string
+    function module_controllers_path(string $controller = 'Web', ?string $module = null): string
     {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Http/Controllers/' . Str::studly($controller));
+        return module_path('Http/Controllers/' . ucfirst($controller), $module);
     }
 }
 
@@ -803,7 +746,7 @@ if (! function_exists('module_views_path')) {
      *
      * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
      * $path = module_views_path('Blog'); // '.../Blog/Resources/views'
@@ -814,10 +757,10 @@ if (! function_exists('module_views_path')) {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Resources/views');
+        return module_path('Resources/views', $module);
     }
 }
 
@@ -829,7 +772,7 @@ if (! function_exists('module_trans_path')) {
      *
      * @param  string|null  $module  模块名称（可选，不传则使用当前模块）
      * @return string
-     * @throws \RuntimeException 当无法确定模块时抛出异常
+     * @throws RuntimeException 当无法确定模块时抛出异常
      *
      * @example
      * $path = module_trans_path('Blog'); // '.../Blog/Resources/lang'
@@ -840,10 +783,10 @@ if (! function_exists('module_trans_path')) {
         $module ??= module_name();
 
         if (! $module) {
-            throw new \RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
+            throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
         }
 
-        return module_path($module, 'Resources/lang');
+        return module_path('Resources/lang', $module);
     }
 }
 
@@ -869,13 +812,13 @@ if (! function_exists('module_config_files')) {
                 return [];
             }
 
-            $configPath = module_path($module, 'Config');
+            $configPath = module_path('Config', $module);
 
             if (! is_dir($configPath)) {
                 return [];
             }
 
-            return array_map('basename', File::glob($configPath . '/*.php'));
+            return array_map('basename', \Illuminate\Support\Facades\File::glob($configPath . '/*.php'));
         } catch (\Throwable) {
             return [];
         }
@@ -904,13 +847,13 @@ if (! function_exists('module_route_files')) {
                 return [];
             }
 
-            $routesPath = module_path($module, 'Routes');
+            $routesPath = module_path('Routes', $module);
 
             if (! is_dir($routesPath)) {
                 return [];
             }
 
-            return array_map(fn($file) => pathinfo($file, PATHINFO_FILENAME), File::glob($routesPath . '/*.php'));
+            return array_map(fn($file) => pathinfo($file, PATHINFO_FILENAME), \Illuminate\Support\Facades\File::glob($routesPath . '/*.php'));
         } catch (\Throwable) {
             return [];
         }
@@ -923,15 +866,15 @@ if (! function_exists('module_get_config')) {
      *
      * PHP 8.2+ 优化：简化逻辑
      *
-     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @param  string      $configFile 配置文件名（如 'common'）
+     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @return array
      *
      * @example
-     * $config = module_get_config('Blog', 'common'); // ['name' => 'Blog', ...]
-     * $config = module_get_config(null, 'settings'); // 使用当前模块
+     * $config = module_get_config('common', 'Blog'); // ['name' => 'Blog', ...]
+     * $config = module_get_config('settings'); // 使用当前模块
      */
-    function module_get_config(?string $module = null, string $configFile = ''): array
+    function module_get_config(string $configFile = '', ?string $module = null): array
     {
         try {
             $module ??= module_name();
@@ -955,17 +898,17 @@ if (! function_exists('module_set_config')) {
      *
      * PHP 8.2+ 优化：简化逻辑，使用 mixed 类型
      *
-     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @param  string      $configFile 配置文件名
      * @param  string      $key        配置键
      * @param  mixed       $value      配置值
+     * @param  string|null  $module     模块名称（可选，不传则使用当前模块）
      * @return void
      *
      * @example
-     * module_set_config('Blog', 'common', 'name', 'New Name');
-     * module_set_config(null, 'settings', 'cache', true); // 使用当前模块
+     * module_set_config('common', 'name', 'New Name', 'Blog');
+     * module_set_config('settings', 'cache', true); // 使用当前模块
      */
-    function module_set_config(?string $module = null, string $configFile = '', string $key = '', mixed $value = null): void
+    function module_set_config(string $configFile = '', string $key = '', mixed $value = null, ?string $module = null): void
     {
         try {
             $module ??= module_name();
@@ -987,14 +930,15 @@ if (! function_exists('module_has_migration')) {
      *
      * PHP 8.2+ 优化：简化 glob 匹配
      *
-     * @param  string|null  $module       模块名称（可选，不传则使用当前模块）
      * @param  string      $migrationName 迁移文件名（不含扩展名）
+     * @param  string|null  $module       模块名称（可选，不传则使用当前模块）
      * @return bool
      *
      * @example
-     * if (module_has_migration('Blog', 'create_posts_table')) { }
+     * if (module_has_migration('create_posts_table', 'Blog')) { }
+     * if (module_has_migration('create_posts_table')) { }
      */
-    function module_has_migration(?string $module = null, string $migrationName = ''): bool
+    function module_has_migration(string $migrationName = '', ?string $module = null): bool
     {
         try {
             $module ??= module_name();
@@ -1003,7 +947,7 @@ if (! function_exists('module_has_migration')) {
                 return false;
             }
 
-            return ! empty(File::glob(module_migrations_path($module) . '/*_' . $migrationName . '.php'));
+            return ! empty(\Illuminate\Support\Facades\File::glob(module_migrations_path($module) . '/*_' . $migrationName . '.php'));
         } catch (\Throwable) {
             return false;
         }
@@ -1038,7 +982,7 @@ if (! function_exists('module_all_migrations')) {
                 return [];
             }
 
-            return array_map('basename', File::glob($migrationsPath . '/*.php'));
+            return array_map('basename', \Illuminate\Support\Facades\File::glob($migrationsPath . '/*.php'));
         } catch (\Throwable) {
             return [];
         }

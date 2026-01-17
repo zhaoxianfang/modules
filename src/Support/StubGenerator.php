@@ -76,12 +76,14 @@ class StubGenerator
     {
         $this->replacements = [
             '{{NAME}}' => $this->moduleName,
+            '{{NAME_FIRST_LETTER}}' => substr($this->moduleName, 0, 1),  // 首字母
             '{{CAMEL_NAME}}' => Str::camel($this->moduleName),
             '{{LOWER_CAMEL_NAME}}' => lcfirst(Str::camel($this->moduleName)),
             '{{LOWER_NAME}}' => strtolower($this->moduleName),
             '{{UPPER_NAME}}' => strtoupper($this->moduleName),
             '{{NAMESPACE}}' => $this->namespace,
             '{{MODULE_NAMESPACE}}' => $this->namespace . '\\' . $this->moduleName,
+            '{{CONTROLLER_SUBNAMESPACE}}' => '',
             '{{DATE}}' => date('Y-m-d'),
             '{{YEAR}}' => date('Y'),
             '{{TIME}}' => date('H:i:s'),
@@ -143,17 +145,75 @@ class StubGenerator
 
         $content = $this->getStubContent($stubPath);
 
-        if (file_exists($destination) && ! $overwrite) {
+        // 确保使用绝对路径
+        $fullPath = $this->getFullPath($destination);
+
+        if (file_exists($fullPath) && ! $overwrite) {
             return false;
         }
 
         // 确保目录存在
-        $directory = dirname($destination);
+        $directory = dirname($fullPath);
         if (! is_dir($directory)) {
             File::makeDirectory($directory, 0755, true);
         }
 
-        return File::put($destination, $content) !== false;
+        return File::put($fullPath, $content) !== false;
+    }
+
+    /**
+     * 检查文件是否存在
+     *
+     * @param string $destination
+     * @return bool
+     */
+    public function fileExists(string $destination): bool
+    {
+        return file_exists($this->getFullPath($destination));
+    }
+
+    /**
+     * 删除文件
+     *
+     * @param string $destination
+     * @return bool
+     */
+    public function deleteFile(string $destination): bool
+    {
+        $fullPath = $this->getFullPath($destination);
+
+        if (file_exists($fullPath)) {
+            return File::delete($fullPath);
+        }
+
+        return false;
+    }
+
+    /**
+     * 检查目录是否存在
+     *
+     * @param string $destination
+     * @return bool
+     */
+    public function directoryExists(string $destination): bool
+    {
+        return is_dir($this->getFullPath($destination));
+    }
+
+    /**
+     * 获取完整路径
+     *
+     * @param string $path
+     * @return string
+     */
+    protected function getFullPath(string $path): string
+    {
+        // 如果已经是绝对路径，直接返回
+        if (str_starts_with($path, '/') || str_starts_with($path, 'C:') || str_starts_with($path, 'D:')) {
+            return $path;
+        }
+
+        return $this->modulePath . '/' . $path;
     }
 
     /**

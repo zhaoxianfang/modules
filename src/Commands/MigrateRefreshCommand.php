@@ -3,6 +3,7 @@
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 
 class MigrateRefreshCommand extends Command
@@ -132,11 +133,11 @@ class MigrateRefreshCommand extends Command
     /**
      * 运行模块的数据填充器
      *
-     * @param mixed $module
+     * @param ModuleInterface $module
      * @param bool $force
      * @return void
      */
-    protected function runModuleSeeders($module, bool $force): void
+    protected function runModuleSeeders(ModuleInterface $module, bool $force): void
     {
         $seederPath = $module->getPath('Database/Seeders');
 

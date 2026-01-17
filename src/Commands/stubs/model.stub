@@ -1,26 +1,18 @@
 <?php
 
-namespace {{NAMESPACE}}\Models;
+namespace {{NAMESPACE}}\{{NAME}}\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class {{CLASS}} extends Model
 {
-    use HasFactory, SoftDeletes;
-
-    /**
-     * 与模型关联的表名
-     *
-     * @var string
-     */
-    protected $table = '{{TABLE}}';
+    use HasFactory;
 
     /**
      * 可批量赋值的属性
      *
-     * @var array
+     * @var array<int, string>
      */
     protected $fillable = [
         // 'name',
@@ -28,63 +20,21 @@ class {{CLASS}} extends Model
     ];
 
     /**
-     * 应该被隐藏的属性
+     * 隐藏的属性
      *
-     * @var array
+     * @var array<int, string>
      */
     protected $hidden = [
         // 'password',
     ];
 
     /**
-     * 属性类型转换
+     * 类型转换
      *
-     * @var array
+     * @var array<string, string>
      */
     protected $casts = [
-        // 'created_at' => 'datetime',
-        // 'updated_at' => 'datetime',
+        // 'email_verified_at' => 'datetime',
+        // 'password' => 'hashed',
     ];
-
-    /**
-     * 模型属性的默认值
-     *
-     * @var array
-     */
-    protected $attributes = [
-        // 'status' => 'active',
-    ];
-
-    /*
-    |--------------------------------------------------------------------------
-    | 关系定义
-    |--------------------------------------------------------------------------
-    */
-
-    // public function user()
-    // {
-    //     return $this->belongsTo(User::class);
-    // }
-
-    /*
-    |--------------------------------------------------------------------------
-    | 作用域
-    |--------------------------------------------------------------------------
-    */
-
-    // public function scopeActive($query)
-    // {
-    //     return $query->where('status', 'active');
-    // }
-
-    /*
-    |--------------------------------------------------------------------------
-    | 访问器和修改器
-    |--------------------------------------------------------------------------
-    */
-
-    // public function getNameAttribute($value)
-    // {
-    //     return ucfirst($value);
-    // }
 }

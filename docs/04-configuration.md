@@ -86,13 +86,39 @@ return [
     | 路由配置
     |--------------------------------------------------------------------------
     |
-    | 定义路由的前缀和命名空间格式
+    | 定义路由的前缀和名称空间格式
+    | 注意：此配置仅对生成模块时的路由文件生效，不影响运行时的路由加载
     |
     */
     'routes' => [
-        'prefix' => true,  // 是否自动添加路由前缀
-        'name_prefix' => true,  // 是否自动添加路由名称前缀
+        'prefix' => true,  // 是否自动添加路由前缀到生成的路由文件
+        'name_prefix' => true,  // 是否自动添加路由名称前缀到生成的路由文件
+        'default_files' => ['web', 'api', 'admin'],  // 默认路由文件列表
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 路由前缀规则说明
+    |--------------------------------------------------------------------------
+    |
+    | 根据路由文件类型和 prefix 配置，生成的路由前缀如下：
+    |
+    | prefix=true 时：
+    |   - web.php:     模块名（如 'blog'）
+    |   - api.php:     'api/模块名'（如 'api/blog'）
+    |   - admin.php:   '模块名/admin'（如 'blog/admin'）
+    |
+    | prefix=false 时：
+    |   - 所有路由文件: 模块名（如 'blog'）
+    |
+    | name_prefix=true 时：
+    |   - web.php:     'web.模块名.'（如 'web.blog.'）
+    |   - api.php:     'api.模块名.'（如 'api.blog.'）
+    |   - admin.php:   'admin.模块名.'（如 'admin.blog.'）
+    |
+    | name_prefix=false 时：
+    |   - 所有路由文件: 空字符串
+    |
 
     /*
     |--------------------------------------------------------------------------
@@ -531,7 +557,7 @@ $enableComments = module_config('settings.enable_comments', false);
 
 ```php
 // 读取指定模块的配置
-$perPage = module_config('Blog', 'settings.per_page', 10);
+$perPage = module_config('settings.per_page', 10, 'Blog');
 ```
 
 ### 方式 3：使用 Laravel config() 函数

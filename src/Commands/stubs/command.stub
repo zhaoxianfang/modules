@@ -1,0 +1,36 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Console\Commands;
+
+use Illuminate\Console\Command;
+
+class {{CLASS}} extends Command
+{
+    /**
+     * 命令签名
+     *
+     * @var string
+     */
+    protected $signature = '{{SIGNATURE}}';
+
+    /**
+     * 命令描述
+     *
+     * @var string
+     */
+    protected $description = '{{DESCRIPTION}}';
+
+    /**
+     * 执行命令
+     *
+     * @return int
+     */
+    public function handle(): int
+    {
+        $this->info('执行命令...');
+
+        // 在这里编写命令逻辑
+
+        return Command::SUCCESS;
+    }
+}

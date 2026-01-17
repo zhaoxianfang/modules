@@ -53,7 +53,7 @@ $timeout = module_config('api.timeout', 30);
 #### 用法 2：传统方式
 
 ```php
-$value = module_config('Blog', 'common.name', 'default');
+$value = module_config('common.name', 'default', 'Blog');
 ```
 
 **特性**：

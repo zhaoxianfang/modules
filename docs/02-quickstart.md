@@ -2,6 +2,88 @@
 
 本指南将带你快速了解如何使用 Laravel 模块系统。
 
+## 配置说明
+
+模块系统的配置位于 `config/modules.php`，主要配置项包括：
+
+- `namespace`: 模块根命名空间（默认：`Modules`）
+- `path`: 模块存储基础路径（默认：`base_path('Modules')`）
+- `paths`: 模块内部各组件的相对路径配置
+- `routes`: 路由前缀和名称前缀配置
+- `middleware_groups`: 路由中间件组配置
+- `discovery`: 自动发现配置
+
+当修改了 `namespace` 或 `path` 配置后，所有命令都会使用新的配置生成文件和命名空间。
+
+## 模块启用/禁用 ⭐ 重要
+
+每个模块都可以通过配置文件控制是否启用。模块的启用状态在加载前检查，如果模块未启用，则不会加载其路由、服务提供者、视图等任何组件。
+
+### 配置模块启用状态
+
+编辑模块配置文件 `Modules/Blog/Config/blog.php`：
+
+```php
+return [
+    /*
+    |--------------------------------------------------------------------------
+    | 模块启用状态
+    |--------------------------------------------------------------------------
+    |
+    | 是否启用该模块
+    | - true: 启用模块，加载所有组件（路由、服务提供者、视图等）
+    | - false: 禁用模块，不加载任何组件
+    | - 未配置: 默认启用
+    |
+    */
+    'enabled' => true,  // 设置为 false 可禁用此模块
+
+    'name' => 'Blog',
+    'version' => '1.0.0',
+    'description' => 'Blog 模块',
+    'author' => '',
+    'options' => [],
+];
+```
+
+### 启用/禁用的影响
+
+**禁用模块 (`enabled => false`)：**
+- 模块路由无法访问
+- 模块服务提供者不加载
+- 模块视图无法使用
+- 模块命令不注册
+- 模块配置不加载到 Laravel config
+- 模块迁移文件仍然存在但不自动加载
+
+**启用模块 (`enabled => true` 或未配置)：**
+- 加载所有模块组件
+- 模块路由正常访问
+- 模块视图可以调用
+- 模块命令可以执行
+
+### 检查模块状态
+
+在代码中检查模块是否启用：
+
+```php
+use zxf\Modules\Facades\Module;
+
+// 检查特定模块
+if (Module::find('Blog')->isEnabled()) {
+    // Blog 模块已启用
+}
+
+// 使用助手函数
+if (module_enabled('Blog')) {
+    // Blog 模块已启用
+}
+
+// 检查当前模块（在模块内部调用）
+if (module_enabled()) {
+    // 当前模块已启用
+}
+```
 ## 创建第一个模块
 
 ### 1. 创建模块
@@ -18,7 +100,7 @@ php artisan module:make Blog
 Modules/
 └── Blog/
     ├── Config/
-    │   └── config.php
+    │   └── blog.php
     ├── Database/
     │   ├── Migrations/
     │   └── Seeders/
@@ -26,11 +108,11 @@ Modules/
     │   ├── Controllers/
     │   │   ├── Controller.php
     │   │   ├── Web/
-    │   │   │   └── TestController.php
+    │   │   │   └── BlogController.php
     │   │   ├── Api/
-    │   │   │   └── TestController.php
+    │   │   │   └── BlogController.php
     │   │   └── Admin/
-    │   │       └── TestController.php
+    │   │       └── BlogController.php
     │   └── Requests/
     ├── Models/
     ├── Providers/
@@ -39,12 +121,17 @@ Modules/
     │   ├── assets/
     │   ├── lang/
     │   └── views/
-    │       └── index.blade.php
+    │       └── welcome.blade.php
     └── Routes/
         ├── web.php
         ├── api.php
         └── admin.php
 ```
+
+**注意事项：**
+- 配置文件命名为 `blog.php`（小写模块名），可通过 `config('blog.enable')` 访问
+- 服务提供者位于 `Providers/BlogServiceProvider.php`
+- 控制器使用命名空间 `Modules\Blog\Http\Controllers\Web`（Web控制器）、`Modules\Blog\Http\Controllers\Api`（API控制器）等
 
 ### 2. 查看模块信息
 

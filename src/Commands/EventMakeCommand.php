@@ -55,15 +55,21 @@ class EventMakeCommand extends Command
 
         if (File::exists($eventPath) && ! $force) {
             $this->error("Event [{$eventName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing event.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($eventPath) && $force) {
+            $this->warn("Overwriting existing event [{$eventName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $eventName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
         // 确保事件目录存在
         $eventDir = $module->getPath('Events');
@@ -71,7 +77,11 @@ class EventMakeCommand extends Command
             File::makeDirectory($eventDir, 0755, true);
         }
 
-        $result = $stubGenerator->generate('event.stub', 'Events/' . $eventName . '.php', $force);
+        $result = $stubGenerator->generate(
+            'event.stub',
+            'Events/' . $eventName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Event [{$eventName}] created successfully in module [{$moduleName}].");

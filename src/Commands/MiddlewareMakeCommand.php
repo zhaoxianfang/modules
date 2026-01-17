@@ -55,15 +55,21 @@ class MiddlewareMakeCommand extends Command
 
         if (File::exists($middlewarePath) && ! $force) {
             $this->error("Middleware [{$middlewareName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing middleware.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($middlewarePath) && $force) {
+            $this->warn("Overwriting existing middleware [{$middlewareName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $middlewareName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
         // 确保中间件目录存在
         $middlewareDir = $module->getPath('Http/Middleware');
@@ -71,7 +77,11 @@ class MiddlewareMakeCommand extends Command
             File::makeDirectory($middlewareDir, 0755, true);
         }
 
-        $result = $stubGenerator->generate('middleware.stub', 'Http/Middleware/' . $middlewareName . '.php', $force);
+        $result = $stubGenerator->generate(
+            'middleware.stub',
+            'Http/Middleware/' . $middlewareName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Middleware [{$middlewareName}] created successfully in module [{$moduleName}].");

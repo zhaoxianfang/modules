@@ -1,23 +1,32 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web;
 
 /*
 |--------------------------------------------------------------------------
-| Web 路由
+| {{NAME}} 模块的 Web 路由
 |--------------------------------------------------------------------------
 |
 | 在这里注册 {{NAME}} 模块的 Web 路由
 | 这些路由会自动应用 web 中间件组
-| 路由前缀: {{LOWER_NAME}}
-| 路由名称前缀: {{LOWER_NAME}}.
-| 控制器命名空间: {{NAMESPACE}}\Http\Controllers\Web
+| {{ROUTE_PREFIX_COMMENT}}
+| {{ROUTE_NAME_PREFIX_COMMENT}}
+| 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Web
 |
-| 示例:
-| Route::get('', [TestController::class, 'index'])->name('list');
-| Route::get('{id}', [TestController::class, 'show'])->name('show');
+| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 如需修改，请通过 modules.php 配置控制是否添加前缀。
 */
 
-Route::get('', function () {
-    return view('{{LOWER_NAME}}::welcome');
-})->name('index');
+Route::prefix('{{ROUTE_PREFIX_VALUE}}')
+    ->name('{{ROUTE_NAME_PREFIX_VALUE}}')
+    ->group(function () {
+        Route::get('', [Web\{{NAME}}Controller::class, 'index'])->name('list');
+        // Route::get('{id}', [Web\{{NAME}}Controller::class, 'show'])->name('show');
+        // Route::post('', [Web\{{NAME}}Controller::class, 'store'])->name('store');
+        // Route::put('{id}', [Web\{{NAME}}Controller::class, 'update'])->name('update');
+        // Route::delete('{id}', [Web\{{NAME}}Controller::class, 'destroy'])->name('destroy');
+
+        // OR 资源路由
+        // Route::resource('{{LOWER_NAME}}', Web\{{NAME}}Controller::class)->names('web.{{LOWER_NAME}}');
+    });

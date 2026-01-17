@@ -1,56 +1,78 @@
 <?php
 
-namespace {{NAMESPACE}};
+namespace {{NAMESPACE}}\{{NAME}}\Providers;
 
 use Illuminate\Support\ServiceProvider;
 
-class {{CLASS}} extends ServiceProvider
+class {{NAME}}ServiceProvider extends ServiceProvider
 {
     /**
-     * 注册服务
+     * Register services.
      *
      * @return void
      */
     public function register(): void
     {
+        // 合并模块配置文件到全局配置
+        // 配置键格式为 模块名.配置文件名（全小写）
         $this->mergeConfigFrom(
-            module_path('{{LOWER_NAME}}', 'Config/config.php'),
+            __DIR__ . '/../Config/{{LOWER_NAME}}.php',
             '{{LOWER_NAME}}'
         );
     }
 
     /**
-     * 启动服务
+     * Bootstrap services.
      *
      * @return void
      */
     public function boot(): void
     {
-        // 加载路由
-        $this->loadRoutesFrom(module_path('{{LOWER_NAME}}', 'Routes'));
+        // 加载路由文件
+        if (file_exists(__DIR__ . '/../Routes/web.php')) {
+            $this->loadRoutesFrom(__DIR__ . '/../Routes/web.php');
+        }
+        if (file_exists(__DIR__ . '/../Routes/api.php')) {
+            $this->loadRoutesFrom(__DIR__ . '/../Routes/api.php');
+        }
+        if (file_exists(__DIR__ . '/../Routes/admin.php')) {
+            $this->loadRoutesFrom(__DIR__ . '/../Routes/admin.php');
+        }
 
-        // 加载视图
-        $this->loadViewsFrom(module_path('{{LOWER_NAME}}', 'Resources/views'), '{{LOWER_NAME}}');
+        // 加载视图文件
+        if (is_dir(__DIR__ . '/../Resources/views')) {
+            $this->loadViewsFrom(__DIR__ . '/../Resources/views', '{{LOWER_NAME}}');
+        }
 
-        // 加载迁移
-        $this->loadMigrationsFrom(module_path('{{LOWER_NAME}}', 'Database/Migrations'));
+        // 加载迁移文件
+        if (is_dir(__DIR__ . '/../Database/Migrations')) {
+            $this->loadMigrationsFrom(__DIR__ . '/../Database/Migrations');
+        }
 
-        // 加载语言文件
-        $this->loadTranslationsFrom(module_path('{{LOWER_NAME}}', 'Resources/lang'), '{{LOWER_NAME}}');
+        // 加载翻译文件
+        if (is_dir(__DIR__ . '/../Resources/lang')) {
+            $this->loadTranslationsFrom(__DIR__ . '/../Resources/lang', '{{LOWER_NAME}}');
+        }
 
         // 发布配置文件
-        $this->publishes([
-            module_path('{{LOWER_NAME}}', 'Config/config.php') => config_path('{{LOWER_NAME}}.php'),
-        ], '{{LOWER_NAME}}-config');
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__ . '/../Config/{{LOWER_NAME}}.php' => config_path('{{LOWER_NAME}}.php'),
+            ], 'config');
 
-        // 发布视图文件
-        $this->publishes([
-            module_path('{{LOWER_NAME}}', 'Resources/views') => resource_path('views/vendor/{{LOWER_NAME}}'),
-        ], '{{LOWER_NAME}}-views');
+            // 发布视图文件
+            if (is_dir(__DIR__ . '/../Resources/views')) {
+                $this->publishes([
+                    __DIR__ . '/../Resources/views' => resource_path('views/vendor/{{LOWER_NAME}}'),
+                ], 'views');
+            }
 
-        // 发布资产文件
-        $this->publishes([
-            module_path('{{LOWER_NAME}}', 'Resources/assets') => public_path('modules/{{LOWER_NAME}}'),
-        ], '{{LOWER_NAME}}-assets');
+            // 发布资源文件
+            if (is_dir(__DIR__ . '/../Resources/assets')) {
+                $this->publishes([
+                    __DIR__ . '/../Resources/assets' => public_path('vendor/{{LOWER_NAME}}'),
+                ], 'assets');
+            }
+        }
     }
 }

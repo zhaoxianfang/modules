@@ -16,6 +16,7 @@ return [
     | 模块存储路径
     |--------------------------------------------------------------------------
     | 定义模块存储的基础路径
+    | 所有命令在生成文件时都会基于此路径
     |
     */
     'path' => base_path('Modules'),
@@ -48,9 +49,9 @@ return [
     |--------------------------------------------------------------------------
     | 文件生成路径配置
     |--------------------------------------------------------------------------
-    | 保持与 nWidart/laravel-modules 原格式一致
     | 定义模块内部各组件的相对路径
     | 可通过修改这些配置自定义模块结构
+    | 所有路径相对于模块根目录
     |
     */
     'paths' => [
@@ -105,6 +106,12 @@ return [
             'test' => 'Tests',
             // 控制器
             'controller' => 'Http/Controllers',
+            // Web控制器子目录
+            'controller.web' => 'Http/Controllers/Web',
+            // API控制器子目录
+            'controller.api' => 'Http/Controllers/Api',
+            // Admin控制器子目录
+            'controller.admin' => 'Http/Controllers/Admin',
             // 中间件
             'filter' => 'Http/Middleware',
             // 语言文件
@@ -226,37 +233,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | 模块模板配置
-    |--------------------------------------------------------------------------
-    | 自定义模块生成模板
-    |
-    */
-    'stubs' => [
-        // 是否启用自定义模板
-        'enabled' => false,
-        // 模板存储路径
-        'path' => base_path('stubs/modules'),
-        // 模板文件映射
-        'files' => [
-            'provider' => 'provider.stub',
-            'config' => 'config.stub',
-            'routes/web' => 'route/web.stub',
-            'routes/api' => 'route/api.stub',
-            'routes/admin' => 'route/admin.stub',
-            'controller' => 'controller.stub',
-            'model' => 'model.stub',
-            'migration' => 'migration.stub',
-            'middleware' => 'middleware.stub',
-            'request' => 'request.stub',
-            'event' => 'event.stub',
-            'listener' => 'listener.stub',
-            'seeder' => 'seeder.stub',
-            'test' => 'test.stub',
-        ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
     | 模块注册配置
     |--------------------------------------------------------------------------
     | 定义模块服务提供者的自动注册方式
@@ -295,22 +271,6 @@ return [
         'prefix' => '',
         // 迁移表前缀
         'table_prefix' => '',
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Composer 配置模板
-    |--------------------------------------------------------------------------
-    | 模块 composer.json 文件的模板配置
-    |
-    */
-    'composer' => [
-        // 模块 composer.json 模板文件
-        'template' => null,
-        // 自动添加的作者信息
-        'author' => null,
-        // 自动添加的许可证
-        'license' => 'MIT',
     ],
 
     /*

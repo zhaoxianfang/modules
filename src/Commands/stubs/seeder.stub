@@ -1,6 +1,6 @@
 <?php
 
-namespace {{NAMESPACE}}\Database\Seeders;
+namespace {{NAMESPACE}}\{{NAME}}\Database\Seeders;
 
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -20,7 +20,7 @@ class {{CLASS}} extends Seeder
     public function run(): void
     {
         // 示例：创建测试数据
-        // \{{NAMESPACE}}\Models\User::factory(10)->create();
+        // \{{NAMESPACE}}\{{NAME}}\Models\User::factory(10)->create();
 
         // 示例：手动创建数据
         // DB::table('users')->insert([

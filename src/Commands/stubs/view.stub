@@ -1,21 +1,155 @@
-@extends('layouts.app')
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{NAME}} 模块 - 欢迎</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-@section('title', '{{NAME}} 模块')
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
 
-@section('content')
-<div class="container">
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header">
-                    <h4>欢迎来到 {{NAME}} 模块</h4>
-                </div>
-                <div class="card-body">
-                    <p>这是 {{NAME}} 模块的欢迎页面。</p>
-                    <p>您可以在此开始开发您的模块功能。</p>
-                </div>
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 700px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 24px;
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 12px;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        p.subtitle {
+            color: #6c757d;
+            font-size: 1.1rem;
+            margin-bottom: 32px;
+        }
+
+        .info-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: left;
+            border-radius: 8px;
+        }
+
+        .info-card h3 {
+            color: #2c3e50;
+            margin-bottom: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 0;
+            color: #495057;
+        }
+
+        .info-item label {
+            font-weight: 600;
+            min-width: 100px;
+            color: #6c757d;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 16px;
+            margin: 4px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: transform 0.2s;
+        }
+
+        .badge:hover {
+            transform: translateY(-2px);
+        }
+
+        .routes {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin: 16px 0;
+        }
+
+        .footer {
+            margin-top: 32px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">{{NAME_FIRST_LETTER}}</div>
+        <h1>{{NAME}} 模块</h1>
+        <p class="subtitle">欢迎使用 {{NAME}} 模块！</p>
+
+        <div class="info-card">
+            <h3>模块信息</h3>
+            <div class="info-item">
+                <label>版本:</label>
+                <span>1.0.0</span>
+            </div>
+            <div class="info-item">
+                <label>命名空间:</label>
+                <span>{{MODULE_NAMESPACE}}</span>
             </div>
         </div>
+
+        <div class="info-card">
+            <h3>可用路由</h3>
+            <div class="routes">
+                <span class="badge">Web: /{{LOWER_NAME}}</span>
+                <span class="badge">API: /api/{{LOWER_NAME}}</span>
+                <span class="badge">Admin: /{{LOWER_NAME}}/admin</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            基于 Laravel 模块化架构构建
+        </div>
     </div>
-</div>
-@endsection
+</body>
+</html>

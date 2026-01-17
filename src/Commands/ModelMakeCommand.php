@@ -59,8 +59,13 @@ class ModelMakeCommand extends Command
 
         if (File::exists($modelPath) && ! $force) {
             $this->error("Model [{$modelName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing model.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($modelPath) && $force) {
+            $this->warn("Overwriting existing model [{$modelName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -68,8 +73,9 @@ class ModelMakeCommand extends Command
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $modelName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
         $stubGenerator->addReplacement('{{TABLE}}', $tableName);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
         // 确保模型目录存在
         $modelDir = $module->getPath('Models');

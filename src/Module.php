@@ -117,11 +117,37 @@ class Module implements ModuleInterface
     /**
      * 检查模块是否已启用
      *
+     * 直接读取模块配置文件中的 enabled 选项，不依赖 Laravel config
+     *
      * @return bool
      */
     public function isEnabled(): bool
     {
-        return (bool) config("{$this->getLowerCamelName()}.config.enable", true);
+        $configPath = $this->getConfigPath();
+
+        if (! is_dir($configPath)) {
+            // 如果没有配置目录，默认启用
+            return true;
+        }
+
+        // 查找模块配置文件（优先使用小写名称）
+        $configFile = $configPath . DIRECTORY_SEPARATOR . $this->getLowerName() . '.php';
+
+        if (! file_exists($configFile)) {
+            // 如果配置文件不存在，默认启用
+            return true;
+        }
+
+        // 加载配置文件
+        $config = require $configFile;
+
+        // 检查 enabled 是否存在且为 false
+        if (isset($config['enabled']) && $config['enabled'] === false) {
+            return false;
+        }
+
+        // 默认启用（enabled 不存在或为 true）
+        return true;
     }
 
     /**
@@ -203,7 +229,7 @@ class Module implements ModuleInterface
      */
     public function config(string $key, $default = null)
     {
-        $configKey = "{$this->getLowerCamelName()}.{$key}";
+        $configKey = "{$this->getLowerName()}.{$key}";
 
         if (! isset($this->configCache[$configKey])) {
             $this->configCache[$configKey] = config($configKey, $default);
@@ -270,5 +296,27 @@ class Module implements ModuleInterface
     public function getClassNamespace(): string
     {
         return $this->namespace . '\\' . $this->name;
+    }
+
+    /**
+     * 获取模块配置（直接从文件读取）
+     *
+     * @return array
+     */
+    public function getModuleConfig(): array
+    {
+        $configPath = $this->getConfigPath();
+
+        if (! is_dir($configPath)) {
+            return [];
+        }
+
+        $configFile = $configPath . DIRECTORY_SEPARATOR . $this->getLowerName() . '.php';
+
+        if (! file_exists($configFile)) {
+            return [];
+        }
+
+        return require $configFile;
     }
 }

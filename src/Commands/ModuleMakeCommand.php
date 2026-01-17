@@ -3,6 +3,7 @@
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use zxf\Modules\Support\StubGenerator;
 
@@ -45,8 +46,21 @@ class ModuleMakeCommand extends Command
 
         if (is_dir($modulePath) && ! $force) {
             $this->error("Module [{$name}] already exists.");
+            $this->line("Use --force flag to overwrite the existing module.");
 
             return Command::FAILURE;
+        }
+
+        if (is_dir($modulePath) && $force) {
+            $this->warn("Overwriting existing module [{$name}].");
+            if (! $this->confirm("Are you sure you want to overwrite module [{$name}]? All files will be deleted.", true)) {
+                $this->info('Operation cancelled.');
+
+                return Command::SUCCESS;
+            }
+
+            // 删除现有模块目录
+            File::deleteDirectory($modulePath);
         }
 
         $this->info("Creating module [{$name}]...");
@@ -130,11 +144,13 @@ class ModuleMakeCommand extends Command
         $this->info("Creating service provider...");
 
         $moduleName = $generator->getModuleName();
-        $stubGenerator = new StubGenerator($moduleName);
+        $lowerName = strtolower($moduleName);
 
-        $stubGenerator->addReplacement('{{CLASS}}', $moduleName . 'ServiceProvider');
+        $generator->addReplacement('{{CLASS}}', $moduleName . 'ServiceProvider');
+        $generator->addReplacement('{{LOWER_NAME}}', $lowerName);
+        $generator->addReplacement('{{NAME}}', $moduleName);
 
-        $stubGenerator->generate(
+        $generator->generate(
             'provider.stub',
             'Providers/' . $moduleName . 'ServiceProvider.php'
         );
@@ -150,7 +166,12 @@ class ModuleMakeCommand extends Command
     {
         $this->info("Creating config file...");
 
-        $generator->generate('config.stub', 'Config/config.php');
+        $moduleName = $generator->getModuleName();
+        $lowerName = strtolower($moduleName);
+
+        $generator->addReplacement('{{NAME}}', $moduleName);
+        $generator->addReplacement('{{LOWER_NAME}}', $lowerName);
+        $generator->generate('config.stub', 'Config/' . $lowerName . '.php');
     }
 
     /**
@@ -163,13 +184,103 @@ class ModuleMakeCommand extends Command
     {
         $this->info("Creating route files...");
 
+        $moduleName = $generator->getModuleName();
+        $namespace = config('modules.namespace', 'Modules');
+        $lowerName = strtolower($moduleName);
+
+        // 获取 modules.php 配置
+        $routeConfig = config('modules.routes', []);
+        $shouldPrefix = $routeConfig['prefix'] ?? true;
+        $shouldAddNamePrefix = $routeConfig['name_prefix'] ?? true;
+
+        // 设置路由文件需要的变量
+        $generator->addReplacement('{{NAMESPACE}}', $namespace);
+        $generator->addReplacement('{{NAME}}', $moduleName);
+        $generator->addReplacement('{{LOWER_NAME}}', $lowerName);
+
+        // 根据配置生成路由前缀注释
         $files = [
-            'route/web.stub' => 'Routes/web.php',
-            'route/api.stub' => 'Routes/api.php',
-            'route/admin.stub' => 'Routes/admin.php',
+            'web' => 'Routes/web.php',
+            'api' => 'Routes/api.php',
+            'admin' => 'Routes/admin.php',
         ];
 
-        $generator->generateFiles($files);
+        foreach ($files as $routeType => $destination) {
+            $stubPath = __DIR__ . '/stubs/route/' . $routeType . '.stub';
+            $fullPath = $generator->getModulePath() . '/' . $destination;
+
+            // 获取 stub 内容并替换所有变量
+            $stubContent = file_get_contents($stubPath);
+
+            // 获取当前 replacements 的副本
+            $replacements = $generator->getReplacements();
+
+            // 动态添加当前路由类型的替换变量（不会影响 generator 的 replacements）
+            $replacements['{{ROUTE_PREFIX_VALUE}}'] = $shouldPrefix ? $this->getRoutePrefix($routeType, $lowerName) : $lowerName;
+            $replacements['{{ROUTE_NAME_PREFIX_VALUE}}'] = $shouldAddNamePrefix ? strtolower($routeType) . ".{$lowerName}." : '';
+
+            foreach ($replacements as $search => $replace) {
+                $stubContent = str_replace($search, $replace, $stubContent);
+            }
+
+            // 动态生成路由注释（根据配置）
+            $stubContent = $this->generateRouteComments($stubContent, $routeType, $lowerName, $shouldPrefix, $shouldAddNamePrefix);
+
+            // 确保目录存在
+            $directory = dirname($fullPath);
+            if (! is_dir($directory)) {
+                File::makeDirectory($directory, 0755, true);
+            }
+
+            File::put($fullPath, $stubContent);
+        }
+    }
+
+    /**
+     * 生成路由注释
+     *
+     * @param string $stubContent
+     * @param string $routeType
+     * @param string $lowerName
+     * @param bool $shouldPrefix
+     * @param bool $shouldAddNamePrefix
+     * @return string
+     */
+    protected function generateRouteComments(string $stubContent, string $routeType, string $lowerName, bool $shouldPrefix, bool $shouldAddNamePrefix): string
+    {
+        // 生成路由前缀注释
+        if ($shouldPrefix) {
+            $prefix = $this->getRoutePrefix($routeType, $lowerName);
+            $stubContent = str_replace('{{ROUTE_PREFIX_COMMENT}}', "路由前缀: {$prefix}", $stubContent);
+        } else {
+            $stubContent = str_replace('{{ROUTE_PREFIX_COMMENT}}', "路由前缀: {$lowerName}（未自动添加类型前缀）", $stubContent);
+        }
+
+        // 生成路由名称前缀注释
+        if ($shouldAddNamePrefix) {
+            $namePrefix = strtolower($routeType) . ".{$lowerName}.";
+            $stubContent = str_replace('{{ROUTE_NAME_PREFIX_COMMENT}}', "路由名称前缀: {$namePrefix}", $stubContent);
+        } else {
+            $stubContent = str_replace('{{ROUTE_NAME_PREFIX_COMMENT}}', '路由名称前缀: 未配置（不自动添加）', $stubContent);
+        }
+
+        return $stubContent;
+    }
+
+    /**
+     * 获取路由前缀
+     *
+     * @param string $routeType
+     * @param string $lowerName
+     * @return string
+     */
+    protected function getRoutePrefix(string $routeType, string $lowerName): string
+    {
+        return match($routeType) {
+            'api' => "api/{$lowerName}",
+            'admin' => "{$lowerName}/admin",
+            default => $lowerName,
+        };
     }
 
     /**
@@ -183,15 +294,29 @@ class ModuleMakeCommand extends Command
         $this->info("Creating base controller...");
 
         $moduleName = $generator->getModuleName();
-        $stubGenerator = new StubGenerator($moduleName);
+        $namespace = config('modules.namespace', 'Modules');
 
-        $stubGenerator->addReplacement('{{CLASS}}', 'Controller');
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $stubGenerator->getModulePath());
+        // 基础控制器需要临时修改 stub 内容
+        $stubPath = __DIR__ . '/stubs/controller.base.stub';
+        $stubContent = file_get_contents($stubPath);
 
-        $stubGenerator->generate(
-            'controller.base.stub',
-            'Http/Controllers/Controller.php'
-        );
+        // 添加所有必要的替换变量
+        $generator->addReplacement('{{NAME}}', $moduleName);
+        $generator->addReplacement('{{LOWER_NAME}}', strtolower($moduleName));
+
+        // 遍历所有替换变量进行替换
+        foreach ($generator->getReplacements() as $search => $replace) {
+            $stubContent = str_replace($search, $replace, $stubContent);
+        }
+
+        // 创建基础控制器
+        $controllerPath = $generator->getModulePath() . '/Http/Controllers/Controller.php';
+        $directory = dirname($controllerPath);
+        if (! is_dir($directory)) {
+            File::makeDirectory($directory, 0755, true);
+        }
+
+        File::put($controllerPath, $stubContent);
     }
 
     /**
@@ -208,22 +333,22 @@ class ModuleMakeCommand extends Command
         $namespace = config('modules.namespace', 'Modules');
 
         // 创建 Web 控制器
-        $webStub = new StubGenerator($moduleName);
-        $webStub->addReplacement('{{CLASS}}', 'TestController');
-        $webStub->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
-        $webStub->generate('controller.stub', 'Http/Controllers/Web/TestController.php');
+        $generator->addReplacement('{{NAMESPACE}}', $namespace);
+        $generator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', '\\Web');
+        $generator->addReplacement('{{CLASS}}', $moduleName . 'Controller');
+        $generator->generate('controller.stub', 'Http/Controllers/Web/' . $moduleName . 'Controller.php');
 
         // 创建 API 控制器
-        $apiStub = new StubGenerator($moduleName);
-        $apiStub->addReplacement('{{CLASS}}', 'TestController');
-        $apiStub->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
-        $apiStub->generate('controller.stub', 'Http/Controllers/Api/TestController.php');
+        $generator->addReplacement('{{NAMESPACE}}', $namespace);
+        $generator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', '\\Api');
+        $generator->addReplacement('{{CLASS}}', $moduleName . 'Controller');
+        $generator->generate('controller.stub', 'Http/Controllers/Api/' . $moduleName . 'Controller.php');
 
         // 创建 Admin 控制器
-        $adminStub = new StubGenerator($moduleName);
-        $adminStub->addReplacement('{{CLASS}}', 'TestController');
-        $adminStub->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
-        $adminStub->generate('controller.stub', 'Http/Controllers/Admin/TestController.php');
+        $generator->addReplacement('{{NAMESPACE}}', $namespace);
+        $generator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', '\\Admin');
+        $generator->addReplacement('{{CLASS}}', $moduleName . 'Controller');
+        $generator->generate('controller.stub', 'Http/Controllers/Admin/' . $moduleName . 'Controller.php');
     }
 
     /**

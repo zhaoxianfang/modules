@@ -1,6 +1,6 @@
 <?php
 
-namespace {{NAMESPACE}}\Events;
+namespace {{NAMESPACE}}\{{NAME}}\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;

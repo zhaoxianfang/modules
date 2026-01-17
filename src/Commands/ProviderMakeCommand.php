@@ -55,15 +55,21 @@ class ProviderMakeCommand extends Command
 
         if (File::exists($providerPath) && ! $force) {
             $this->error("Provider [{$providerName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing provider.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($providerPath) && $force) {
+            $this->warn("Overwriting existing provider [{$providerName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $providerName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
         // 确保服务提供者目录存在
         $providerDir = $module->getPath('Providers');
@@ -71,7 +77,11 @@ class ProviderMakeCommand extends Command
             File::makeDirectory($providerDir, 0755, true);
         }
 
-        $result = $stubGenerator->generate('provider.stub', 'Providers/' . $providerName . '.php', $force);
+        $result = $stubGenerator->generate(
+            'provider.stub',
+            'Providers/' . $providerName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Provider [{$providerName}] created successfully in module [{$moduleName}].");

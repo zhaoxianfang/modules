@@ -55,15 +55,21 @@ class SeederMakeCommand extends Command
 
         if (File::exists($seederPath) && ! $force) {
             $this->error("Seeder [{$seederName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing seeder.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($seederPath) && $force) {
+            $this->warn("Overwriting existing seeder [{$seederName}] in module [{$moduleName}].");
         }
 
         $namespace = config('modules.namespace', 'Modules');
 
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $seederName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
 
         // 确保填充器目录存在
         $seederDir = $module->getPath('Database/Seeders');
@@ -71,7 +77,11 @@ class SeederMakeCommand extends Command
             File::makeDirectory($seederDir, 0755, true);
         }
 
-        $result = $stubGenerator->generate('seeder.stub', 'Database/Seeders/' . $seederName . '.php', $force);
+        $result = $stubGenerator->generate(
+            'seeder.stub',
+            'Database/Seeders/' . $seederName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Seeder [{$seederName}] created successfully in module [{$moduleName}].");

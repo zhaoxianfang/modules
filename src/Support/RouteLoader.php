@@ -11,6 +11,9 @@ use zxf\Modules\Contracts\ModuleInterface;
  *
  * 负责加载和管理模块路由
  * 支持灵活的路由配置，包括中间件组、控制器命名空间映射等
+ *
+ * 注意：路由文件内部已经包含了路由组声明（prefix 和 name），
+ * RouteLoader 仅负责设置中间件和控制器命名空间，不再重复添加前缀。
  */
 class RouteLoader
 {
@@ -22,6 +25,9 @@ class RouteLoader
      * - api.php -> Http\Controllers\Api
      * - admin.php -> Http\Controllers\Admin
      * - custom.php -> Http\Controllers\Custom
+     *
+     * 注意：路由文件内部已包含路由组声明（prefix 和 name），
+     * RouteLoader 仅添加中间件和控制器命名空间。
      *
      * @param ModuleInterface $module
      * @return void
@@ -38,8 +44,6 @@ class RouteLoader
         $controllerNamespaces = config('modules.route_controller_namespaces', []);
         $routeConfig = config('modules.routes', []);
 
-        $shouldPrefix = $routeConfig['prefix'] ?? true;
-        $shouldAddNamePrefix = $routeConfig['name_prefix'] ?? true;
         $defaultFiles = $routeConfig['default_files'] ?? ['web', 'api', 'admin'];
 
         // 加载默认路由文件和自定义路由文件
@@ -61,18 +65,9 @@ class RouteLoader
             // 构建完整控制器命名空间
             $fullNamespace = $module->getClassNamespace() . '\\Http\\Controllers\\' . $controllerNamespace;
 
-            // 构建路由组
+            // 构建路由组：仅设置中间件和控制器命名空间
+            // 路由文件内部已经包含了 prefix 和 name 的路由组声明
             $routeBuilder = Route::middleware($middleware);
-
-            // 添加路由前缀（模块名）
-            if ($shouldPrefix) {
-                $routeBuilder->prefix($module->getLowerName());
-            }
-
-            // 添加路由名称前缀（模块名.）
-            if ($shouldAddNamePrefix) {
-                $routeBuilder->name($module->getLowerName() . '.');
-            }
 
             // 设置控制器命名空间
             $routeBuilder->namespace($fullNamespace);
@@ -82,51 +77,6 @@ class RouteLoader
                 require $routePath;
             });
         }
-    }
-
-    /**
-     * 获取路由 URL 前缀
-     *
-     * @param ModuleInterface $module
-     * @return string
-     */
-    public static function getPrefix(ModuleInterface $module): string
-    {
-        if (! (config('modules.routes.prefix', true))) {
-            return '';
-        }
-
-        return $module->getLowerName();
-    }
-
-    /**
-     * 获取路由名称前缀
-     *
-     * @param ModuleInterface $module
-     * @return string
-     */
-    public static function getNamePrefix(ModuleInterface $module): string
-    {
-        if (! (config('modules.routes.name_prefix', true))) {
-            return '';
-        }
-
-        return $module->getLowerName() . '.';
-    }
-
-    /**
-     * 生成路由 URL
-     *
-     * @param ModuleInterface $module
-     * @param string $route
-     * @param array $parameters
-     * @return string
-     */
-    public static function route(ModuleInterface $module, string $route, array $parameters = []): string
-    {
-        $routeName = self::getNamePrefix($module) . $route;
-
-        return route($routeName, $parameters);
     }
 
     /**

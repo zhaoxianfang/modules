@@ -57,8 +57,13 @@ class CommandMakeCommand extends Command
 
         if (File::exists($commandPath) && ! $force) {
             $this->error("Command [{$commandName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing command.");
 
             return Command::FAILURE;
+        }
+
+        if (File::exists($commandPath) && $force) {
+            $this->warn("Overwriting existing command [{$commandName}] in module [{$moduleName}].");
         }
 
         if (empty($commandSignature)) {
@@ -73,15 +78,19 @@ class CommandMakeCommand extends Command
             File::makeDirectory($commandDir, 0755, true);
         }
 
+        // 使用 StubGenerator 生成命令文件
         $stubGenerator = new StubGenerator($moduleName);
         $stubGenerator->addReplacement('{{CLASS}}', $commandName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace . '\\' . $moduleName);
+        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
+        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
         $stubGenerator->addReplacement('{{SIGNATURE}}', $commandSignature);
         $stubGenerator->addReplacement('{{DESCRIPTION}}', 'Command description');
 
-        $commandContent = "<?php\n\nnamespace {$namespace}\\{$moduleName}\\Console\\Commands;\n\nuse Illuminate\\Console\\Command;\n\nclass {$commandName} extends Command\n{\n    /**\n     * 命令签名\n     *\n     * @var string\n     */\n    protected \$signature = '{$commandSignature}';\n\n    /**\n     * 命令描述\n     *\n     * @var string\n     */\n    protected \$description = 'Command description';\n\n    /**\n     * 执行命令\n     */\n    public function handle(): int\n    {\n        // 在这里实现命令逻辑\n\n        return Command::SUCCESS;\n    }\n}\n";
-
-        $result = File::put($commandPath, $commandContent);
+        $result = $stubGenerator->generate(
+            'command.stub',
+            'Console/Commands/' . $commandName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Command [{$commandName}] created successfully in module [{$moduleName}].");

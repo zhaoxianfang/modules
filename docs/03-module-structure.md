@@ -363,7 +363,7 @@ blog.posts.show
 
 ```php
 // 方式 1：使用 helper 函数（推荐）
-$value = module_config('Blog', 'config.key', 'default');
+$value = module_config('config.key', 'default', 'Blog');
 
 // 方式 2：使用智能配置读取
 $value = module_config('common.name', 'hello');

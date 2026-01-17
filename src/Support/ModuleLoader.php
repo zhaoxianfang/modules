@@ -4,9 +4,6 @@ namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
 
@@ -96,7 +93,7 @@ class ModuleLoader
         $configFiles = ConfigLoader::getConfigFiles($module->getName());
 
         foreach ($configFiles as $configFile) {
-            $configKey = ConfigLoader::getConfigKey($module->getLowerName(), $configFile);
+            $configKey = ConfigLoader::getConfigKey($module->getName(), $configFile);
             $configValue = ConfigLoader::load($module->getName(), $configFile);
 
             Config::set($configKey, $configValue);

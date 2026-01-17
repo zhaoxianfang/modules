@@ -2,9 +2,11 @@
 
 namespace zxf\Modules;
 
-use Illuminate\Support\Facades\Route;
+use Composer\InstalledVersions;
+use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Support\ServiceProvider;
 use zxf\Modules\Contracts\RepositoryInterface;
+use zxf\Modules\Repository;
 use zxf\Modules\Support\ModuleLoader;
 
 class ModulesServiceProvider extends ServiceProvider
@@ -34,6 +36,11 @@ class ModulesServiceProvider extends ServiceProvider
         $this->publishConfig();
         $this->registerCommands();
         $this->loadModules();
+
+        // 把 zxf/modules 添加到 about 命令中
+        AboutCommand::add('Extend', [
+            'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules'),
+        ]);
     }
 
     /**

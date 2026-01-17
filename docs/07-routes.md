@@ -39,7 +39,9 @@ Modules/Blog/Routes/
 ],
 ```
 
-### 路由前缀配置
+### 路由前缀和名称前缀配置 ⭐ 重要
+
+在 `config/modules.php` 中配置路由前缀和名称前缀：
 
 ```php
 'routes' => [
@@ -48,42 +50,97 @@ Modules/Blog/Routes/
 ],
 ```
 
+**说明：**
+- 这两个配置**仅对生成模块时的路由文件生效**，不影响运行时的路由加载
+- RouteLoader 在加载路由时不再重复添加前缀，路由文件内部已包含完整的路由组声明
+- 路由文件中的前缀值根据此配置动态生成
+
+**路由前缀规则：**
+
+| 路由文件 | prefix=true 时的前缀 | prefix=false 时的前缀 |
+|---------|---------------------|---------------------|
+| `web.php` | `blog` | `blog`（仅模块名） |
+| `api.php` | `api/blog` | `blog`（仅模块名） |
+| `admin.php` | `blog/admin` | `blog`（仅模块名） |
+
+**路由名称前缀规则：**
+
+| 路由文件 | name_prefix=true 时的前缀 | name_prefix=false 时的前缀 |
+|---------|--------------------------|--------------------------|
+| `web.php` | `web.blog.` | 空字符串 |
+| `api.php` | `api.blog.` | 空字符串 |
+| `admin.php` | `admin.blog.` | 空字符串 |
+
 ## Web 路由
+
+### 默认路由文件格式
+
+模块创建后，`Routes/web.php` 文件默认内容如下：
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+use Modules\Blog\Http\Controllers\Web;
+
+/*
+|--------------------------------------------------------------------------
+| Blog 模块的 Web 路由
+|--------------------------------------------------------------------------
+|
+| 在这里注册 Blog 模块的 Web 路由
+| 这些路由会自动应用 web 中间件组
+| 路由前缀: blog（根据 config/modules.php 配置）
+| 路由名称前缀: web.blog.（根据 config/modules.php 配置）
+| 控制器命名空间: Modules\Blog\Http\Controllers\Web
+|
+| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 如需修改，请通过 modules.php 配置控制是否添加前缀。
+*/
+
+Route::prefix('blog')
+    ->name('web.blog.')
+    ->group(function () {
+        Route::get('', [Web\BlogController::class, 'index'])->name('list');
+        // Route::get('{id}', [Web\BlogController::class, 'show'])->name('show');
+        // Route::post('', [Web\BlogController::class, 'store'])->name('store');
+        // Route::put('{id}', [Web\BlogController::class, 'update'])->name('update');
+        // Route::delete('{id}', [Web\BlogController::class, 'destroy'])->name('destroy');
+
+        // OR 资源路由
+        // Route::resource('blog', Web\BlogController::class)->names('web.blog');
+    });
+```
 
 ### 基本用法
 
 编辑 `Modules/Blog/Routes/web.php`：
 
 ```php
-<?php
+Route::prefix('blog')
+    ->name('web.blog.')
+    ->group(function () {
+        Route::get('/posts', [Web\PostController::class, 'index'])
+            ->name('posts.index');
 
-use Illuminate\Support\Facades\Route;
-use Modules\Blog\Http\Controllers\Web\PostController;
+        Route::get('/posts/{id}', [Web\PostController::class, 'show'])
+            ->name('posts.show');
 
-Route::group([
-    'middleware' => ['web'],
-], function () {
-    Route::get('/posts', [PostController::class, 'index'])
-        ->name('posts.index');
+        Route::get('/posts/create', [Web\PostController::class, 'create'])
+            ->name('posts.create');
 
-    Route::get('/posts/{id}', [PostController::class, 'show'])
-        ->name('posts.show');
+        Route::post('/posts', [Web\PostController::class, 'store'])
+            ->name('posts.store');
 
-    Route::get('/posts/create', [PostController::class, 'create'])
-        ->name('posts.create');
+        Route::get('/posts/{id}/edit', [Web\PostController::class, 'edit'])
+            ->name('posts.edit');
 
-    Route::post('/posts', [PostController::class, 'store'])
-        ->name('posts.store');
+        Route::put('/posts/{id}', [Web\PostController::class, 'update'])
+            ->name('posts.update');
 
-    Route::get('/posts/{id}/edit', [PostController::class, 'edit'])
-        ->name('posts.edit');
-
-    Route::put('/posts/{id}', [PostController::class, 'update'])
-        ->name('posts.update');
-
-    Route::delete('/posts/{id}', [PostController::class, 'destroy'])
-        ->name('posts.destroy');
-});
+        Route::delete('/posts/{id}', [Web\PostController::class, 'destroy'])
+            ->name('posts.destroy');
+    });
 ```
 
 ### 使用路由前缀
@@ -100,25 +157,60 @@ Route::prefix('blog')->group(function () {
 
 ## API 路由
 
-### 基本用法
+### 默认路由文件格式
 
-编辑 `Modules/Blog/Routes/api.php`：
+模块创建后，`Routes/api.php` 文件默认内容如下：
 
 ```php
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\Blog\Http\Controllers\Api\PostController;
+use Illuminate\Http\Request;
+use Modules\Blog\Http\Controllers\Api;
 
-Route::group([
-    'middleware' => ['api'],
-], function () {
-    Route::get('/posts', [PostController::class, 'index']);
-    Route::get('/posts/{id}', [PostController::class, 'show']);
-    Route::post('/posts', [PostController::class, 'store']);
-    Route::put('/posts/{id}', [PostController::class, 'update']);
-    Route::delete('/posts/{id}', [PostController::class, 'destroy']);
-});
+/*
+|--------------------------------------------------------------------------
+| Blog 模块的 API 路由
+|--------------------------------------------------------------------------
+|
+| 在这里注册 Blog 模块的 API 路由
+| 这些路由会自动应用 api 中间件组
+| 路由前缀: api/blog（根据 config/modules.php 配置）
+| 路由名称前缀: api.blog.（根据 config/modules.php 配置）
+| 控制器命名空间: Modules\Blog\Http\Controllers\Api
+|
+| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 如需修改，请通过 modules.php 配置控制是否添加前缀。
+*/
+
+Route::prefix('api/blog')
+    ->name('api.blog.')
+    ->group(function () {
+        Route::get('', [Api\BlogController::class, 'index'])->name('list');
+        // Route::get('{id}', [Api\BlogController::class, 'show'])->name('show');
+        // Route::post('', [Api\BlogController::class, 'store'])->name('store');
+        // Route::put('{id}', [Api\BlogController::class, 'update'])->name('update');
+        // Route::delete('{id}', [Api\BlogController::class, 'destroy'])->name('destroy');
+
+        // OR 资源路由
+        // Route::apiResource('blog', Api\BlogController::class)->names('api.blog');
+    });
+```
+
+### 基本用法
+
+编辑 `Modules/Blog/Routes/api.php`：
+
+```php
+Route::prefix('api/blog')
+    ->name('api.blog.')
+    ->group(function () {
+        Route::get('/posts', [Api\PostController::class, 'index']);
+        Route::get('/posts/{id}', [Api\PostController::class, 'show']);
+        Route::post('/posts', [Api\PostController::class, 'store']);
+        Route::put('/posts/{id}', [Api\PostController::class, 'update']);
+        Route::delete('/posts/{id}', [Api\PostController::class, 'destroy']);
+    });
 ```
 
 ### API 路由最佳实践
@@ -134,35 +226,68 @@ Route::group([
 
 ## Admin 路由
 
-### 基本用法
+### 默认路由文件格式
 
-编辑 `Modules/Blog/Routes/admin.php`：
+模块创建后，`Routes/admin.php` 文件默认内容如下：
 
 ```php
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Modules\Blog\Http\Controllers\Admin\PostController;
+use Modules\Blog\Http\Controllers\Admin;
 
-Route::group([
-    'middleware' => ['web', 'auth', 'admin'],
-    'prefix' => 'admin/blog',
-], function () {
-    Route::get('/posts', [PostController::class, 'index'])
-        ->name('admin.posts.index');
+/*
+|--------------------------------------------------------------------------
+| Blog 模块的 Admin 路由
+|--------------------------------------------------------------------------
+|
+| 在这里注册 Blog 模块的 Admin 路由
+| 这些路由会自动应用 admin 中间件组
+| 路由前缀: blog/admin（根据 config/modules.php 配置）
+| 路由名称前缀: admin.blog.（根据 config/modules.php 配置）
+| 控制器命名空间: Modules\Blog\Http\Controllers\Admin
+|
+| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 如需修改，请通过 modules.php 配置控制是否添加前缀。
+*/
 
-    Route::get('/posts/{id}', [PostController::class, 'show'])
-        ->name('admin.posts.show');
+Route::prefix('blog/admin')
+    ->name('admin.blog.')
+    ->group(function () {
+        Route::get('', [Admin\BlogController::class, 'index'])->name('list');
+        // Route::get('{id}', [Admin\BlogController::class, 'show'])->name('show');
+        // Route::post('', [Admin\BlogController::class, 'store'])->name('store');
+        // Route::put('{id}', [Admin\BlogController::class, 'update'])->name('update');
+        // Route::delete('{id}', [Admin\BlogController::class, 'destroy'])->name('destroy');
 
-    Route::get('/posts/{id}/edit', [PostController::class, 'edit'])
-        ->name('admin.posts.edit');
+        // OR 资源路由
+        // Route::resource('blog', Admin\BlogController::class)->names('admin.blog');
+    });
+```
 
-    Route::put('/posts/{id}', [PostController::class, 'update'])
-        ->name('admin.posts.update');
+### 基本用法
 
-    Route::delete('/posts/{id}', [PostController::class, 'destroy'])
-        ->name('admin.posts.destroy');
-});
+编辑 `Modules/Blog/Routes/admin.php`：
+
+```php
+Route::prefix('blog/admin')
+    ->name('admin.blog.')
+    ->group(function () {
+        Route::get('/posts', [Admin\PostController::class, 'index'])
+            ->name('posts.index');
+
+        Route::get('/posts/{id}', [Admin\PostController::class, 'show'])
+            ->name('posts.show');
+
+        Route::get('/posts/{id}/edit', [Admin\PostController::class, 'edit'])
+            ->name('posts.edit');
+
+        Route::put('/posts/{id}', [Admin\PostController::class, 'update'])
+            ->name('posts.update');
+
+        Route::delete('/posts/{id}', [Admin\PostController::class, 'destroy'])
+            ->name('posts.destroy');
+    });
 ```
 
 ## 路由 Helper 函数

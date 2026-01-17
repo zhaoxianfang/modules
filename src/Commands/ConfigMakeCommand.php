@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use zxf\Modules\Facades\Module;
+use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建配置文件命令
@@ -54,13 +55,26 @@ class ConfigMakeCommand extends Command
 
         if (File::exists($configPath) && ! $force) {
             $this->error("Config file [{$configName}] already exists in module [{$moduleName}].");
+            $this->line("Use --force flag to overwrite the existing config file.");
 
             return Command::FAILURE;
         }
 
-        $content = "<?php\n\nreturn [\n    /*\n    |--------------------------------------------------------------------------\n    | {$configName} 配置\n    |--------------------------------------------------------------------------\n    |\n    | {$configName} 模块的配置选项\n    |\n    */\n    'enable' => true,\n\n    /*\n    |--------------------------------------------------------------------------\n    | 自定义配置\n    |--------------------------------------------------------------------------\n    |\n    | 在这里添加模块的自定义配置\n    |\n    */\n    'options' => [\n        // 'key' => 'value',\n    ],\n];\n";
+        if (File::exists($configPath) && $force) {
+            $this->warn("Overwriting existing config file [{$configName}] in module [{$moduleName}].");
+        }
 
-        $result = File::put($configPath, $content);
+        // 使用 StubGenerator 生成配置文件
+        $stubGenerator = new StubGenerator($moduleName);
+        $stubGenerator->addReplacement('{{NAME}}', $configName);
+        $stubGenerator->addReplacement('{{LOWER_NAME}}', strtolower($configName));
+        $stubGenerator->addReplacement('{{MODULE_NAME}}', $moduleName);
+
+        $result = $stubGenerator->generate(
+            'config.stub',
+            'Config/' . $configName . '.php',
+            $force
+        );
 
         if ($result) {
             $this->info("Config file [{$configName}] created successfully in module [{$moduleName}].");
