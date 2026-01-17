@@ -1,6 +1,4 @@
-# Helper 函数文档
-
-## 概述
+# Helper 函数详解
 
 `helper.php` 提供了丰富的助手函数，用于简化模块操作。大部分函数支持无参调用，会自动检测当前所在模块。
 
@@ -17,14 +15,23 @@ $moduleName = module_name(); // 'Blog'
 
 **特性**：
 - 自动检测当前代码所在模块
-- 支持缓存，避免重复计算
+- 不使用缓存，每次都精确检测
 - 跨控制器、模型、中间件等都可用
+
+**返回值**：
+- 成功：返回模块名称（StudlyCase）
+- 失败：返回 `null`
+
+**注意事项**：
+- 在模块外部调用会返回 `null`
+- 需要确保文件在模块目录下
+- 调用栈深度限制为 20 层
 
 ### module_config()
 
 获取模块配置值，支持两种用法：
 
-#### 用法1：智能方式（推荐）
+#### 用法 1：智能方式（推荐）
 
 在模块内部使用，无需传递模块名，自动读取当前模块的配置文件。
 
@@ -43,7 +50,7 @@ $timeout = module_config('api.timeout', 30);
 - `common.name` - `common` 是配置文件名，`name` 是配置键
 - `settings.cache.enabled` - 支持无限嵌套
 
-#### 用法2：传统方式
+#### 用法 2：传统方式
 
 ```php
 $value = module_config('Blog', 'common.name', 'default');
@@ -51,8 +58,8 @@ $value = module_config('Blog', 'common.name', 'default');
 
 **特性**：
 - 支持嵌套配置读取
-- 自动缓存配置文件，避免重复读取
-- 当前模块自动检测
+- 自动检测当前模块
+- 配置不存在时返回默认值
 
 ### module_path()
 
@@ -64,7 +71,14 @@ $path = module_path('Blog', 'Models/Post.php');
 
 // 使用当前模块
 $path = module_path(null, 'Config/common.php');
+
+// 自动检测当前模块
+$path = module_path('Models/Post.php');
 ```
+
+**返回值**：
+- 成功：返回模块路径的完整绝对路径
+- 失败：抛出 `RuntimeException`
 
 ### module_enabled()
 
@@ -82,9 +96,9 @@ if (module_enabled('Blog')) {
 }
 ```
 
-**特性**：
-- 自动缓存结果，提高性能
-- 支持当前模块自动检测
+**返回值**：
+- 启用：`true`
+- 未启用或模块不存在：`false`
 
 ### module_exists()
 
@@ -95,6 +109,10 @@ if (module_exists('Blog')) {
     // Blog 模块存在
 }
 ```
+
+**返回值**：
+- 存在：`true`
+- 不存在：`false`
 
 ## 路由相关函数
 
@@ -110,8 +128,13 @@ $url = module_route('Blog', 'posts.index');
 $url = module_route('Blog', 'posts.show', ['id' => 1]);
 
 // 使用当前模块
-$url = module_route(null, 'posts.index');
+$url = module_route('posts.index');
 ```
+
+**参数**：
+- `$module`：模块名称（可选，不传则使用当前模块）
+- `$route`：路由名称
+- `$params`：路由参数（可选）
 
 ### module_route_path()
 
@@ -120,6 +143,9 @@ $url = module_route(null, 'posts.index');
 ```php
 $prefix = module_route_path('Blog', 'posts.index'); // 'blog.posts.index'
 $prefix = module_route_path('Blog', ''); // 'blog.'
+
+// 使用当前模块
+$prefix = module_route_path('posts.index'); // 'blog.posts.index'
 ```
 
 ### module_url()
@@ -129,6 +155,9 @@ $prefix = module_route_path('Blog', ''); // 'blog.'
 ```php
 $url = module_url('Blog', 'posts/1'); // 'http://example.com/blog/posts/1'
 $url = module_url(null, 'posts/1'); // 使用当前模块
+
+// 自动检测当前模块
+$url = module_url('posts/1');
 ```
 
 ### current_module()
@@ -139,6 +168,10 @@ $url = module_url(null, 'posts/1'); // 使用当前模块
 // 访问 /blog/posts 时
 $moduleName = current_module(); // 'Blog'
 ```
+
+**返回值**：
+- 成功：返回模块名称（StudlyCase）
+- 失败：返回 `null`
 
 ## 视图相关函数
 
@@ -151,7 +184,7 @@ $moduleName = current_module(); // 'Blog'
 return module_view('Blog', 'post.index', ['posts' => $posts]);
 
 // 使用当前模块
-return module_view(null, 'post.index', compact('posts'));
+return module_view('post.index', compact('posts'));
 
 // 视图命名空间格式：blog::post.index
 ```
@@ -165,7 +198,7 @@ if (module_has_view('Blog', 'post.index')) {
     // 视图存在
 }
 
-if (module_has_view(null, 'post.index')) {
+if (module_has_view('post.index')) {
     // 当前模块的视图存在
 }
 ```
@@ -176,7 +209,7 @@ if (module_has_view(null, 'post.index')) {
 
 ```php
 $path = module_view_path('Blog', 'post.index'); // 'blog::post.index'
-$path = module_view_path(null, 'post.index'); // 使用当前模块
+$path = module_view_path('post.index'); // 使用当前模块
 ```
 
 ### module_views_path()
@@ -196,7 +229,7 @@ $path = module_views_path(); // 使用当前模块
 
 ```php
 // 检查当前模块的配置项
-if (module_has_config(null, 'common', 'name')) {
+if (module_has_config('common', 'name')) {
     // 配置项存在
 }
 
@@ -212,7 +245,7 @@ if (module_has_config('Blog', 'common')) {
 
 ```php
 $path = module_config_path('Blog', 'common.php');
-$path = module_config_path(null, 'common.php'); // 使用当前模块
+$path = module_config_path('common.php'); // 使用当前模块
 ```
 
 ### module_config_files()
@@ -234,7 +267,7 @@ $files = module_config_files(); // 使用当前模块
 $config = module_get_config('Blog', 'common');
 // ['name' => 'Blog', 'version' => '1.0.0', ...]
 
-$config = module_get_config(null, 'settings'); // 使用当前模块
+$config = module_get_config('settings'); // 使用当前模块
 ```
 
 ### module_set_config()
@@ -243,7 +276,7 @@ $config = module_get_config(null, 'settings'); // 使用当前模块
 
 ```php
 module_set_config('Blog', 'common', 'name', 'New Name');
-module_set_config(null, 'settings', 'cache', true); // 使用当前模块
+module_set_config('settings', 'cache', true); // 使用当前模块
 ```
 
 **注意**：仅在当前请求有效，不会持久化到文件。
@@ -267,7 +300,7 @@ $namespace = module_namespace(); // 当前模块命名空间
 $className = module_class('Blog', 'Http\Controllers\PostController');
 // 'Modules\Blog\Http\Controllers\PostController'
 
-$className = module_class(null, 'Models\Post'); // 使用当前模块
+$className = module_class('Models\Post'); // 使用当前模块
 ```
 
 ## 资源相关函数
@@ -280,7 +313,7 @@ $className = module_class(null, 'Models\Post'); // 使用当前模块
 $url = module_asset('Blog', 'css/style.css');
 // 'http://example.com/modules/blog/css/style.css'
 
-$url = module_asset(null, 'js/app.js'); // 使用当前模块
+$url = module_asset('js/app.js'); // 使用当前模块
 ```
 
 ### module_lang()
@@ -291,10 +324,10 @@ $url = module_asset(null, 'js/app.js'); // 使用当前模块
 $message = module_lang('Blog', 'messages.welcome');
 // trans('blog::messages.welcome')
 
-$message = module_lang(null, 'messages.welcome'); // 使用当前模块
+$message = module_lang('messages.welcome'); // 使用当前模块
 
 // 带替换参数
-$message = module_lang('Blog', 'messages.greeting', ['name' => 'John']);
+$message = module_lang('messages.greeting', ['name' => 'John']);
 ```
 
 ### module_trans_path()
@@ -314,7 +347,7 @@ $path = module_trans_path(); // 使用当前模块
 
 ```php
 $path = module_routes_path('Blog', 'web'); // '.../Blog/Routes/web.php'
-$path = module_routes_path(null, 'api'); // 使用当前模块
+$path = module_routes_path('api'); // 使用当前模块
 ```
 
 ### module_route_files()
@@ -346,7 +379,7 @@ if (module_has_migration('Blog', 'create_posts_table')) {
     // 迁移文件存在
 }
 
-if (module_has_migration(null, 'create_users_table')) {
+if (module_has_migration('create_posts_table')) {
     // 当前模块的迁移文件存在
 }
 ```
@@ -379,7 +412,7 @@ $path = module_models_path(); // 使用当前模块
 $path = module_controllers_path('Blog', 'Web');
 // '.../Blog/Http/Controllers/Web'
 
-$path = module_controllers_path(null, 'Api'); // 使用当前模块
+$path = module_controllers_path('Api'); // 使用当前模块
 ```
 
 ## 模块管理函数
@@ -423,8 +456,8 @@ foreach ($enabled as $module) {
 ```
 
 **特性**：
-- 自动缓存结果
-- 性能优化
+- 不使用缓存，每次都精确查询
+- 保证返回最新的模块状态
 
 ### module_disabled_modules()
 
@@ -436,10 +469,6 @@ foreach ($disabled as $module) {
     echo $module->getName();
 }
 ```
-
-**特性**：
-- 自动缓存结果
-- 性能优化
 
 ## 代码生成函数
 
@@ -472,23 +501,23 @@ class PostController extends Controller
     {
         // 获取当前模块
         $moduleName = module_name(); // 'Blog'
-        
+
         // 读取配置
         $perPage = module_config('settings.items_per_page', 10);
         $cacheEnabled = module_config('settings.cache.enabled', false);
-        
+
         // 获取数据
         $posts = Post::paginate($perPage);
-        
+
         // 返回视图
-        return module_view(null, 'post.index', compact('posts'));
+        return module_view('post.index', compact('posts'));
     }
-    
+
     public function show($id)
     {
         $post = Post::findOrFail($id);
-        
-        return module_view(null, 'post.show', compact('post'));
+
+        return module_view('post.show', compact('post'));
     }
 }
 ```
@@ -503,11 +532,25 @@ use Illuminate\Database\Eloquent\Model;
 class Post extends Model
 {
     protected $fillable = ['title', 'content'];
-    
-    public function scopeActive($query)
+
+    protected static function boot()
     {
+        parent::boot();
+
         // 使用当前模块的配置
-        $status = module_config('settings.default_status', 'published');
+        $defaultStatus = module_config('settings.default_status', 'draft');
+
+        static::creating(function ($post) use ($defaultStatus) {
+            if (empty($post->status)) {
+                $post->status = $defaultStatus;
+            }
+        });
+    }
+
+    public function scopePublished($query)
+    {
+        // 使用当前模块配置
+        $status = module_config('settings.published_status', 'published');
         return $query->where('status', $status);
     }
 }
@@ -519,23 +562,24 @@ class Post extends Model
 namespace Modules\Blog\Http\Middleware;
 
 use Closure;
+use Illuminate\Http\Request;
 
 class CheckModuleStatus
 {
-    public function handle($request, Closure $next)
+    public function handle(Request $request, Closure $next)
     {
         // 检查当前模块是否启用
         if (! module_enabled()) {
             abort(404);
         }
-        
+
         // 读取配置
         $maintenance = module_config('maintenance.enabled', false);
-        
+
         if ($maintenance) {
             return response('系统维护中', 503);
         }
-        
+
         return $next($request);
     }
 }
@@ -551,90 +595,130 @@ use Illuminate\Console\Command;
 class ClearCacheCommand extends Command
 {
     protected $signature = 'blog:cache:clear';
-    
+
     public function handle()
     {
         $this->info('正在清理 ' . module_name() . ' 模块缓存...');
-        
+
         // 获取配置
-        $cacheKeys = module_get_config(null, 'cache_keys');
-        
+        $cacheKeys = module_get_config('cache_keys');
+
         foreach ($cacheKeys as $key) {
             cache()->forget($key);
             $this->info("已清理: {$key}");
         }
-        
+
         $this->info('缓存清理完成！');
     }
 }
+```
 
 ### 在视图中使用
 
 ```blade
-<!-- 在 Blog 模块视图中 -->
+{{-- 在 Blog 模块视图中 --}}
 
 {{-- 获取模块配置 --}}
 <h1>{{ module_config('common.title', 'Blog') }}</h1>
 
 {{-- 生成资源链接 --}}
-<link rel="stylesheet" href="{{ module_asset(null, 'css/style.css') }}">
+<link rel="stylesheet" href="{{ module_asset('css/style.css') }}">
 
 {{-- 翻译 --}}
-<h2>{{ module_lang(null, 'messages.welcome') }}</h2>
+<h2>{{ module_lang('messages.welcome') }}</h2>
 
 {{-- 路由链接 --}}
-<a href="{{ module_route(null, 'posts.index') }}">文章列表</a>
+<a href="{{ module_route('posts.index') }}">文章列表</a>
 ```
-
-## 性能优化建议
-
-1. **使用缓存**：所有涉及 Repository 查询的函数都使用了静态缓存
-2. **避免重复检测**：`module_name()` 使用容器缓存，同一请求只计算一次
-3. **配置缓存**：`module_config()` 缓存配置文件，避免重复读取
-4. **优先使用当前模块**：无参调用会自动检测当前模块，无需手动传递
 
 ## 最佳实践
 
-1. **在模块内部优先使用无参调用**
+### 1. 在模块内部优先使用无参调用
+
+```php
+// ✅ 推荐
+module_config('common.name', 'default');
+
+// ❌ 不推荐
+module_config('Blog', 'common.name', 'default');
+```
+
+### 2. 使用配置的完整路径
+
+```php
+// ✅ 推荐
+module_config('settings.cache.enabled', false);
+
+// ❌ 不推荐
+module_get_config('settings')['cache']['enabled'];
+```
+
+### 3. 善用 helper 函数简化代码
+
+```php
+// ✅ 简洁
+return module_view('post.index', compact('posts'));
+
+// ❌ 繁琐
+return view('blog::post.index', ['posts' => $posts]);
+```
+
+### 4. 检查配置是否存在
+
+```php
+if (module_has_config('common', 'name')) {
+    $name = module_config('common.name', 'default');
+}
+```
+
+## 性能说明
+
+### 不使用缓存的原因
+
+为了确保数据的准确性和一致性，核心函数不使用缓存：
+
+1. **module_name()**
+   - 每次都通过调用栈精确检测
+   - 避免缓存错误
+   - 保证准确性
+
+2. **module_config()**
+   - 每次都读取配置
+   - 支持运行时配置变更
+   - 保证实时性
+
+### 性能优化建议
+
+1. **合并配置读取**
    ```php
-   // 推荐
-   module_config('common.name', 'default');
-   
-   // 不推荐
-   module_config('Blog', 'common.name', 'default');
+   // ✅ 推荐：一次读取多次使用
+   $config = module_get_config('settings');
+   $perPage = $config['per_page'];
+   $cache = $config['cache'];
+
+   // ❌ 不推荐：多次读取
+   $perPage = module_config('settings.per_page');
+   $cache = module_config('settings.cache');
    ```
 
-2. **使用配置的完整路径**
-   ```php
-   // 推荐使用配置文件路径格式
-   module_config('settings.cache.enabled', false);
-   
-   // 而不是分别调用
-   module_get_config(null, 'settings')['cache']['enabled'];
+2. **使用 Laravel 配置缓存**
+   ```bash
+   php artisan config:cache
    ```
 
-3. **善用 helper 函数简化代码**
+3. **在应用层面缓存**
    ```php
-   // 简洁
-   return module_view(null, 'post.index', compact('posts'));
-   
-   // 繁琐
-   return view('blog::post.index', ['posts' => $posts]);
-   ```
-
-4. **检查配置是否存在**
-   ```php
-   if (module_has_config(null, 'common', 'name')) {
-       $name = module_config('common.name', 'default');
-   }
+   $cachedData = cache('module.blog.config', function () {
+       return module_get_config('settings');
+   }, 3600);
    ```
 
 ## 注意事项
 
 1. **当前模块检测**：在模块外部调用 `module_name()` 会返回 `null`
-2. **配置运行时修改**：`module_set_config()` 仅在当前请求有效，不会持久化
-3. **缓存生命周期**：静态缓存在单个请求周期内有效
-4. **路径参数**：大部分路径函数不自动创建目录，只返回路径字符串
+2. **配置运行时修改**：`module_set_config()` 仅在当前请求有效
+3. **路径参数**：大部分路径函数不自动创建目录，只返回路径字符串
+4. **异常处理**：所有函数都有异常处理，不会导致应用崩溃
 
 ## 完整函数列表
 
@@ -675,3 +759,10 @@ class ClearCacheCommand extends Command
 | `module_all_migrations()` | 获取所有迁移文件 | ✅ |
 | `module_enabled_modules()` | 获取所有已启用模块 | ✅ |
 | `module_disabled_modules()` | 获取所有已禁用模块 | ✅ |
+
+## 相关文档
+
+- [智能模块检测](06-intelligent-detection.md) - 深入了解自动检测机制
+- [配置详解](04-configuration.md) - 学习配置的更多细节
+- [路由指南](07-routes.md) - 了解路由相关函数的使用
+- [视图使用](08-views.md) - 学习视图相关函数的使用

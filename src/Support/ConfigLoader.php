@@ -10,6 +10,11 @@ use Illuminate\Support\Str;
  *
  * 负责加载和管理模块配置文件
  * 支持动态加载当前模块配置文件
+ *
+ * PHP 8.2+ 优化：
+ * - 简化的配置加载逻辑
+ * - 改进的缓存机制
+ * - 更好的类型声明
  */
 class ConfigLoader
 {
@@ -22,8 +27,7 @@ class ConfigLoader
      */
     public static function load(string $moduleName, string $configFile): array
     {
-        $modulePath = config('modules.path', base_path('Modules'));
-        $configPath = $modulePath . DIRECTORY_SEPARATOR . $moduleName . DIRECTORY_SEPARATOR . 'Config' . DIRECTORY_SEPARATOR . $configFile . '.php';
+        $configPath = self::getFilePath($moduleName, $configFile);
 
         if (! file_exists($configPath)) {
             return [];
@@ -46,11 +50,7 @@ class ConfigLoader
     {
         $moduleName = self::detectCurrentModule();
 
-        if (! $moduleName) {
-            return [];
-        }
-
-        return self::load($moduleName, $configFile);
+        return $moduleName ? self::load($moduleName, $configFile) : [];
     }
 
     /**
@@ -62,15 +62,11 @@ class ConfigLoader
      * @param mixed $default 默认值
      * @return mixed
      */
-    public static function get(string $moduleName, string $configFile, string $key, $default = null)
+    public static function get(string $moduleName, string $configFile, string $key, mixed $default = null): mixed
     {
         $config = self::load($moduleName, $configFile);
 
-        if (isset($config[$key])) {
-            return $config[$key];
-        }
-
-        return $default;
+        return $config[$key] ?? $default;
     }
 
     /**
@@ -83,15 +79,11 @@ class ConfigLoader
      * @param mixed $default 默认值
      * @return mixed
      */
-    public static function getCurrent(string $configFile, string $key, $default = null)
+    public static function getCurrent(string $configFile, string $key, mixed $default = null): mixed
     {
         $config = self::loadCurrent($configFile);
 
-        if (isset($config[$key])) {
-            return $config[$key];
-        }
-
-        return $default;
+        return $config[$key] ?? $default;
     }
 
     /**
@@ -104,9 +96,7 @@ class ConfigLoader
      */
     public static function has(string $moduleName, string $configFile, string $key): bool
     {
-        $config = self::load($moduleName, $configFile);
-
-        return isset($config[$key]);
+        return array_key_exists($key, self::load($moduleName, $configFile));
     }
 
     /**
@@ -118,9 +108,7 @@ class ConfigLoader
      */
     public static function hasCurrent(string $configFile, string $key): bool
     {
-        $config = self::loadCurrent($configFile);
-
-        return isset($config[$key]);
+        return array_key_exists($key, self::loadCurrent($configFile));
     }
 
     /**
@@ -136,75 +124,92 @@ class ConfigLoader
     }
 
     /**
+     * 获取模块配置文件路径
+     *
+     * @param string $moduleName 模块名称
+     * @param string $configFile 配置文件名
+     * @return string
+     */
+    protected static function getFilePath(string $moduleName, string $configFile): string
+    {
+        $modulePath = config('modules.path', base_path('Modules'));
+
+        return $modulePath
+            . DIRECTORY_SEPARATOR
+            . $moduleName
+            . DIRECTORY_SEPARATOR
+            . 'Config'
+            . DIRECTORY_SEPARATOR
+            . $configFile
+            . '.php';
+    }
+
+    /**
      * 检测当前模块
      *
      * 通过调用栈自动检测当前代码所在的模块
+     * PHP 8.2+ 优化：简化的检测逻辑
      *
      * @return string|null
      */
     protected static function detectCurrentModule(): ?string
     {
-        $modulePath = config('modules.path', base_path('Modules'));
-        $modulePath = str_replace(base_path() . DIRECTORY_SEPARATOR, '', $modulePath);
+        static $cachedResult = null;
+
+        if ($cachedResult !== null) {
+            return $cachedResult;
+        }
+
+        $modulePath = strtr(config('modules.path', base_path('Modules')), ['\\' => '/']);
 
         $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 10);
 
         foreach ($backtrace as $trace) {
-            if (! isset($trace['file']) || ! is_string($trace['file'])) {
+            $filePath = $trace['file'] ?? null;
+
+            if (! $filePath || ! str_starts_with($filePath, $modulePath . '/')) {
                 continue;
             }
 
-            $filePath = $trace['file'];
+            // 标准化路径并提取模块名
+            $filePath = strtr($filePath, ['\\' => '/']);
+            $relativePath = substr($filePath, strlen($modulePath) + 1);
+            $moduleName = explode('/', $relativePath, 2)[0] ?? '';
 
-            if (strpos($filePath, $modulePath) !== false) {
-                $pattern = '/' . preg_quote($modulePath, '/') . preg_quote(DIRECTORY_SEPARATOR, '/') . '([^' . preg_quote(DIRECTORY_SEPARATOR, '/') . ']+)/';
-                if (preg_match($pattern, $filePath, $matches)) {
-                    return $matches[1];
-                }
+            if ($moduleName) {
+                $cachedResult = $moduleName;
+                return $moduleName;
             }
         }
 
+        $cachedResult = null;
         return null;
     }
 
     /**
-     * 获取模块配置文件路径
-     *
-     * @param string $moduleName 模块名称
-     * @param string $configFile 配置文件名
-     * @return string|null
-     */
-    public static function getConfigPath(string $moduleName, string $configFile): ?string
-    {
-        $modulePath = config('modules.path', base_path('Modules'));
-        $configPath = $modulePath . DIRECTORY_SEPARATOR . $moduleName . DIRECTORY_SEPARATOR . 'Config' . DIRECTORY_SEPARATOR . $configFile . '.php';
-
-        return file_exists($configPath) ? $configPath : null;
-    }
-
-    /**
      * 获取模块所有配置文件
+     *
+     * PHP 8.2+ 优化：使用 array_map
      *
      * @param string $moduleName 模块名称
      * @return array
      */
     public static function getConfigFiles(string $moduleName): array
     {
-        $modulePath = config('modules.path', base_path('Modules'));
-        $configDir = $modulePath . DIRECTORY_SEPARATOR . $moduleName . DIRECTORY_SEPARATOR . 'Config';
+        $configDir = config('modules.path', base_path('Modules'))
+            . DIRECTORY_SEPARATOR
+            . $moduleName
+            . DIRECTORY_SEPARATOR
+            . 'Config';
 
         if (! is_dir($configDir)) {
             return [];
         }
 
-        $files = File::glob($configDir . DIRECTORY_SEPARATOR . '*.php');
-        $configFiles = [];
-
-        foreach ($files as $file) {
-            $configFiles[] = pathinfo($file, PATHINFO_FILENAME);
-        }
-
-        return $configFiles;
+        return array_map(
+            fn($file) => pathinfo($file, PATHINFO_FILENAME),
+            File::glob($configDir . DIRECTORY_SEPARATOR . '*.php')
+        );
     }
 
     /**
@@ -217,8 +222,11 @@ class ConfigLoader
      */
     public static function save(string $moduleName, string $configFile, array $config): bool
     {
-        $modulePath = config('modules.path', base_path('Modules'));
-        $configDir = $modulePath . DIRECTORY_SEPARATOR . $moduleName . DIRECTORY_SEPARATOR . 'Config';
+        $configDir = config('modules.path', base_path('Modules'))
+            . DIRECTORY_SEPARATOR
+            . $moduleName
+            . DIRECTORY_SEPARATOR
+            . 'Config';
 
         // 确保配置目录存在
         if (! is_dir($configDir)) {
@@ -226,8 +234,6 @@ class ConfigLoader
         }
 
         $configPath = $configDir . DIRECTORY_SEPARATOR . $configFile . '.php';
-
-        // 生成配置文件内容
         $content = "<?php\n\nreturn " . var_export($config, true) . ";\n";
 
         return File::put($configPath, $content) !== false;
