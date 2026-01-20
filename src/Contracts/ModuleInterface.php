@@ -140,4 +140,11 @@ interface ModuleInterface
      * @return array
      */
     public function getModuleConfig(): array;
+
+    /**
+     * 获取模块类命名空间
+     *
+     * @return string
+     */
+    public function getClassNamespace(): string;
 }

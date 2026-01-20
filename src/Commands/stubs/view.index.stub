@@ -1,0 +1,32 @@
+@extends('{{LOWER_NAME}}::layouts.app')
+
+@section('title', '{{NAME}} 模块 - 列表')
+
+@section('content')
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div class="px-4 py-5 sm:px-6">
+            <h1 class="text-2xl font-bold text-gray-900">{{NAME}} 模块</h1>
+            <p class="mt-1 text-sm text-gray-500">欢迎使用 {{NAME}} 模块列表页</p>
+        </div>
+
+        <div class="border-t border-gray-200">
+            <div class="p-6">
+                {{-- 列表内容 --}}
+                <div class="text-center py-12">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                    </svg>
+                    <h3 class="mt-2 text-sm font-medium text-gray-900">暂无数据</h3>
+                    <p class="mt-1 text-sm text-gray-500">开始添加您的第一条记录</p>
+                    <div class="mt-6">
+                        <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
+                            添加记录
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+@endsection

@@ -1,0 +1,96 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Policies;
+
+use {{NAMESPACE}}\{{NAME}}\Models\{{NAME}};
+use App\Models\User;
+
+/**
+ * {{CLASS}} 策略类
+ *
+ * 定义 {{NAME}} 模型的访问权限策略
+ */
+class {{CLASS}}
+{
+    /**
+     * 确定用户是否可以查看模型列表
+     *
+     * @param  User  $user 当前用户
+     * @return bool 是否可以查看
+     */
+    public function viewAny(User $user): bool
+    {
+        return true;
+    }
+
+    /**
+     * 确定用户是否可以查看模型
+     *
+     * @param  User  $user 当前用户
+     * @param  {{NAME}}  $model 模型实例
+     * @return bool 是否可以查看
+     */
+    public function view(User $user, {{NAME}} $model): bool
+    {
+        return true;
+    }
+
+    /**
+     * 确定用户是否可以创建模型
+     *
+     * @param  User  $user 当前用户
+     * @return bool 是否可以创建
+     */
+    public function create(User $user): bool
+    {
+        return true;
+    }
+
+    /**
+     * 确定用户是否可以更新模型
+     *
+     * @param  User  $user 当前用户
+     * @param  {{NAME}}  $model 模型实例
+     * @return bool 是否可以更新
+     */
+    public function update(User $user, {{NAME}} $model): bool
+    {
+        return true;
+    }
+
+    /**
+     * 确定用户是否可以删除模型
+     *
+     * @param  User  $user 当前用户
+     * @param  {{NAME}}  $model 模型实例
+     * @return bool 是否可以删除
+     */
+    public function delete(User $user, {{NAME}} $model): bool
+    {
+        return true;
+    }
+
+    /**
+     * 确定用户是否可以恢复模型（软删除）
+     *
+     * @param  User  $user 当前用户
+     * @param  {{NAME}}  $model 模型实例
+     * @return bool 是否可以恢复
+     */
+    public function restore(User $user, {{NAME}} $model): bool
+    {
+        return true;
+    }
+
+    /**
+     * 确定用户是否可以永久删除模型
+     *
+     * @param  User  $user 当前用户
+     * @param  {{NAME}}  $model 模型实例
+     * @return bool 是否可以永久删除
+     */
+    public function forceDelete(User $user, {{NAME}} $model): bool
+    {
+        return false;
+    }
+}

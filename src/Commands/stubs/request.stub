@@ -4,12 +4,29 @@ namespace {{NAMESPACE}}\{{NAME}}\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
+/**
+ * {{CLASS}} 表单请求验证类
+ *
+ * 用于验证和处理 {{NAME}} 模块的表单请求数据
+ * 自动处理验证失败，返回友好的错误信息
+ */
 class {{CLASS}} extends FormRequest
 {
     /**
      * 确定用户是否有权进行此请求
      *
-     * @return bool
+     * @return bool 是否有权限访问
+     *
+     * @example 示例：检查用户权限
+     * ```php
+     * return auth()->check();
+     * ```
+     *
+     * @example 示例：检查资源所有权
+     * ```php
+     * $item = {{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::find($this->route('id'));
+     * return $item && $item->user_id === auth()->id();
+     * ```
      */
     public function authorize(): bool
     {
@@ -21,40 +38,111 @@ class {{CLASS}} extends FormRequest
     /**
      * 获取验证规则
      *
-     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string>
+     * 定义表单字段的验证规则
+     * 支持所有 Laravel 验证规则
+     *
+     * @return array<string, \Illuminate\Contracts\Validation\ValidationRule|array<mixed>|string> 验证规则数组
+     *
+     * @example 常用验证规则
+     * ```php
+     * return [
+     *     'name' => 'required|string|max:255',
+     *     'email' => 'required|email|unique:users,email',
+     *     'password' => 'required|min:8|confirmed',
+     *     'status' => 'required|in:active,inactive',
+     *     'description' => 'nullable|string|max:1000',
+     *     'avatar' => 'nullable|image|max:2048', // 最大2MB的图片
+     * ];
+     * ```
      */
     public function rules(): array
     {
         return [
+            // 示例：添加您的验证规则
             // 'name' => 'required|string|max:255',
-            // 'email' => 'required|email|unique:users,email',
-            // 'password' => 'required|min:8|confirmed',
+            // 'description' => 'nullable|string|max:1000',
+            // 'status' => 'required|in:active,inactive',
         ];
     }
 
     /**
      * 获取自定义验证错误消息
      *
-     * @return array
+     * 为验证规则提供自定义的错误提示信息
+     *
+     * @return array<string, string> 自定义错误消息
+     *
+     * @example 示例：自定义错误消息
+     * ```php
+     * return [
+     *     'name.required' => '名称不能为空',
+     *     'name.max' => '名称不能超过255个字符',
+     *     'email.required' => '邮箱不能为空',
+     *     'email.email' => '邮箱格式不正确',
+     *     'email.unique' => '该邮箱已被使用',
+     * ];
+     * ```
      */
     public function messages(): array
     {
         return [
+            // 示例：添加您的自定义错误消息
             // 'name.required' => '名称不能为空',
-            // 'email.required' => '邮箱不能为空',
+            // 'name.max' => '名称不能超过255个字符',
         ];
     }
 
     /**
      * 获取自定义属性名称
      *
-     * @return array
+     * 为验证字段提供友好的显示名称
+     *
+     * @return array<string, string> 属性名称映射
+     *
+     * @example 示例：自定义属性名称
+     * ```php
+     * return [
+     *     'name' => '名称',
+     *     'email' => '邮箱地址',
+     *     'password' => '密码',
+     *     'description' => '描述信息',
+     * ];
+     * ```
      */
     public function attributes(): array
     {
         return [
+            // 示例：添加您的自定义属性名称
             // 'name' => '名称',
-            // 'email' => '邮箱',
+            // 'description' => '描述',
         ];
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 自定义验证逻辑
+    |--------------------------------------------------------------------------
+    | 可以添加自定义的验证方法
+    */
+
+    /**
+     * 准备验证数据
+     *
+     * 在验证前对数据进行预处理
+     *
+     * @return void
+     */
+    protected function prepareForValidation(): void
+    {
+        // 示例：去除字符串两端的空格
+        // $this->merge([
+        //     'name' => trim($this->name),
+        //     'description' => trim($this->description),
+        // ]);
+
+        // 示例：转换数据类型
+        // $this->merge([
+        //     'is_active' => (bool) $this->is_active,
+        // ]);
     }
 }

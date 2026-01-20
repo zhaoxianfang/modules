@@ -48,7 +48,7 @@ class ListenerMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -56,14 +56,14 @@ class ListenerMakeCommand extends Command
         $listenerPath = $module->getPath('Listeners/' . $listenerName . '.php');
 
         if (File::exists($listenerPath) && ! $force) {
-            $this->error("Listener [{$listenerName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing listener.");
+            $this->error("模块 [{$moduleName}] 中已存在监听器 [{$listenerName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的监听器");
 
             return Command::FAILURE;
         }
 
         if (File::exists($listenerPath) && $force) {
-            $this->warn("Overwriting existing listener [{$listenerName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的监听器 [{$listenerName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -72,10 +72,12 @@ class ListenerMakeCommand extends Command
         $stubGenerator->addReplacement('{{CLASS}}', $listenerName);
         $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
         $stubGenerator->addReplacement('{{NAME}}', $moduleName);
+        // 添加事件命名空间变量
+        $stubGenerator->addReplacement('{{EVENT_NAMESPACE}}', $namespace . '\\' . $moduleName . '\\Events');
 
         // 如果没有指定事件，使用通用事件类
         if (empty($eventName)) {
-            $eventName = 'GenericEvent';
+            $eventName = $moduleName.'Event';
             // 创建通用事件类
             $eventStub = new StubGenerator($moduleName);
             $eventStub->addReplacement('{{CLASS}}', $eventName);
@@ -108,12 +110,12 @@ class ListenerMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Listener [{$listenerName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建监听器 [{$listenerName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create listener [{$listenerName}].");
+        $this->error("创建监听器 [{$listenerName}] 失败");
 
         return Command::FAILURE;
     }

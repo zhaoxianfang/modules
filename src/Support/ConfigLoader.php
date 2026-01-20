@@ -26,15 +26,22 @@ class ConfigLoader
      */
     public static function load(string $moduleName, string $configFile): array
     {
-        $configPath = self::getFilePath($moduleName, $configFile);
+        try {
+            $configPath = self::getFilePath($moduleName, $configFile);
 
-        if (! file_exists($configPath)) {
+            if (! file_exists($configPath)) {
+                return [];
+            }
+
+            $config = require $configPath;
+
+            return is_array($config) ? $config : [];
+        } catch (\Throwable $e) {
+            logger()->error("加载模块配置失败: {$moduleName}/{$configFile}", [
+                'error' => $e->getMessage(),
+            ]);
             return [];
         }
-
-        $config = require $configPath;
-
-        return is_array($config) ? $config : [];
     }
 
     /**
@@ -221,20 +228,27 @@ class ConfigLoader
      */
     public static function save(string $moduleName, string $configFile, array $config): bool
     {
-        $configDir = config('modules.path', base_path('Modules'))
-            . DIRECTORY_SEPARATOR
-            . $moduleName
-            . DIRECTORY_SEPARATOR
-            . 'Config';
+        try {
+            $configDir = config('modules.path', base_path('Modules'))
+                . DIRECTORY_SEPARATOR
+                . $moduleName
+                . DIRECTORY_SEPARATOR
+                . 'Config';
 
-        // 确保配置目录存在
-        if (! is_dir($configDir)) {
-            File::makeDirectory($configDir, 0755, true);
+            // 确保配置目录存在
+            if (! is_dir($configDir)) {
+                File::makeDirectory($configDir, 0755, true);
+            }
+
+            $configPath = $configDir . DIRECTORY_SEPARATOR . $configFile . '.php';
+            $content = "<?php\n\nreturn " . var_export($config, true) . ";\n";
+
+            return File::put($configPath, $content) !== false;
+        } catch (\Throwable $e) {
+            logger()->error("保存模块配置失败: {$moduleName}/{$configFile}", [
+                'error' => $e->getMessage(),
+            ]);
+            return false;
         }
-
-        $configPath = $configDir . DIRECTORY_SEPARATOR . $configFile . '.php';
-        $content = "<?php\n\nreturn " . var_export($config, true) . ";\n";
-
-        return File::put($configPath, $content) !== false;
     }
 }

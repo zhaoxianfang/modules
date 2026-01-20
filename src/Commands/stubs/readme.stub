@@ -17,9 +17,9 @@
 
 模块路由已自动注册，可以通过以下方式访问:
 
-- Web 路由: `{{LOWER_NAME}}.*`
-- API 路由: `api.{{LOWER_NAME}}.*`
-- Admin 路由: `admin.{{LOWER_NAME}}.*`
+- 路由名称: `{{LOWER_NAME}}.*`（根据实际路由文件命名）
+- 支持自定义路由类型（如web、api、admin、mobile等）
+- 控制器命名空间根据路由类型自动识别（如Web、Api、Admin、Mobile等）
 
 ### 视图
 
@@ -73,6 +73,8 @@ Modules/{{NAME}}/
 ```bash
 php artisan module:make-controller {{NAME}} ControllerName --type=web
 ```
+
+控制器类型支持任意自定义，如：web、api、admin、mobile等
 
 ### 创建模型
 

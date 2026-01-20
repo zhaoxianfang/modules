@@ -46,7 +46,7 @@ class ConfigMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -54,14 +54,14 @@ class ConfigMakeCommand extends Command
         $configPath = $module->getConfigPath() . DIRECTORY_SEPARATOR . $configName . '.php';
 
         if (File::exists($configPath) && ! $force) {
-            $this->error("Config file [{$configName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing config file.");
+            $this->error("模块 [{$moduleName}] 中已存在配置文件 [{$configName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的配置文件");
 
             return Command::FAILURE;
         }
 
         if (File::exists($configPath) && $force) {
-            $this->warn("Overwriting existing config file [{$configName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的配置文件 [{$configName}]");
         }
 
         // 使用 StubGenerator 生成配置文件
@@ -77,12 +77,12 @@ class ConfigMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Config file [{$configName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建配置文件 [{$configName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create config file [{$configName}].");
+        $this->error("创建配置文件 [{$configName}] 失败");
 
         return Command::FAILURE;
     }

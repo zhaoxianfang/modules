@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{NAME}} 模块 - 欢迎</title>
+    <title>{{NAME}} 模块 - 欢迎使用</title>
     <style>
         * {
             margin: 0;
@@ -25,15 +25,15 @@
             background: white;
             border-radius: 16px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 700px;
+            max-width: 600px;
             width: 100%;
-            padding: 40px;
+            padding: 48px;
             text-align: center;
         }
 
         .logo {
-            width: 80px;
-            height: 80px;
+            width: 100px;
+            height: 100px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border-radius: 50%;
             display: flex;
@@ -41,82 +41,71 @@
             justify-content: center;
             margin: 0 auto 24px;
             color: white;
-            font-size: 32px;
+            font-size: 48px;
             font-weight: bold;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
         }
 
         h1 {
             color: #2c3e50;
             margin-bottom: 12px;
-            font-size: 2.5rem;
+            font-size: 2.25rem;
             font-weight: 700;
         }
 
-        p.subtitle {
+        p {
             color: #6c757d;
             font-size: 1.1rem;
             margin-bottom: 32px;
+            line-height: 1.6;
         }
 
-        .info-card {
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
-            padding: 20px;
-            margin: 20px 0;
-            text-align: left;
-            border-radius: 8px;
-        }
-
-        .info-card h3 {
-            color: #2c3e50;
-            margin-bottom: 12px;
-            font-size: 1rem;
-            font-weight: 600;
-        }
-
-        .info-item {
+        .badges {
             display: flex;
-            align-items: center;
-            padding: 8px 0;
-            color: #495057;
-        }
-
-        .info-item label {
-            font-weight: 600;
-            min-width: 100px;
-            color: #6c757d;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 32px;
         }
 
         .badge {
-            display: inline-block;
-            padding: 6px 16px;
-            margin: 4px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 500;
-            transition: transform 0.2s;
+            display: inline-flex;
+            align-items: center;
+            padding: 10px 24px;
+            background: #f8f9fa;
+            color: #495057;
+            border-radius: 25px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: 2px solid #dee2e6;
+            transition: all 0.3s ease;
+            cursor: pointer;
         }
 
         .badge:hover {
-            transform: translateY(-2px);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
         }
 
-        .routes {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 8px;
-            margin: 16px 0;
-        }
-
-        .footer {
+        .info {
             margin-top: 32px;
-            padding-top: 20px;
-            border-top: 1px solid #dee2e6;
-            color: #6c757d;
-            font-size: 0.9rem;
+            padding-top: 24px;
+            border-top: 2px solid #f1f3f5;
+            color: #adb5bd;
+            font-size: 0.875rem;
+        }
+
+        .info a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .info a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
@@ -124,31 +113,19 @@
     <div class="container">
         <div class="logo">{{NAME_FIRST_LETTER}}</div>
         <h1>{{NAME}} 模块</h1>
-        <p class="subtitle">欢迎使用 {{NAME}} 模块！</p>
+        <p>
+            欢迎使用 {{NAME}} 模块！<br>
+            基于 Laravel 11+ 模块化架构构建，开箱即用。
+        </p>
 
-        <div class="info-card">
-            <h3>模块信息</h3>
-            <div class="info-item">
-                <label>版本:</label>
-                <span>1.0.0</span>
-            </div>
-            <div class="info-item">
-                <label>命名空间:</label>
-                <span>{{MODULE_NAMESPACE}}</span>
-            </div>
+        <div class="badges">
+            <a href="/{{LOWER_NAME}}" class="badge">🌐 Web 路由</a>
+            <a href="/api/{{LOWER_NAME}}" class="badge">🚀 API 路由</a>
+            <a href="/{{LOWER_NAME}}/admin" class="badge">⚙️ Admin 路由</a>
         </div>
 
-        <div class="info-card">
-            <h3>可用路由</h3>
-            <div class="routes">
-                <span class="badge">Web: /{{LOWER_NAME}}</span>
-                <span class="badge">API: /api/{{LOWER_NAME}}</span>
-                <span class="badge">Admin: /{{LOWER_NAME}}/admin</span>
-            </div>
-        </div>
-
-        <div class="footer">
-            基于 Laravel 模块化架构构建
+        <div class="info">
+            版本 1.0.0 · {{MODULE_NAMESPACE}} · Laravel 11+
         </div>
     </div>
 </body>

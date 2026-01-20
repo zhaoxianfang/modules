@@ -1,0 +1,61 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Observers;
+
+use {{NAMESPACE}}\{{NAME}}\Models\{{NAME}};
+
+/**
+ * {{CLASS}} 观察者
+ *
+ * 监听 {{NAME}} 模型的生命周期事件
+ */
+class {{CLASS}}
+{
+    /**
+     * 监听模型创建后事件
+     *
+     * @param  {{NAME}}  $model 模型实例
+     * @return void
+     */
+    public function created({{NAME}} $model): void
+    {
+        // 在模型创建后执行的逻辑
+        // \Log::info('Model created', ['id' => $model->id]);
+    }
+
+    /**
+     * 监听模型更新后事件
+     *
+     * @param  {{NAME}}  $model 模型实例
+     * @return void
+     */
+    public function updated({{NAME}} $model): void
+    {
+        // 在模型更新后执行的逻辑
+        // \Log::info('Model updated', ['id' => $model->id]);
+    }
+
+    /**
+     * 监听模型删除后事件
+     *
+     * @param  {{NAME}}  $model 模型实例
+     * @return void
+     */
+    public function deleted({{NAME}} $model): void
+    {
+        // 在模型删除后执行的逻辑
+        // \Log::info('Model deleted', ['id' => $model->id]);
+    }
+
+    /**
+     * 监听模型恢复后事件（软删除）
+     *
+     * @param  {{NAME}}  $model 模型实例
+     * @return void
+     */
+    public function restored({{NAME}} $model): void
+    {
+        // 在模型恢复后执行的逻辑
+        // \Log::info('Model restored', ['id' => $model->id]);
+    }
+}

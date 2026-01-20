@@ -3,7 +3,6 @@
 namespace zxf\Modules;
 
 use Illuminate\Filesystem\Filesystem;
-use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
 
@@ -134,15 +133,27 @@ class Repository implements RepositoryInterface
     /**
      * 扫描并注册所有模块
      *
+     * 自动扫描模块目录并注册所有找到的模块
+     * 使用内部默认的模块路径，不再依赖 scan 配置
+     *
      * @return void
      */
     public function scan(): void
     {
-        $paths = config('modules.scan.paths', []);
-        $namespace = config('modules.namespace', 'Modules');
+        try {
+            // 获取模块根路径（内部默认为 base_path('Modules')）
+            $basePath = config('modules.path', base_path('Modules'));
+            $namespace = config('modules.namespace', 'Modules');
 
-        foreach ($paths as $path) {
-            $this->scanPath($path, $namespace);
+            // 自动扫描模块根路径
+            $this->scanPath($basePath, $namespace);
+        } catch (\Throwable $e) {
+            // 扫描失败时不抛出异常，只是记录日志
+            logger()->error("扫描模块目录失败", [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
         }
     }
 
@@ -155,18 +166,31 @@ class Repository implements RepositoryInterface
      */
     protected function scanPath(string $path, string $namespace): void
     {
-        if (! is_dir($path)) {
-            return;
-        }
+        try {
+            if (! is_dir($path)) {
+                return;
+            }
 
-        $directories = $this->files->directories($path);
+            $directories = $this->files->directories($path);
 
-        foreach ($directories as $directory) {
-            $moduleName = basename($directory);
+            foreach ($directories as $directory) {
+                try {
+                    $moduleName = basename($directory);
 
-            $module = new Module($moduleName, $directory, $namespace);
+                    $module = new Module($moduleName, $directory, $namespace);
 
-            $this->modules[$moduleName] = $module;
+                    $this->modules[$moduleName] = $module;
+                } catch (\Throwable $e) {
+                    // 单个模块加载失败不影响其他模块
+                    logger()->warning("加载模块失败: " . basename($directory), [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            logger()->error("扫描路径失败: {$path}", [
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

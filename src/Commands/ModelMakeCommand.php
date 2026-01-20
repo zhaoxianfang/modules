@@ -50,7 +50,7 @@ class ModelMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -58,14 +58,14 @@ class ModelMakeCommand extends Command
         $modelPath = $module->getPath('Models/' . $modelName . '.php');
 
         if (File::exists($modelPath) && ! $force) {
-            $this->error("Model [{$modelName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing model.");
+            $this->error("模块 [{$moduleName}] 中已存在模型 [{$modelName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的模型");
 
             return Command::FAILURE;
         }
 
         if (File::exists($modelPath) && $force) {
-            $this->warn("Overwriting existing model [{$modelName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的模型 [{$modelName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -86,12 +86,12 @@ class ModelMakeCommand extends Command
         $result = $stubGenerator->generate('model.stub', 'Models/' . $modelName . '.php', $force);
 
         if (! $result) {
-            $this->error("Failed to create model [{$modelName}].");
+            $this->error("创建模型 [{$modelName}] 失败");
 
             return Command::FAILURE;
         }
 
-        $this->info("Model [{$modelName}] created successfully in module [{$moduleName}].");
+        $this->info("成功在模块 [{$moduleName}] 中创建模型 [{$modelName}]");
 
         if ($createMigration) {
             $this->call('module:make-migration', [

@@ -46,7 +46,7 @@ class ProviderMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -54,14 +54,14 @@ class ProviderMakeCommand extends Command
         $providerPath = $module->getPath('Providers/' . $providerName . '.php');
 
         if (File::exists($providerPath) && ! $force) {
-            $this->error("Provider [{$providerName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing provider.");
+            $this->error("模块 [{$moduleName}] 中已存在服务提供者 [{$providerName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的服务提供者");
 
             return Command::FAILURE;
         }
 
         if (File::exists($providerPath) && $force) {
-            $this->warn("Overwriting existing provider [{$providerName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的服务提供者 [{$providerName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -84,12 +84,12 @@ class ProviderMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Provider [{$providerName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建服务提供者 [{$providerName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create provider [{$providerName}].");
+        $this->error("创建服务提供者 [{$providerName}] 失败");
 
         return Command::FAILURE;
     }

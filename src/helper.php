@@ -1,7 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\App;
+use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
+use zxf\Modules\Support\StubGenerator;
 
 /**
  * ============================================================================

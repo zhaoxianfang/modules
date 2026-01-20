@@ -4,75 +4,82 @@ namespace {{NAMESPACE}}\{{NAME}}\Providers;
 
 use Illuminate\Support\ServiceProvider;
 
+/**
+ * {{NAME}} 模块服务提供者
+ *
+ * 本服务提供者采用 Laravel 11+ 最佳实践
+ * 所有自动发现功能（配置、路由、视图、迁移、命令、事件等）均由 ModuleAutoDiscovery 自动处理
+ * 开发者只需在此处编写自定义的业务逻辑和功能扩展
+ */
 class {{NAME}}ServiceProvider extends ServiceProvider
 {
     /**
-     * Register services.
+     * 注册服务
+     *
+     * 在 boot() 方法之前调用
+     * 用于绑定服务到服务容器
+     *
+     * 常用场景：
+     * - 注册单例服务
+     * - 注册接口实现
+     * - 注册门面（Facade）
      *
      * @return void
      */
     public function register(): void
     {
-        // 合并模块配置文件到全局配置
-        // 配置键格式为 模块名.配置文件名（全小写）
-        $this->mergeConfigFrom(
-            __DIR__ . '/../Config/{{LOWER_NAME}}.php',
-            '{{LOWER_NAME}}'
-        );
+        // === 开发者自定义服务注册区域 ===
+
+        // 示例：注册单例服务
+        // $this->app->singleton(YourService::class, function ($app) {
+        //     return new YourService();
+        // });
+
+        // 示例：注册接口实现
+        // $this->app->bind(InterfaceName::class, ImplementationClass::class);
     }
 
     /**
-     * Bootstrap services.
+     * 引导服务
+     *
+     * 在 register() 方法之后调用
+     * 用于注册事件监听器、路由、视图等
+     *
+     * 自动发现功能：
+     * 所有自动发现逻辑已由 ModuleAutoDiscovery 统一处理，包括：
+     * - 配置文件（Config/ 目录）
+     * - 路由文件（Routes/ 目录）
+     * - 视图文件（Resources/views/ 目录）
+     * - 迁移文件（Database/Migrations/ 目录）
+     * - Artisan 命令（Console/Commands/ 目录）
+     * - 翻译文件（Resources/lang/ 目录）
+     * - 事件和监听器（Events/ 和 Listeners/ 目录）
+     * - 中间件（Http/Middleware/ 目录）
+     * - 观察者（Observers/ 目录）
+     * - 策略类（Policies/ 目录）
+     * - 仓库类（Repositories/ 目录）
+     *
+     * 注意：ModuleAutoDiscovery 会在模块加载时自动执行所有发现任务，
+     * 无需在此手动调用 ModuleAutoDiscovery::discoverModule()
      *
      * @return void
      */
     public function boot(): void
     {
-        // 加载路由文件
-        if (file_exists(__DIR__ . '/../Routes/web.php')) {
-            $this->loadRoutesFrom(__DIR__ . '/../Routes/web.php');
-        }
-        if (file_exists(__DIR__ . '/../Routes/api.php')) {
-            $this->loadRoutesFrom(__DIR__ . '/../Routes/api.php');
-        }
-        if (file_exists(__DIR__ . '/../Routes/admin.php')) {
-            $this->loadRoutesFrom(__DIR__ . '/../Routes/admin.php');
-        }
+        // === 开发者自定义功能区域 ===
 
-        // 加载视图文件
-        if (is_dir(__DIR__ . '/../Resources/views')) {
-            $this->loadViewsFrom(__DIR__ . '/../Resources/views', '{{LOWER_NAME}}');
-        }
+        // 示例：发布资源（可选）
+        // if ($this->app->runningInConsole()) {
+        //     $this->publishes([
+        //         __DIR__ . '/../Resources/views' => resource_path('views/vendor/{{LOWER_NAME}}'),
+        //         __DIR__ . '/../Config' => config_path('{{LOWER_NAME}}'),
+        //     ], '{{LOWER_NAME}}');
+        // }
 
-        // 加载迁移文件
-        if (is_dir(__DIR__ . '/../Database/Migrations')) {
-            $this->loadMigrationsFrom(__DIR__ . '/../Database/Migrations');
-        }
+        // 示例：共享数据到所有视图
+        // View::share('globalData', 'Your Global Data');
 
-        // 加载翻译文件
-        if (is_dir(__DIR__ . '/../Resources/lang')) {
-            $this->loadTranslationsFrom(__DIR__ . '/../Resources/lang', '{{LOWER_NAME}}');
-        }
-
-        // 发布配置文件
-        if ($this->app->runningInConsole()) {
-            $this->publishes([
-                __DIR__ . '/../Config/{{LOWER_NAME}}.php' => config_path('{{LOWER_NAME}}.php'),
-            ], 'config');
-
-            // 发布视图文件
-            if (is_dir(__DIR__ . '/../Resources/views')) {
-                $this->publishes([
-                    __DIR__ . '/../Resources/views' => resource_path('views/vendor/{{LOWER_NAME}}'),
-                ], 'views');
-            }
-
-            // 发布资源文件
-            if (is_dir(__DIR__ . '/../Resources/assets')) {
-                $this->publishes([
-                    __DIR__ . '/../Resources/assets' => public_path('vendor/{{LOWER_NAME}}'),
-                ], 'assets');
-            }
-        }
+        // 示例：监听自定义事件
+        // Event::listen(YourEvent::class, YourListener::class);
     }
 }

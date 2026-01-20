@@ -37,7 +37,7 @@ class ModuleDeleteCommand extends Command
         $module = Module::find($name);
 
         if (! $module) {
-            $this->error("Module [{$name}] does not exist.");
+            $this->error("模块 [{$name}] 不存在");
 
             return Command::FAILURE;
         }

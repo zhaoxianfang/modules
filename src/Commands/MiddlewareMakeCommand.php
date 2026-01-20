@@ -46,7 +46,7 @@ class MiddlewareMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -54,14 +54,14 @@ class MiddlewareMakeCommand extends Command
         $middlewarePath = $module->getPath('Http/Middleware/' . $middlewareName . '.php');
 
         if (File::exists($middlewarePath) && ! $force) {
-            $this->error("Middleware [{$middlewareName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing middleware.");
+            $this->error("模块 [{$moduleName}] 中已存在中间件 [{$middlewareName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的中间件");
 
             return Command::FAILURE;
         }
 
         if (File::exists($middlewarePath) && $force) {
-            $this->warn("Overwriting existing middleware [{$middlewareName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的中间件 [{$middlewareName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -84,12 +84,12 @@ class MiddlewareMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Middleware [{$middlewareName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建中间件 [{$middlewareName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create middleware [{$middlewareName}].");
+        $this->error("创建中间件 [{$middlewareName}] 失败");
 
         return Command::FAILURE;
     }

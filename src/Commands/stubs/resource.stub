@@ -1,0 +1,83 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+/**
+ * {{CLASS}} 资源类
+ *
+ * 用于将模型数据转换为 JSON 格式
+ * 提供统一的 API 响应格式，支持数据转换和关系加载
+ */
+class {{CLASS}} extends JsonResource
+{
+    /**
+     * 将资源转换为数组
+     *
+     * @param  \Illuminate\Http\Request  $request HTTP 请求对象
+     * @return array<string, mixed> 转换后的数组数据
+     *
+     * @example 基本使用示例
+     * ```php
+     * // 单个资源
+     * return new {{CLASS}}($model);
+     *
+     * // 资源集合
+     * return {{CLASS}}::collection($models);
+     *
+     * // 带分页的资源集合
+     * return {{CLASS}}::collection($models)->additional(['meta' => [...]]);
+     * ```
+     */
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'description' => $this->when(isset($this->description), $this->description),
+            'status' => $this->status,
+            'is_active' => (bool) $this->is_active,
+            'sort_order' => $this->sort_order ?? 0,
+            'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
+            'deleted_at' => $this->when($this->deleted_at, fn() => $this->deleted_at?->toIso8601String()),
+
+            // 关联数据示例（根据实际需求取消注释）
+            // 'user' => new UserResource($this->whenLoaded('user')),
+            // 'category' => new CategoryResource($this->whenLoaded('category')),
+            // 'items' => ItemResource::collection($this->whenLoaded('items')),
+        ];
+    }
+
+    /**
+     * 添加全局元数据
+     *
+     * @param  \Illuminate\Http\Request  $request HTTP 请求对象
+     * @return array<string, mixed> 元数据
+     */
+    public function with(Request $request): array
+    {
+        return [
+            'meta' => [
+                'version' => '1.0.0',
+                'api' => '{{LOWER_NAME}}',
+                'timestamp' => now()->timestamp,
+            ],
+        ];
+    }
+
+    /**
+     * 自定义响应头
+     *
+     * @param  \Illuminate\Http\Request  $request HTTP 请求对象
+     * @param  \Illuminate\Http\JsonResponse  $response JSON 响应对象
+     * @return void
+     */
+    public function withResponse(Request $request, $response): void
+    {
+        $response->header('X-Module', '{{LOWER_NAME}}');
+        $response->header('X-Resource-Version', '1.0.0');
+    }
+}

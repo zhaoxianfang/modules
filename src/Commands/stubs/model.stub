@@ -4,37 +4,186 @@ namespace {{NAMESPACE}}\{{NAME}}\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
+/**
+ * {{CLASS}} 模型
+ *
+ * {{NAME}} 模块的数据模型
+ * 继承 Eloquent Model，提供完整的数据库操作能力
+ *
+ * @property int $id 主键 ID
+ * @property string $name 名称
+ * @property string|null $description 描述
+ * @property string $status 状态
+ * @property int $sort_order 排序
+ * @property Carbon|null $created_at 创建时间
+ * @property Carbon|null $updated_at 更新时间
+ * @property Carbon|null $deleted_at 删除时间
+ */
 class {{CLASS}} extends Model
 {
     use HasFactory;
+    use SoftDeletes;
+
+    /**
+     * 数据表名称
+     *
+     * 如果不指定，Eloquent 会使用模型类的复数形式（自动转换）
+     * 例如：{{CLASS}} => {{LOWER_NAME}} 表
+     *
+     * @var string
+     */
+    protected $table = '{{LOWER_NAME}}';
+
+    /**
+     * 主键字段
+     *
+     * @var string
+     */
+    protected $primaryKey = 'id';
+
+    /**
+     * 主键类型
+     *
+     * @var string
+     */
+    protected $keyType = 'int';
+
+    /**
+     * 是否自动维护时间戳
+     *
+     * @var bool
+     */
+    public $timestamps = true;
 
     /**
      * 可批量赋值的属性
      *
+     * 这些属性可以通过 create()、update()、fill() 方法批量赋值
+     * 出于安全考虑，只列出允许批量赋值的字段
+     *
      * @var array<int, string>
+     *
+     * @example 使用示例
+     * ```php
+     * {{CLASS}}::create([
+     *     'name' => '示例名称',
+     *     'description' => '示例描述',
+     * ]);
+     * ```
      */
     protected $fillable = [
-        // 'name',
-        // 'description',
+        'name',
+        'description',
+        'status',
+        'sort_order',
     ];
 
     /**
      * 隐藏的属性
      *
+     * 这些属性在序列化为 JSON 或数组时会被隐藏
+     * 通常用于隐藏敏感信息，如密码、令牌等
+     *
      * @var array<int, string>
      */
     protected $hidden = [
+        // 示例：隐藏敏感字段
         // 'password',
+        // 'remember_token',
     ];
 
     /**
-     * 类型转换
+     * 属性类型转换
+     *
+     * 自动将字段转换为指定的类型
+     * 支持的类型：int, float, string, bool, object, array, collection, date, datetime
      *
      * @var array<string, string>
      */
     protected $casts = [
-        // 'email_verified_at' => 'datetime',
-        // 'password' => 'hashed',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
+        'is_active' => 'boolean',
     ];
+
+    /**
+     * 默认属性值
+     *
+     * 为模型属性设置默认值
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'status' => 'active',
+        'sort_order' => 0,
+    ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | 查询作用域（Scopes）
+    |--------------------------------------------------------------------------
+    | 可复用的查询条件
+    */
+
+    /**
+     * 只查询已激活的记录
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query 查询构建器
+     * @return void
+     */
+    public function scopeActive($query): void
+    {
+        $query->where('status', 'active');
+    }
+
+    /**
+     * 按名称搜索
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $query 查询构建器
+     * @param string $search 搜索关键词
+     * @return void
+     */
+    public function scopeSearchByName($query, string $search): void
+    {
+        $query->where('name', 'like', "%{$search}%");
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 访问器（Accessors）
+    |--------------------------------------------------------------------------
+    | 获取属性时自动处理的计算属性
+    */
+
+    /**
+     * 获取激活状态
+     *
+     * @return bool 是否激活
+     */
+    public function getIsActiveAttribute(): bool
+    {
+        return $this->status === 'active';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 自定义方法
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * 检查是否可以被删除
+     *
+     * @return bool 是否可以删除
+     */
+    public function canBeDeleted(): bool
+    {
+        // 添加业务逻辑判断
+        return true;
+    }
 }
+

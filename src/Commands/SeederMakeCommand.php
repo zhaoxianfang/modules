@@ -46,7 +46,7 @@ class SeederMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -54,14 +54,14 @@ class SeederMakeCommand extends Command
         $seederPath = $module->getPath('Database/Seeders/' . $seederName . '.php');
 
         if (File::exists($seederPath) && ! $force) {
-            $this->error("Seeder [{$seederName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing seeder.");
+            $this->error("模块 [{$moduleName}] 中已存在填充器 [{$seederName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的填充器");
 
             return Command::FAILURE;
         }
 
         if (File::exists($seederPath) && $force) {
-            $this->warn("Overwriting existing seeder [{$seederName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的填充器 [{$seederName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -84,12 +84,12 @@ class SeederMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Seeder [{$seederName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建填充器 [{$seederName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create seeder [{$seederName}].");
+        $this->error("创建填充器 [{$seederName}] 失败");
 
         return Command::FAILURE;
     }

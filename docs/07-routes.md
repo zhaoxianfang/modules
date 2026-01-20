@@ -2,18 +2,44 @@
 
 ## 概述
 
-模块系统提供了灵活的路由管理功能，支持 Web、API、Admin 等多种路由类型。
+模块系统提供了灵活的路由管理功能，支持任意自定义的路由类型，不再限制于 web、api、admin 三种。
 
 ## 路由文件结构
 
-每个模块默认包含三个路由文件：
+每个模块默认包含三个路由文件，但可以根据需要添加更多类型的路由：
 
 ```
 Modules/Blog/Routes/
 ├── web.php      # Web 路由
 ├── api.php      # API 路由
-└── admin.php    # Admin 路由
+├── admin.php    # Admin 路由
+├── mobile.php   # Mobile 路由（自定义）
+├── miniapp.php  # 小程序路由（自定义）
+└── ...         # 其他自定义路由类型
 ```
+
+## 自定义路由类型
+
+模块系统支持任意自定义的路由类型，无需预定义。只需：
+
+1. **创建路由文件**：在 `Routes/` 目录下创建任意名称的 `.php` 路由文件
+2. **创建控制器目录**：在 `Http/Controllers/` 目录下创建对应的控制器子目录（如 `Mobile`、`Miniapp` 等）
+3. **自动识别**：系统会自动根据路由文件名识别对应的控制器命名空间
+
+### 示例：创建 mobile 路由类型
+
+```bash
+# 创建 mobile 路由文件
+php artisan module:make-route Blog mobile --type=mobile
+
+# 创建 mobile 控制器
+php artisan module:make-controller Blog PostController --type=mobile
+```
+
+这样会自动生成：
+- `Routes/mobile.php` 路由文件
+- `Http/Controllers/Mobile/PostController.php` 控制器
+- 自动应用 mobile 控制器命名空间
 
 ## 路由配置
 

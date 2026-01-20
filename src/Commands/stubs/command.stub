@@ -4,10 +4,16 @@ namespace {{NAMESPACE}}\{{NAME}}\Console\Commands;
 
 use Illuminate\Console\Command;
 
+/**
+ * {{CLASS}} 命令类
+ *
+ * {{NAME}} 模块的 Artisan 命令
+ * 可通过 `php artisan {{SIGNATURE}}` 执行
+ */
 class {{CLASS}} extends Command
 {
     /**
-     * 命令签名
+     * 命令名称
      *
      * @var string
      */
@@ -23,13 +29,35 @@ class {{CLASS}} extends Command
     /**
      * 执行命令
      *
-     * @return int
+     * @return int 命令执行状态码（0 表示成功）
      */
     public function handle(): int
     {
         $this->info('执行命令...');
 
-        // 在这里编写命令逻辑
+        // 示例：获取用户输入
+        // $name = $this->ask('请输入名称');
+        // $email = $this->ask('请输入邮箱');
+        //
+        // 示例：确认操作
+        // if ($this->confirm('确定要执行此操作吗？')) {
+        //     $this->info('操作已执行');
+        // } else {
+        //     $this->warn('操作已取消');
+        // }
+
+        // 示例：进度条
+        // $items = range(1, 100);
+        // $bar = $this->output->createProgressBar(count($items));
+        //
+        // foreach ($items as $item) {
+        //     // 处理逻辑
+        //     $bar->advance();
+        // }
+        //
+        // $bar->finish();
+
+        $this->info('命令执行完成！');
 
         return Command::SUCCESS;
     }

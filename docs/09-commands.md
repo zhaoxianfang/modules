@@ -2,6 +2,170 @@
 
 本文档详细介绍 Laravel 模块系统提供的所有 Artisan 命令。
 
+## 命令概览
+
+### 所有命令列表（21个）
+
+| 序号 | 命令 | 类型 | 说明 | 示例 |
+|------|------|------|------|------|
+| 1 | `module:make` | 模块管理 | 创建新模块 | `php artisan module:make Blog` |
+| 2 | `module:list` | 模块管理 | 列出所有模块及其状态 | `php artisan module:list` |
+| 3 | `module:info` | 模块管理 | 显示指定模块的详细信息 | `php artisan module:info Blog` |
+| 4 | `module:validate` | 模块管理 | 验证模块的完整性和正确性 | `php artisan module:validate Blog` |
+| 5 | `module:delete` | 模块管理 | 删除一个模块 | `php artisan module:delete Shop` |
+| 6 | `module:migrate` | 迁移管理 | 运行所有模块或指定模块的数据库迁移 | `php artisan module:migrate Blog` |
+| 7 | `module:migrate-reset` | 迁移管理 | 回滚所有模块或指定模块的最后一次数据库迁移 | `php artisan module:migrate-reset Blog` |
+| 8 | `module:migrate-refresh` | 迁移管理 | 重置并重新运行所有模块或指定模块的数据库迁移 | `php artisan module:migrate-refresh Blog` |
+| 9 | `module:migrate-status` | 迁移管理 | 显示所有模块或指定模块的迁移状态 | `php artisan module:migrate-status Blog` |
+| 10 | `module:make-controller` | 代码生成 | 在指定模块中创建一个控制器 | `php artisan module:make-controller Blog PostController --type=web` |
+| 11 | `module:make-model` | 代码生成 | 在指定模块中创建一个模型 | `php artisan module:make-model Blog Post --migration` |
+| 12 | `module:make-migration` | 代码生成 | 在指定模块中创建一个迁移文件 | `php artisan module:make-migration Blog create_posts_table --create=posts` |
+| 13 | `module:make-request` | 代码生成 | 在指定模块中创建一个表单请求类 | `php artisan module:make-request Blog StorePostRequest` |
+| 14 | `module:make-seeder` | 代码生成 | 在指定模块中创建一个数据填充器 | `php artisan module:make-seeder Blog PostSeeder` |
+| 15 | `module:make-provider` | 代码生成 | 在指定模块中创建一个服务提供者 | `php artisan module:make-provider Blog EventServiceProvider` |
+| 16 | `module:make-command` | 代码生成 | 在指定模块中创建一个 Artisan 命令 | `php artisan module:make-command Blog SyncPosts` |
+| 17 | `module:make-event` | 代码生成 | 在指定模块中创建一个事件类 | `php artisan module:make-event Blog PostCreated` |
+| 18 | `module:make-listener` | 代码生成 | 在指定模块中创建一个事件监听器 | `php artisan module:make-listener Blog SendNotification --event=PostCreated` |
+| 19 | `module:make-middleware` | 代码生成 | 在指定模块中创建一个中间件 | `php artisan module:make-middleware Blog CheckAuth` |
+| 20 | `module:make-route` | 代码生成 | 在指定模块中创建一个路由文件 | `php artisan module:make-route Blog mobile --type=api` |
+| 21 | `module:make-config` | 代码生成 | 在指定模块中创建一个配置文件 | `php artisan module:make-config Blog settings` |
+
+### 命令分类统计
+
+| 类别 | 数量 | 命令 |
+|------|------|------|
+| 模块管理 | 5 | `module:make`, `module:list`, `module:info`, `module:validate`, `module:delete` |
+| 迁移管理 | 4 | `module:migrate`, `module:migrate-reset`, `module:migrate-refresh`, `module:migrate-status` |
+| 代码生成 | 12 | `module:make-controller`, `module:make-model`, `module:make-migration`, `module:make-request`, `module:make-seeder`, `module:make-provider`, `module:make-command`, `module:make-event`, `module:make-listener`, `module:make-middleware`, `module:make-route`, `module:make-config` |
+| **总计** | **21** | **涵盖模块开发全流程** |
+
+### 常用命令快速参考
+
+| 场景 | 推荐命令 | 示例 |
+|------|----------|------|
+| 创建新模块 | `module:make` | `php artisan module:make Blog` |
+| 查看模块列表 | `module:list` | `php artisan module:list` |
+| 创建控制器 | `module:make-controller` | `php artisan module:make-controller Blog PostController --type=web` |
+| 创建模型 | `module:make-model` | `php artisan module:make-model Blog Post` |
+| 创建迁移 | `module:make-migration` | `php artisan module:make-migration Blog create_posts_table --create=posts` |
+| 运行迁移 | `module:migrate` | `php artisan module:migrate` |
+| 创建事件 | `module:make-event` | `php artisan module:make-event Blog UserRegistered` |
+| 创建监听器 | `module:make-listener` | `php artisan module:make-listener Blog SendEmail --event=UserRegistered` |
+| 创建命令 | `module:make-command` | `php artisan module:make-command Blog SyncData` |
+| 创建路由文件 | `module:make-route` | `php artisan module:make-route Blog api` |
+
+## 模块命令自动发现
+
+模块系统会自动发现并注册每个模块的 `Console/Commands/` 目录下的所有 Artisan 命令。
+
+### 自动发现规则
+
+- **触发条件**：仅在命令模式（`runningInConsole()`）下执行
+- **扫描路径**：
+  - `Console/Commands/`（推荐，标准路径）
+  - `Commands/`（兼容路径）
+- **注册要求**：
+  - 类必须继承 `Illuminate\Console\Command`
+  - 定义 `$signature` 和 `$description` 属性
+  - 实现 `handle()` 方法
+
+### 命令自动注册流程
+
+```
+运行 php artisan 命令
+  ↓
+ModulesServiceProvider::boot()
+  ↓
+ModuleLoader::loadAll()
+  ↓
+ModuleAutoDiscovery::discoverCommands()
+  ↓
+检查 runningInConsole() → 是
+  ↓
+扫描 Console/Commands/ 目录
+  ↓
+验证命令类有效性
+  ↓
+使用 Artisan Application::add() 注册
+  ↓
+命令立即可用
+```
+
+### 模块命令示例
+
+创建模块命令文件 `Modules/Blog/Console/Commands/SyncPosts.php`：
+
+```php
+<?php
+
+namespace Modules\Blog\Console\Commands;
+
+use Illuminate\Console\Command;
+
+class SyncPosts extends Command
+{
+    protected $signature = 'blog:sync';
+    protected $description = '同步博客文章';
+
+    public function handle()
+    {
+        $this->info('开始同步文章...');
+        // 业务逻辑
+        $this->info('同步完成！');
+    }
+}
+```
+
+### 验证命令自动发现
+
+```bash
+# 查看所有可用命令（包含模块命令）
+php artisan list
+
+# 输出会包含：
+# blog
+#  blog:sync              同步博客文章
+
+# 直接执行模块命令
+php artisan blog:sync
+```
+
+### 调试命令发现
+
+如果命令没有自动注册，可以检查：
+
+1. **模块是否启用**
+   ```bash
+   php artisan module:list
+   ```
+
+2. **命令文件位置**
+   - 确保在 `Console/Commands/` 目录下
+   - 文件扩展名为 `.php`
+
+3. **命令类继承**
+   - 确保继承 `Illuminate\Console\Command`
+   - 检查 `$signature` 和 `$description` 属性
+
+4. **启用调试日志**
+   ```php
+   // config/app.php
+   'debug' => true,
+   ```
+
+5. **查看日志**
+   ```bash
+   tail -f storage/logs/laravel.log
+   ```
+
+### 性能优化
+
+命令自动发现具有以下优化特性：
+
+- **条件加载**：仅在命令模式下注册，Web 请求时跳过
+- **反射缓存**：类验证结果缓存到内存
+- **单例注册**：`ModuleLoader` 使用单例模式，避免重复扫描
+
 ## 模块管理命令
 
 ### module:make

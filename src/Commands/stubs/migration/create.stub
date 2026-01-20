@@ -1,0 +1,69 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * 创建 {{TABLE}} 数据表
+ *
+ * 此文件是一个示例迁移文件
+ * 运行命令生成具体迁移文件：
+ * php artisan make:migration create_{{TABLE}}_table --path=Modules/{{NAME}}/Database/Migrations
+ *
+ * 迁移命令：
+ * - php artisan migrate {{NAME}}（运行所有待执行的迁移）
+ * - php artisan migrate:rollback {{NAME}}（回滚最后一次迁移）
+ * - php artisan migrate:refresh {{NAME}}（回滚并重新运行所有迁移）
+ * - php artisan migrate:reset {{NAME}}（回滚所有迁移）
+ */
+return new class extends Migration
+{
+    /**
+     * 执行迁移 - 创建数据表
+     *
+     * @return void
+     */
+    public function up(): void
+    {
+        Schema::create('{{TABLE}}', function (Blueprint $table) {
+            // 主键 ID（自增）
+            // $table->id();
+            $table->bigIncrements('id');
+
+            // 示例字段（根据你的需求添加）
+            // $table->string('name')->comment('名称');
+            // $table->string('slug')->unique()->comment('URL 友好标识');
+            // $table->text('description')->nullable()->comment('描述');
+            // $table->string('email')->unique()->comment('邮箱');
+            // $table->foreignId('user_id')->constrained()->comment('用户 ID（外键）');
+            // $table->boolean('is_active')->default(true)->comment('是否激活');
+            // $table->integer('sort_order')->default(0)->comment('排序');
+
+            // 时间戳字段
+            $table->timestamps();
+
+            // 软删除（可选）
+            // $table->softDeletes();
+
+            // 索引（可选）
+            // $table->index(['name', 'created_at']);
+        });
+
+        // 示例：插入初始数据
+        // DB::table('{{TABLE}}')->insert([
+        //     ['name' => '示例数据 1', 'created_at' => now(), 'updated_at' => now()],
+        //     ['name' => '示例数据 2', 'created_at' => now(), 'updated_at' => now()],
+        // ]);
+    }
+
+    /**
+     * 回滚迁移 - 删除数据表
+     *
+     * @return void
+     */
+    public function down(): void
+    {
+        Schema::dropIfExists('{{TABLE}}');
+    }
+};

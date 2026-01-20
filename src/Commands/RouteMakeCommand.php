@@ -23,7 +23,7 @@ class RouteMakeCommand extends Command
     protected $signature = 'module:make-route
                             {module : 模块名称}
                             {name : 路由文件名称}
-                            {--type=web : 路由类型 (web|api|admin)}
+                            {--type=web : 路由类型（可自定义，如web、api、admin、mobile等）}
                             {--force : 覆盖已存在的路由文件}';
 
     /**
@@ -48,28 +48,24 @@ class RouteMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
 
-        if (! in_array($type, ['web', 'api', 'admin'])) {
-            $this->error("Invalid route type [{$type}]. Valid types are: web, api, admin");
-
-            return Command::FAILURE;
-        }
+        // 类型不再限制，允许任意自定义类型
 
         $routePath = $module->getRoutesPath() . DIRECTORY_SEPARATOR . $routeName . '.php';
 
         if (File::exists($routePath) && ! $force) {
-            $this->error("Route file [{$routeName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing file.");
+            $this->error("模块 [{$moduleName}] 中已存在路由文件 [{$routeName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的文件");
 
             return Command::FAILURE;
         }
 
         if (File::exists($routePath) && $force) {
-            $this->warn("Overwriting existing route file [{$routeName}].");
+            $this->warn("正在覆盖已存在的路由文件 [{$routeName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -97,12 +93,12 @@ class RouteMakeCommand extends Command
         $result = File::put($routePath, $content);
 
         if ($result) {
-            $this->info("Route file [{$routeName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建路由文件 [{$routeName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create route file [{$routeName}].");
+        $this->error("创建路由文件 [{$routeName}] 失败");
 
         return Command::FAILURE;
     }

@@ -1,32 +1,121 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin;
 
 /*
 |--------------------------------------------------------------------------
 | {{NAME}} 模块的 Admin 路由
 |--------------------------------------------------------------------------
 |
-| 在这里注册 {{NAME}} 模块的 Admin 路由
-| 这些路由会自动应用 admin 中间件组
-| {{ROUTE_PREFIX_COMMENT}}
-| {{ROUTE_NAME_PREFIX_COMMENT}}
-| 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin
+| 在这里注册 {{NAME}} 模块的后台管理路由
 |
-| 注意：路由文件不包含路由组声明，路由前缀和名称前缀由 RouteLoader
-| 根据 modules.php 配置自动添加。如需自定义，请修改 modules.php 配置。
+| 路由配置：
+|   - 自动应用 'web' 和 'admin' 中间件组（从 modules.middleware_groups 配置）
+|   - 路由前缀: {{ROUTE_PREFIX_VALUE}}
+|   - 路由名称前缀: {{ROUTE_NAME_PREFIX_VALUE}}
+|   - 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin
+|
+| Laravel 11+ 最佳实践：
+|   - 使用 resource() 完整资源路由（包含 create, edit 页面路由）
+|   - 使用 middleware()->can() 策略授权
+|   - 使用 withTrashed() 支持软删除管理
+|   - 使用 whereAlpha()、whereNumber() 参数约束
+|
 */
 
-Route::prefix('{{ROUTE_PREFIX_VALUE}}')
+Route::middleware(['web', 'admin'])
+    ->prefix('{{ROUTE_PREFIX_VALUE}}')
     ->name('{{ROUTE_NAME_PREFIX_VALUE}}')
     ->group(function () {
-        Route::get('', [Admin\{{NAME}}Controller::class, 'index'])->name('list');
-        // Route::get('{id}', [Admin\{{NAME}}Controller::class, 'show'])->name('show');
-        // Route::post('', [Admin\{{NAME}}Controller::class, 'store'])->name('store');
-        // Route::put('{id}', [Admin\{{NAME}}Controller::class, 'update'])->name('update');
-        // Route::delete('{id}', [Admin\{{NAME}}Controller::class, 'destroy'])->name('destroy');
+        /*
+        |--------------------------------------------------------------------------
+        | 后台首页
+        |--------------------------------------------------------------------------
+        */
+        Route::get('/', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'index'])
+            ->name('index');
 
-        // OR 资源路由
-        // Route::resource('{{LOWER_NAME}}', Admin\{{NAME}}Controller::class)->names('admin.{{LOWER_NAME}}');
+        /*
+        |--------------------------------------------------------------------------
+        | 示例路由
+        |--------------------------------------------------------------------------
+        | 根据实际需求取消注释并修改
+        */
+
+        // 示例：数据列表页
+        // Route::get('/{{LOWER_NAME}}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'list'])
+        //     ->name('list');
+
+        // 示例：创建页面
+        // Route::get('/{{LOWER_NAME}}/create', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'create'])
+        //     ->name('create');
+
+        // 示例：存储数据
+        // Route::post('/{{LOWER_NAME}}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'store'])
+        //     ->name('store');
+
+        // 示例：编辑页面
+        // Route::get('/{{LOWER_NAME}}/{id}/edit', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'edit'])
+        //     ->name('edit')
+        //     ->whereNumber('id');
+
+        // 示例：更新数据
+        // Route::put('/{{LOWER_NAME}}/{id}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'update'])
+        //     ->name('update')
+        //     ->whereNumber('id');
+
+        // 示例：删除数据
+        // Route::delete('/{{LOWER_NAME}}/{id}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'destroy'])
+        //     ->name('destroy')
+        //     ->whereNumber('id');
+
+        /*
+        |--------------------------------------------------------------------------
+        | 完整资源路由（推荐）
+        |--------------------------------------------------------------------------
+        | 自动生成所有 RESTful 路由：
+        | index, create, store, show, edit, update, destroy
+        */
+        // Route::resource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class)
+        //     ->names('{{LOWER_NAME}}')
+        //     ->except(['show']); // 后台通常不需要详情页
+
+        /*
+        |--------------------------------------------------------------------------
+        | 软删除管理路由
+        |--------------------------------------------------------------------------
+        | 恢复和永久删除软删除的数据
+        */
+        // Route::prefix('{{LOWER_NAME}}/trash')
+        //     ->name('{{LOWER_NAME}}.trash.')
+        //     ->group(function () {
+        //         Route::get('/', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'trashIndex'])
+        //             ->name('index');
+        //         Route::post('/{id}/restore', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'restore'])
+        //             ->name('restore')
+        //             ->whereNumber('id');
+        //         Route::delete('/{id}/force-delete', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'forceDelete'])
+        //             ->name('force-delete')
+        //             ->whereNumber('id');
+        //     });
+
+        /*
+        |--------------------------------------------------------------------------
+        | 批量操作路由
+        |--------------------------------------------------------------------------
+        | 批量删除、批量更新、批量启用/禁用等
+        */
+        // Route::post('/{{LOWER_NAME}}/batch', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'batch'])
+        //     ->name('batch');
+
+        /*
+        |--------------------------------------------------------------------------
+        | 自定义方法路由
+        |--------------------------------------------------------------------------
+        */
+        // 示例：导入导出
+        // Route::get('/{{LOWER_NAME}}/export', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'export'])
+        //     ->name('export');
+        // Route::post('/{{LOWER_NAME}}/import', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Admin\{{NAME}}Controller::class, 'import'])
+        //     ->name('import');
     });

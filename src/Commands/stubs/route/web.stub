@@ -1,7 +1,6 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web;
 
 /*
 |--------------------------------------------------------------------------
@@ -9,24 +8,69 @@ use \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web;
 |--------------------------------------------------------------------------
 |
 | 在这里注册 {{NAME}} 模块的 Web 路由
-| 这些路由会自动应用 web 中间件组
-| {{ROUTE_PREFIX_COMMENT}}
-| {{ROUTE_NAME_PREFIX_COMMENT}}
-| 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Web
 |
-| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
-| 如需修改，请通过 modules.php 配置控制是否添加前缀。
+| 路由配置：
+|   - 自动应用 'web' 中间件组（从 modules.middleware_groups 配置）
+|   - 路由前缀: {{ROUTE_PREFIX_VALUE}}
+|   - 路由名称前缀: {{ROUTE_NAME_PREFIX_VALUE}}
+|   - 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Web
+|
+| Laravel 11+ 最佳实践：
+|   - 使用资源路由简化代码
+|   - 使用 where() 方法约束路由参数
+|   - 使用 middleware() 链式调用添加中间件
+|   - 使用 scopeBindings() 作用域模型绑定
+|   - 使用 whereNumber()、whereAlpha() 等便捷约束方法
+|
 */
 
-Route::prefix('{{ROUTE_PREFIX_VALUE}}')
+Route::middleware(['web'])
+    ->prefix('{{ROUTE_PREFIX_VALUE}}')
     ->name('{{ROUTE_NAME_PREFIX_VALUE}}')
     ->group(function () {
-        Route::get('', [Web\{{NAME}}Controller::class, 'index'])->name('list');
-        // Route::get('{id}', [Web\{{NAME}}Controller::class, 'show'])->name('show');
-        // Route::post('', [Web\{{NAME}}Controller::class, 'store'])->name('store');
-        // Route::put('{id}', [Web\{{NAME}}Controller::class, 'update'])->name('update');
-        // Route::delete('{id}', [Web\{{NAME}}Controller::class, 'destroy'])->name('destroy');
+        /*
+        |--------------------------------------------------------------------------
+        | 主页路由
+        |--------------------------------------------------------------------------
+        */
+        Route::get('/', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web\{{NAME}}Controller::class, 'index'])
+            ->name('index');
 
-        // OR 资源路由
-        // Route::resource('{{LOWER_NAME}}', Web\{{NAME}}Controller::class)->names('web.{{LOWER_NAME}}');
+        /*
+        |--------------------------------------------------------------------------
+        | 示例路由
+        |--------------------------------------------------------------------------
+        | 根据实际需求取消注释并修改
+        */
+
+        // 示例：列表页
+        // Route::get('/list', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web\{{NAME}}Controller::class, 'list'])
+        //     ->name('list');
+
+        // 示例：详情页
+        // Route::get('/{id}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web\{{NAME}}Controller::class, 'show'])
+        //     ->name('show')
+        //     ->where('id', '[0-9]+');
+
+        // 示例：资源路由（推荐）
+        // 自动生成所有 RESTful 路由：index, create, store, show, edit, update, destroy
+        // Route::resource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web\{{NAME}}Controller::class)
+        //     ->only(['index', 'show'])
+        //     ->names('{{LOWER_NAME}}');
+
+        // 示例：带作用域的资源路由（Laravel 11+）
+        // 使用 scopeBindings() 确保模型作用域约束
+        // Route::scopeBindings()->resource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web\{{NAME}}Controller::class)
+        //     ->except(['create', 'store']);
+
+        /*
+        |--------------------------------------------------------------------------
+        | 自定义方法路由
+        |--------------------------------------------------------------------------
+        */
+        // 示例：自定义方法
+        // Route::get('/custom', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Web\{{NAME}}Controller::class, 'customMethod'])
+        //     ->name('custom');
     });
+
+

@@ -4,74 +4,142 @@ namespace {{NAMESPACE}}\{{NAME}}\Http\Controllers{{CONTROLLER_SUBNAMESPACE}};
 
 use Illuminate\Http\Request;
 
+/**
+ * {{CLASS}} 控制器
+ *
+ * 处理 {{NAME}} 模块的{{CONTROLLER_SUBNAMESPACE}}类型业务逻辑
+ * 继承基础控制器，可以使用 success() 和 error() 方法返回 JSON 响应
+ */
 class {{CLASS}} extends \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Controller
 {
     /**
-     * 显示资源列表
+     * 显示欢迎页面
      *
-     * @return \Illuminate\Http\Response
+     * 返回模块的欢迎视图页面
+     *
+     * @return \Illuminate\View\View 返回视图
      */
     public function index()
     {
+        // 返回模块欢迎页面
         return view('{{LOWER_NAME}}::welcome');
     }
 
     /**
-     * 存储新创建的资源
+     * 示例：获取资源列表
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
      */
-    public function store(Request $request)
+    public function list()
     {
-        $validated = $request->validate([
-            // 验证规则
-        ]);
+        // 示例代码：
+        // $items = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::latest()->paginate(15);
+        // return $this->success($items, '获取成功');
 
-        // 创建逻辑
-
-        return $this->success($validated, '创建成功', 201);
+        return $this->success([
+            'message' => '请实现您的业务逻辑',
+            'module' => '{{NAME}}',
+            'controller' => '{{CLASS}}',
+        ], '示例响应');
     }
 
     /**
-     * 显示指定资源
+     * 示例：获取单个资源详情
      *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @param int $id 资源 ID
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
      */
     public function show($id)
     {
-        return $this->success(['id' => $id], '获取成功');
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::findOrFail($id);
+        // return $this->success($item, '获取成功');
+
+        return $this->success([
+            'id' => $id,
+            'message' => '请实现您的业务逻辑',
+        ], '示例响应');
     }
 
     /**
-     * 更新指定资源
+     * 示例：创建新资源
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @param \Illuminate\Http\Request $request 请求对象
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
+     */
+    public function store(Request $request)
+    {
+        // 验证请求数据
+        $validated = $request->validate([
+            // 添加您的验证规则，例如：
+            // 'name' => 'required|string|max:255',
+            // 'description' => 'nullable|string',
+        ]);
+
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::create($validated);
+        // return $this->success($item, '创建成功', 201);
+
+        return $this->success($validated, '创建成功（示例）', 201);
+    }
+
+    /**
+     * 示例：更新资源
+     *
+     * @param \Illuminate\Http\Request $request 请求对象
+     * @param int $id 资源 ID
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
      */
     public function update(Request $request, $id)
     {
+        // 验证请求数据
         $validated = $request->validate([
-            // 验证规则
+            // 添加您的验证规则，例如：
+            // 'name' => 'sometimes|required|string|max:255',
+            // 'description' => 'nullable|string',
         ]);
 
-        // 更新逻辑
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::findOrFail($id);
+        // $item->update($validated);
+        // return $this->success($item, '更新成功');
 
-        return $this->success($validated, '更新成功');
+        return $this->success($validated, '更新成功（示例）');
     }
 
     /**
-     * 删除指定资源
+     * 示例：删除资源
      *
-     * @param  int  $id
-     * @return \Illuminate\Http\Response
+     * @param int $id 资源 ID
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
      */
     public function destroy($id)
     {
-        // 删除逻辑
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::findOrFail($id);
+        // $item->delete();
+        // return $this->success(null, '删除成功');
 
-        return $this->success(null, '删除成功');
+        return $this->success(null, '删除成功（示例）');
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 自定义方法区域
+    |--------------------------------------------------------------------------
+    | 在此处添加您的自定义业务方法
+    */
+
+    // /**
+    //  * 自定义方法示例
+    //  *
+    //  * @param \Illuminate\Http\Request $request
+    //  * @return \Illuminate\Http\JsonResponse
+    //  */
+    // public function customMethod(Request $request)
+    // {
+    //     // 您的业务逻辑
+    //     return $this->success([], '操作成功');
+    // }
 }
+

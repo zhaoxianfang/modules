@@ -30,6 +30,7 @@ return new class extends Migration
      */
     public function down(): void
     {
+        // 在这里编写回滚逻辑
         Schema::dropIfExists('{{TABLE}}');
     }
 };

@@ -23,7 +23,7 @@ class ControllerMakeCommand extends Command
     protected $signature = 'module:make-controller
                             {module : 模块名称}
                             {name : 控制器名称}
-                            {--type=web : 控制器类型 (web|api|admin)}
+                            {--type=web : 控制器类型（可自定义，如web、api、admin、mobile等）}
                             {--force : 覆盖已存在的控制器}
                             {--plain : 创建空控制器（无CRUD方法）}';
 
@@ -50,28 +50,24 @@ class ControllerMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
 
-        if (! in_array($type, ['web', 'api', 'admin'])) {
-            $this->error('Invalid controller type. Valid types are: web, api, admin');
-
-            return Command::FAILURE;
-        }
+        // 类型不再限制，允许任意自定义类型
 
         $controllerPath = $module->getPath('Http/Controllers/' . Str::studly($type) . '/' . $controllerName . '.php');
 
         if (File::exists($controllerPath) && ! $force) {
-            $this->error("Controller [{$controllerName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing controller.");
+            $this->error("模块 [{$moduleName}] 中已存在控制器 [{$controllerName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的控制器");
 
             return Command::FAILURE;
         }
 
         if (File::exists($controllerPath) && $force) {
-            $this->warn("Overwriting existing controller [{$controllerName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的控制器 [{$controllerName}]");
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -97,12 +93,12 @@ class ControllerMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Controller [{$controllerName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建控制器 [{$controllerName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create controller [{$controllerName}].");
+        $this->error("创建控制器 [{$controllerName}] 失败");
 
         return Command::FAILURE;
     }

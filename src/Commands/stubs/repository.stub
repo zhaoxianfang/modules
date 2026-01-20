@@ -1,0 +1,110 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Repositories;
+
+use {{NAMESPACE}}\{{NAME}}\Models\{{NAME}};
+
+/**
+ * {{CLASS}} 仓库类
+ *
+ * 封装 {{NAME}} 模型的数据访问逻辑
+ * 提供可复用的查询方法
+ */
+class {{CLASS}}
+{
+    /**
+     * 模型实例
+     *
+     * @var {{NAME}}
+     */
+    protected {{NAME}} $model;
+
+    /**
+     * 创建新仓库实例
+     *
+     * @param  {{NAME}}  $model 模型实例
+     * @return void
+     */
+    public function __construct({{NAME}} $model)
+    {
+        $this->model = $model;
+    }
+
+    /**
+     * 获取所有记录
+     *
+     * @param  array  $filters 过滤条件
+     * @param  int  $perPage 每页数量
+     * @return \Illuminate\Pagination\LengthAwarePaginator 分页结果
+     */
+    public function all(array $filters = [], int $perPage = 15)
+    {
+        $query = $this->model->query();
+
+        // 应用过滤条件
+        foreach ($filters as $key => $value) {
+            $query->where($key, 'like', "%{$value}%");
+        }
+
+        return $query->latest()->paginate($perPage);
+    }
+
+    /**
+     * 根据 ID 查找记录
+     *
+     * @param  int  $id 记录 ID
+     * @return {{NAME}} 模型实例
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException 记录不存在
+     */
+    public function find(int $id): {{NAME}}
+    {
+        return $this->model->findOrFail($id);
+    }
+
+    /**
+     * 创建新记录
+     *
+     * @param  array  $data 数据数组
+     * @return {{NAME}} 模型实例
+     */
+    public function create(array $data): {{NAME}}
+    {
+        return $this->model->create($data);
+    }
+
+    /**
+     * 更新记录
+     *
+     * @param  int  $id 记录 ID
+     * @param  array  $data 数据数组
+     * @return bool 是否更新成功
+     */
+    public function update(int $id, array $data): bool
+    {
+        $model = $this->find($id);
+        return $model->update($data);
+    }
+
+    /**
+     * 删除记录
+     *
+     * @param  int  $id 记录 ID
+     * @return bool 是否删除成功
+     */
+    public function delete(int $id): bool
+    {
+        $model = $this->find($id);
+        return $model->delete();
+    }
+
+    /**
+     * 获取激活状态的记录
+     *
+     * @param  int  $perPage 每页数量
+     * @return \Illuminate\Pagination\LengthAwarePaginator 分页结果
+     */
+    public function getActive(int $perPage = 15)
+    {
+        return $this->model->active()->latest()->paginate($perPage);
+    }
+}

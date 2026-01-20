@@ -35,7 +35,12 @@ class ModulesServiceProvider extends ServiceProvider
     {
         $this->publishConfig();
         $this->registerCommands();
+        
+        // 先加载模块以发现所有命令
         $this->loadModules();
+        
+        // 在加载模块后，注册模块中的命令
+        $this->registerModuleCommands();
 
         // 把 zxf/modules 添加到 about 命令中
         AboutCommand::add('Extend', [
@@ -65,7 +70,10 @@ class ModulesServiceProvider extends ServiceProvider
     protected function registerModuleLoader(): void
     {
         $this->app->singleton(ModuleLoader::class, function ($app) {
-            return new ModuleLoader($app->make(RepositoryInterface::class));
+            return new ModuleLoader(
+                $app->make(RepositoryInterface::class),
+                $app
+            );
         });
     }
 
@@ -108,6 +116,7 @@ class ModulesServiceProvider extends ServiceProvider
                 Commands\ModuleDeleteCommand::class,
                 Commands\ModuleInfoCommand::class,
                 Commands\ModuleValidateCommand::class,
+                Commands\ModuleDebugCommandsCommand::class,
                 Commands\ControllerMakeCommand::class,
                 Commands\ModelMakeCommand::class,
                 Commands\MigrationMakeCommand::class,
@@ -137,6 +146,29 @@ class ModulesServiceProvider extends ServiceProvider
     {
         $loader = $this->app->make(ModuleLoader::class);
         $loader->loadAll();
+    }
+
+    /**
+     * 注册模块中的命令
+     *
+     * 在模块加载后，收集所有模块的命令并注册到 Artisan
+     * 使用 Laravel 的命令注册机制确保命令可以正确执行
+     *
+     * @return void
+     */
+    protected function registerModuleCommands(): void
+    {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
+        // 从全局缓存获取所有已发现的命令
+        $moduleCommands = \zxf\Modules\Support\ModuleAutoDiscovery::getGlobalCommands();
+
+        // 使用 Laravel 的 commands() 方法注册所有模块命令
+        if (! empty($moduleCommands)) {
+            $this->commands($moduleCommands);
+        }
     }
 
     /**

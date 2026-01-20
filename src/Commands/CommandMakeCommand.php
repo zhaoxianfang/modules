@@ -48,7 +48,7 @@ class CommandMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("Module [{$moduleName}] does not exist.");
+            $this->error("模块 [{$moduleName}] 不存在");
 
             return Command::FAILURE;
         }
@@ -56,18 +56,19 @@ class CommandMakeCommand extends Command
         $commandPath = $module->getPath('Console/Commands/' . $commandName . '.php');
 
         if (File::exists($commandPath) && ! $force) {
-            $this->error("Command [{$commandName}] already exists in module [{$moduleName}].");
-            $this->line("Use --force flag to overwrite the existing command.");
+            $this->error("模块 [{$moduleName}] 中已存在命令 [{$commandName}]");
+            $this->line("提示：使用 --force 选项覆盖已存在的命令");
 
             return Command::FAILURE;
         }
 
         if (File::exists($commandPath) && $force) {
-            $this->warn("Overwriting existing command [{$commandName}] in module [{$moduleName}].");
+            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的命令 [{$commandName}]");
         }
 
         if (empty($commandSignature)) {
-            $commandSignature = 'module:' . Str::snake($moduleName) . ':' . Str::snake(str_replace('Command', '', $commandName));
+            // 使用模块名小写作为命令命名空间，不添加 module: 前缀
+            $commandSignature = Str::snake($moduleName) . ':command-name';
         }
 
         $namespace = config('modules.namespace', 'Modules');
@@ -84,7 +85,8 @@ class CommandMakeCommand extends Command
         $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
         $stubGenerator->addReplacement('{{NAME}}', $moduleName);
         $stubGenerator->addReplacement('{{SIGNATURE}}', $commandSignature);
-        $stubGenerator->addReplacement('{{DESCRIPTION}}', 'Command description');
+        $stubGenerator->addReplacement('{{DESCRIPTION}}', $commandName . ' 命令');
+        $stubGenerator->addReplacement('{{LOWER_NAME}}', Str::snake($moduleName));
 
         $result = $stubGenerator->generate(
             'command.stub',
@@ -93,12 +95,12 @@ class CommandMakeCommand extends Command
         );
 
         if ($result) {
-            $this->info("Command [{$commandName}] created successfully in module [{$moduleName}].");
+            $this->info("成功在模块 [{$moduleName}] 中创建命令 [{$commandName}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("Failed to create command [{$commandName}].");
+        $this->error("创建命令 [{$commandName}] 失败");
 
         return Command::FAILURE;
     }

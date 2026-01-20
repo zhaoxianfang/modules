@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@yield('title', '{{NAME}} 模块')</title>
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen flex flex-col">
+        <!-- 导航栏 -->
+        <nav class="bg-white shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex items-center">
+                        <a href="/{{LOWER_NAME}}" class="text-xl font-bold text-indigo-600">
+                            {{NAME}}
+                        </a>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <a href="/{{LOWER_NAME}}" class="text-gray-600 hover:text-indigo-600">首页</a>
+                        <a href="/api/{{LOWER_NAME}}" class="text-gray-600 hover:text-indigo-600">API</a>
+                        <a href="/{{LOWER_NAME}}/admin" class="text-gray-600 hover:text-indigo-600">后台</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- 主内容区域 -->
+        <main class="flex-1">
+            @yield('content')
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="bg-gray-800 text-white py-4">
+            <div class="max-w-7xl mx-auto px-4 text-center">
+                <p>&copy; {{ date('Y') }} {{NAME}} 模块. 基于 Laravel 构建.</p>
+            </div>
+        </footer>
+    </div>
+
+    @stack('scripts')
+</body>
+</html>

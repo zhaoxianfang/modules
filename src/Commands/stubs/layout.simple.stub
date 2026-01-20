@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@yield('title', '{{NAME}} 模块')</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .header { background: #4f46e5; color: white; padding: 20px; margin-bottom: 30px; }
+        .header h1 { font-size: 2rem; }
+        .content { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>@yield('title', '{{NAME}} 模块')</h1>
+        </header>
+
+        <main class="content">
+            @yield('content')
+        </main>
+    </div>
+
+    @stack('scripts')
+</body>
+</html>

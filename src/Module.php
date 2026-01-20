@@ -305,18 +305,28 @@ class Module implements ModuleInterface
      */
     public function getModuleConfig(): array
     {
-        $configPath = $this->getConfigPath();
+        try {
+            $configPath = $this->getConfigPath();
 
-        if (! is_dir($configPath)) {
+            if (! is_dir($configPath)) {
+                return [];
+            }
+
+            $configFile = $configPath . DIRECTORY_SEPARATOR . $this->getLowerName() . '.php';
+
+            if (! file_exists($configFile)) {
+                return [];
+            }
+
+            $config = require $configFile;
+
+            if (! is_array($config)) {
+                return [];
+            }
+
+            return $config;
+        } catch (\Throwable) {
             return [];
         }
-
-        $configFile = $configPath . DIRECTORY_SEPARATOR . $this->getLowerName() . '.php';
-
-        if (! file_exists($configFile)) {
-            return [];
-        }
-
-        return require $configFile;
     }
 }
