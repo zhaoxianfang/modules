@@ -51,6 +51,9 @@ class ModuleMakeCommand extends Command
             $name = Str::studly($this->argument('name'));
             $force = $this->option('force');
 
+            // 检查多模块发布并发布用户指南
+            $this->publishModulesUserGuide();
+
             // 创建 Stub 生成器
             $stubGenerator = new StubGenerator($name);
             $modulePath = $stubGenerator->getModulePath();
@@ -82,10 +85,11 @@ class ModuleMakeCommand extends Command
             // 创建目录结构
             $this->createModuleStructure($stubGenerator);
 
-            // 根据 stub 映射生成所有文件
+            // 根据 stub 映射生成所有文件（已移除 README.md）
             $this->generateFilesFromStubMapping($stubGenerator);
 
             $this->info("模块 [{$name}] 创建成功");
+            $this->line("用户指南位置: " . config('modules.path', base_path('Modules')) . '/ModulesUserGuide.md');
 
             return Command::SUCCESS;
         } catch (\Exception $e) {
@@ -97,6 +101,43 @@ class ModuleMakeCommand extends Command
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * 发布多模块用户指南
+     *
+     * 检查多模块路径下是否已存在 ModulesUserGuide.md，如果不存在则发布
+     *
+     * @return void
+     */
+    protected function publishModulesUserGuide(): void
+    {
+        $modulesPath = config('modules.path', base_path('Modules'));
+        $guidePath = $modulesPath . '/ModulesUserGuide.md';
+
+        // 检查是否已存在用户指南
+        if (file_exists($guidePath)) {
+            $this->line("多模块用户指南已存在: {$guidePath}");
+            return;
+        }
+
+        // 确保模块目录存在
+        if (! is_dir($modulesPath)) {
+            File::makeDirectory($modulesPath, 0755, true);
+        }
+
+        // 读取 stub 文件内容
+        $stubPath = __DIR__ . '/stubs/modules-user-guide.stub';
+        if (! file_exists($stubPath)) {
+            $this->warn("用户指南模板文件不存在: {$stubPath}");
+            return;
+        }
+
+        $content = file_get_contents($stubPath);
+
+        // 写入用户指南
+        File::put($guidePath, $content);
+        $this->info("多模块用户指南已发布: {$guidePath}");
     }
 
     /**
@@ -167,7 +208,7 @@ class ModuleMakeCommand extends Command
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
-                '{{ROUTE_PREFIX_VALUE}}' => "{$lowerName}/admin",
+                '{{ROUTE_PREFIX_VALUE}}' => "admin/{$lowerName}",
                 '{{ROUTE_NAME_PREFIX_VALUE}}' => "admin.{$lowerName}.",
             ],
         ];
@@ -403,16 +444,6 @@ class ModuleMakeCommand extends Command
         $this->stubMapping[] = [
             'stub' => 'layout.simple.stub',
             'destination' => 'Resources/views/layouts/simple.blade.php',
-            'replacements' => [
-                '{{NAME}}' => $moduleName,
-                '{{LOWER_NAME}}' => $lowerName,
-            ],
-        ];
-
-        // === README ===
-        $this->stubMapping[] = [
-            'stub' => 'readme.stub',
-            'destination' => 'README.md',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,

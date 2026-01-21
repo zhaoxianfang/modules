@@ -125,7 +125,8 @@ return [
     'middleware_groups' => [
         'web' => ['web'],
         'api' => ['api'],
-        'admin' => ['web', 'admin'],
+        // 'admin' => ['web', 'admin'], // 需要自定义实现 admin 中间件
+        'admin' => ['web'],
         // 可以添加更多自定义路由类型
         // 'mobile' => ['mobile'],
         // 'miniapp' => ['auth:miniapp'],

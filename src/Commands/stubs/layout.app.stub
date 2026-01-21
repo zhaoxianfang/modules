@@ -20,7 +20,7 @@
                     <div class="flex items-center space-x-4">
                         <a href="/{{LOWER_NAME}}" class="text-gray-600 hover:text-indigo-600">首页</a>
                         <a href="/api/{{LOWER_NAME}}" class="text-gray-600 hover:text-indigo-600">API</a>
-                        <a href="/{{LOWER_NAME}}/admin" class="text-gray-600 hover:text-indigo-600">后台</a>
+                        <a href="/admin/{{LOWER_NAME}}" class="text-gray-600 hover:text-indigo-600">后台</a>
                     </div>
                 </div>
             </div>

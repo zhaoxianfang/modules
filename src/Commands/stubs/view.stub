@@ -121,7 +121,7 @@
         <div class="badges">
             <a href="/{{LOWER_NAME}}" class="badge">🌐 Web 路由</a>
             <a href="/api/{{LOWER_NAME}}" class="badge">🚀 API 路由</a>
-            <a href="/{{LOWER_NAME}}/admin" class="badge">⚙️ Admin 路由</a>
+            <a href="/admin/{{LOWER_NAME}}" class="badge">⚙️ Admin 路由</a>
         </div>
 
         <div class="info">

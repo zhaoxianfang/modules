@@ -1,0 +1,274 @@
+# 多模块开发用户指南
+
+欢迎使用 Laravel 模块系统！这是一个功能强大的模块化开发扩展包，帮助你构建结构清晰、易于维护的大型应用。
+
+## 🚀 快速开始
+
+### 创建你的第一个模块
+
+```bash
+# 创建一个名为 Blog 的模块
+php artisan module:make Blog
+```
+
+创建成功后，你会得到以下信息：
+- 模块目录：`Modules/Blog`
+- 服务提供者：`Modules\Blog\Providers\BlogServiceProvider`
+- 路由文件：`web.php`, `api.php`, `admin.php`
+- 完整的目录结构和示例文件
+
+### 访问你的模块
+
+模块路由会自动注册，你可以在浏览器中访问：
+- Web 路由：`http://your-domain/blog`
+- API 路由：`http://your-domain/api/blog`
+- Admin 路由：`http://your-domain/admin/blog`
+
+## 📖 完整文档
+
+本扩展包提供了详尽的文档，涵盖从入门到高级的所有内容：
+
+### 入门指南
+- [安装指南](../vendor/zxf/modules/docs/01-installation.md) - 详细的安装和配置步骤
+- [快速开始](../vendor/zxf/modules/docs/02-quickstart.md) - 快速上手示例和最佳实践
+- [功能一览](../vendor/zxf/modules/docs/00-overview.md) - 所有功能的完整列表
+
+### 核心概念
+- [模块结构](../vendor/zxf/modules/docs/03-module-structure.md) - 完整的模块目录结构说明
+- [配置详解](../vendor/zxf/modules/docs/04-configuration.md) - 所有配置选项的详细说明
+- [架构设计](../vendor/zxf/modules/docs/13-architecture.md) - 系统架构和设计原理
+
+### 开发工具
+- [Helper 函数](../vendor/zxf/modules/docs/05-helper-functions.md) - 40+ 个助手函数的完整参考
+- [命令参考](../vendor/zxf/modules/docs/09-commands.md) - 所有 Artisan 命令的详细说明
+- [代码生成](../vendor/zxf/modules/docs/10-code-generation.md) - 代码生成器的使用和配置
+
+### 高级功能
+- [智能检测](../vendor/zxf/modules/docs/06-intelligent-detection.md) - 自动检测当前模块的机制
+- [自动发现](../vendor/zxf/modules/docs/14-auto-discovery.md) - 自动发现组件的详细机制
+- [路由指南](../vendor/zxf/modules/docs/07-routes.md) - 路由配置和使用方法
+
+### 实用指南
+- [视图使用](../vendor/zxf/modules/docs/08-views.md) - 视图命名空间和加载方法
+- [迁移管理](../vendor/zxf/modules/docs/11-migrations.md) - 数据库迁移的管理方法
+- [最佳实践](../vendor/zxf/modules/docs/12-best-practices.md) - 模块开发的最佳实践
+
+### 调试与优化
+- [命令故障排除](../vendor/zxf/modules/docs/16-command-troubleshooting.md) - 命令问题的诊断和解决
+- [命令测试指南](../vendor/zxf/modules/docs/17-command-testing-guide.md) - 命令测试的完整指南
+- [快速参考](../vendor/zxf/modules/docs/18-quick-reference.md) - 常用命令和函数的速查表
+
+## 🛠️ 常用命令速查
+
+### 模块管理
+```bash
+# 创建模块
+php artisan module:make ModuleName
+
+# 列出所有模块
+php artisan module:list
+
+# 查看模块信息
+php artisan module:info ModuleName
+
+# 删除模块
+php artisan module:delete ModuleName
+
+# 验证模块
+php artisan module:validate ModuleName
+```
+
+### 代码生成
+```bash
+# 创建控制器
+php artisan module:make-controller ModuleName ControllerName --type=web
+
+# 创建模型
+php artisan module:make-model ModuleName ModelName --migration
+
+# 创建迁移
+php artisan module:make-migration ModuleName create_table_name
+
+# 创建命令
+php artisan module:make-command ModuleName CommandName
+
+# 创建事件
+php artisan module:make-event ModuleName EventName
+
+# 创建监听器
+php artisan module:make-listener ModuleName ListenerName --event=EventName
+
+# 创建中间件
+php artisan module:make-middleware ModuleName MiddlewareName
+
+# 创建请求验证
+php artisan module:make-request ModuleName RequestName
+
+# 创建资源类
+php artisan module:make-resource ModuleName ResourceName
+```
+
+### 迁移管理
+```bash
+# 运行迁移
+php artisan module:migrate
+
+# 回滚迁移
+php artisan module:migrate-rollback
+
+# 刷新迁移
+php artisan module:migrate-refresh
+
+# 查看迁移状态
+php artisan module:migrate-status
+```
+
+## 📚 模块结构示例
+
+创建模块后，你会得到以下结构：
+
+```
+Modules/Blog/
+├── Config/                    # 配置文件
+│   └── blog.php
+├── Console/Commands/          # 控制台命令
+│   └── BlogCommand.php
+├── Database/                 # 数据库相关
+│   ├── Migrations/           # 迁移文件
+│   └── Seeders/              # 数据填充器
+├── Http/                     # HTTP 相关
+│   ├── Controllers/          # 控制器
+│   │   ├── Controller.php
+│   │   ├── Web/
+│   │   │   └── BlogController.php
+│   │   ├── Api/
+│   │   │   └── BlogController.php
+│   │   └── Admin/
+│   │       └── BlogController.php
+│   ├── Middleware/           # 中间件
+│   ├── Requests/             # 表单请求验证
+│   └── Resources/            # API 资源转换器
+├── Models/                   # 模型
+│   └── Blog.php
+├── Providers/                # 服务提供者
+│   └── BlogServiceProvider.php
+├── Resources/                # 资源文件
+│   ├── assets/               # 静态资源
+│   ├── lang/                 # 语言文件
+│   └── views/                # 视图文件
+│       └── layouts/           # 布局文件
+├── Routes/                   # 路由文件
+│   ├── web.php              # Web 路由
+│   ├── api.php              # API 路由
+│   └── admin.php             # Admin 路由
+├── Events/                   # 事件
+├── Listeners/                # 事件监听器
+├── Observers/                # 模型观察者
+├── Policies/                 # 策略类
+├── Repositories/             # 仓库类
+└── Tests/                    # 测试文件
+```
+
+## 💡 使用提示
+
+### 访问模块配置
+```php
+// 读取模块配置
+$value = config('blog.key');
+```
+
+### 返回模块视图
+```php
+// 使用模块命名空间
+return view('blog::view.name');
+```
+
+### 路由名称
+```php
+// 模块路由会自动添加前缀
+route('web.blog.index')  // Web 路由
+route('api.blog.index')  // API 路由
+route('admin.blog.index') // Admin 路由
+```
+
+### 控制器类型
+支持任意自定义的控制器类型，例如：
+- Web 控制器：`--type=web`
+- API 控制器：`--type=api`
+- Admin 控制器：`--type=admin`
+- Mobile 控制器：`--type=mobile`
+- 自定义类型：`--type=yourtype`
+
+## 🔧 配置说明
+
+模块配置文件位于：`config/modules.php`
+
+主要配置项：
+- `namespace`: 模块命名空间（默认：Modules）
+- `path`: 模块存储路径（默认：base_path('Modules')）
+- `assets`: 资源发布路径（默认：public_path('modules')）
+- `middleware_groups`: 路由中间件组配置
+- `discovery`: 自动发现配置
+- `cache`: 模块缓存配置
+
+详细配置说明请参考：[配置详解](../vendor/zxf/modules/docs/04-configuration.md)
+
+## 📖 更多资源
+
+### 文档索引
+完整的文档索引：[文档目录](../vendor/zxf/modules/docs/INDEX.md)
+
+### 常见问题
+
+1. **模块命令不工作？**
+   查看：[命令故障排除](../vendor/zxf/modules/docs/16-command-troubleshooting.md)
+
+2. **如何自定义模块结构？**
+   查看：[配置详解 - 路径配置](../vendor/zxf/modules/docs/04-configuration.md#路径配置)
+
+3. **如何优化性能？**
+   查看：[最佳实践 - 性能优化](../vendor/zxf/modules/docs/12-best-practices.md#性能优化)
+
+4. **如何调试模块问题？**
+   使用调试命令：`php artisan module:debug-commands`
+
+5. **如何创建自定义 Stub 模板？**
+   查看：[Stub 模板映射](../vendor/zxf/modules/docs/15-stub-mapping.md)
+
+## 🎓 学习路径建议
+
+### 初学者
+1. 阅读 [快速开始](../vendor/zxf/modules/docs/02-quickstart.md)
+2. 创建第一个模块并熟悉结构
+3. 参考 [命令参考](../vendor/zxf/modules/docs/09-commands.md) 学习基本命令
+4. 查看 [快速参考](../vendor/zxf/modules/docs/18-quick-reference.md)
+
+### 进阶开发
+1. 学习 [路由指南](../vendor/zxf/modules/docs/07-routes.md) 和 [视图使用](../vendor/zxf/modules/docs/08-views.md)
+2. 掌握 [Helper 函数](../vendor/zxf/modules/docs/05-helper-functions.md) 提高开发效率
+3. 了解 [自动发现机制](../vendor/zxf/modules/docs/14-auto-discovery.md)
+4. 参考 [最佳实践](../vendor/zxf/modules/docs/12-best-practices.md)
+
+### 高级用户
+1. 深入学习 [架构设计](../vendor/zxf/modules/docs/13-architecture.md)
+2. 掌握 [Stub 模板映射](../vendor/zxf/modules/docs/15-stub-mapping.md) 自定义生成器
+3. 研究自动发现机制的核心原理
+4. 参与项目贡献
+
+## 📝 版本信息
+
+- **当前版本**：2.2.0
+- **Laravel 版本要求**：11.0+
+- **PHP 版本要求**：8.2+
+
+## 💬 获取帮助
+
+如果遇到问题，你可以：
+1. 查阅详细文档了解解决方案
+2. 使用调试命令诊断问题
+3. 查看故障排除文档
+4. 在 GitHub 提交 Issue
+
+---
+
+**祝你开发愉快！** 🎉

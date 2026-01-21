@@ -96,7 +96,25 @@ php artisan module:info Blog
 php artisan module:validate Blog
 ```
 
-### 6. 运行模块迁移
+### 6. 发布多模块资源
+
+```bash
+# 发布所有资源（用户指南、配置文件）
+php artisan module:publish
+
+# 仅发布用户指南
+php artisan module:publish --guide
+
+# 仅发布配置文件
+php artisan module:publish --config
+
+# 强制覆盖已存在的文件
+php artisan module:publish --force
+```
+
+发布后，多模块用户指南将位于：`Modules/ModulesUserGuide.md`
+
+### 7. 运行模块迁移
 
 ```bash
 # 运行所有模块的迁移
@@ -115,7 +133,7 @@ php artisan module:migrate:reset Blog
 php artisan module:migrate:refresh Blog
 ```
 
-### 7. 运行模块命令
+### 8. 运行模块命令
 
 ```bash
 # 运行模块的默认命令
@@ -131,10 +149,14 @@ php artisan blog:test
 php artisan module:debug-commands --module=Blog
 ```
 
-### 8. 删除模块
+### 9. 删除模块
 
 ```bash
+# 删除模块（会提示确认）
 php artisan module:delete Blog
+
+# 强制删除（不提示确认）
+php artisan module:delete Blog --force
 ```
 
 ## 💡 核心功能示例
@@ -540,6 +562,15 @@ php artisan module:migrate:refresh Blog
 
 ## 🔄 版本更新
 
+### v2.3.0 (2026-01-21)
+- 📚 **多模块用户指南**：新增 `ModulesUserGuide.md` 统一用户指南
+- 🚀 **模块发布命令**：新增 `module:publish` 命令发布资源
+- 📖 **自动发布指南**：创建模块时自动发布用户指南
+- 🗑️ **移除模块 README**：不再为每个模块创建 README.md
+- 📝 **加强中文提示**：所有命令的注释和提示都使用中文
+- 🎯 **用户体验优化**：更友好的命令输出和错误提示
+- 🔧 **整体优化**：全面优化项目代码和文档
+
 ### v2.2.0 (2026-01-20)
 - 🎯 **修复命令注册问题**：彻底解决模块命令无法执行的问题
 - 🚀 **命令自动发现**：模块命令自动注册到 Laravel Console Application
@@ -598,6 +629,6 @@ MIT License
 ---
 
 **开发团队**：zxf  
-**版本**：2.2.0  
+**版本**：2.3.0  
 **Laravel 版本**：11+  
 **PHP 版本**：8.2+
