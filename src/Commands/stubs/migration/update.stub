@@ -30,6 +30,9 @@ return new class extends Migration
             //
             // 示例 5: 添加外键
             // $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+
+            // 表注释（可选），表注释目前只有 MariaDB、MySQL 和 PostgreSQL 支持
+            // \DB::getDriverName() !== 'sqlite' && $table->comment('Business calculations');
         });
     }
 

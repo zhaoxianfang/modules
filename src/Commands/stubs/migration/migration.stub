@@ -20,6 +20,9 @@ return new class extends Migration
             // $table->text('description')->nullable();
             // $table->timestamps();
             // $table->softDeletes();
+
+            // 表注释（可选），表注释目前只有 MariaDB、MySQL 和 PostgreSQL 支持
+            // \DB::getDriverName() !== 'sqlite' && $table->comment('Business calculations');
         });
     }
 

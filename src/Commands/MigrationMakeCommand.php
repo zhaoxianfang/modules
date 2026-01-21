@@ -80,7 +80,7 @@ class MigrationMakeCommand extends Command
 
         // 生成迁移内容
         $stubGenerator = new StubGenerator($moduleName);
-        $migrationStub = $this->generateMigrationStub($stubGenerator, $migrationInfo);
+        $migrationStub = $this->generateMigrationStub($stubGenerator, $migrationInfo, $moduleName);
 
         $result = File::put($migrationPath, $migrationStub);
 
@@ -193,7 +193,7 @@ class MigrationMakeCommand extends Command
      * @param array $migrationInfo 迁移信息
      * @return string 生成的迁移文件内容
      */
-    protected function generateMigrationStub(StubGenerator $stubGenerator, array $migrationInfo): string
+    protected function generateMigrationStub(StubGenerator $stubGenerator, array $migrationInfo, string $moduleName): string
     {
         // 生成类名
         $className = Str::studly(preg_replace('/[-_]/', ' ', $migrationInfo['migration_name']));
