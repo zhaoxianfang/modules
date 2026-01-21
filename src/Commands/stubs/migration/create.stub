@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Schema;
  * php artisan module:make-migration {{NAME}} create_{{TABLE}}_table
  *
  * 迁移命令：
- * - php artisan migrate {{NAME}} （运行所有待执行的迁移）
+ * - php artisan module:migrate {{NAME}} （运行所有待执行的迁移）
  * - php artisan migrate:rollback {{NAME}} （回滚最后一次迁移）
  * - php artisan migrate:refresh {{NAME}} （回滚并重新运行所有迁移）
  * - php artisan migrate:reset {{NAME}} （回滚所有迁移）
