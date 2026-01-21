@@ -119,14 +119,14 @@ class ModuleLoader
         $discovery->discoverAll();
 
         // 可选：记录发现摘要（用于调试）
-        if (config('app.debug', false)) {
-            $summary = $discovery->getDiscoverySummary();
-            $logs = $discovery->getLogs();
-            logger()->info("Module [{$module->getName()}] discovered", $summary);
-            if (! empty($logs)) {
-                logger()->info("Module [{$module->getName()}] discovery logs", $logs);
-            }
-        }
+        // if (config('app.debug', false)) {
+        //      $summary = $discovery->getDiscoverySummary();
+        //     $logs = $discovery->getLogs();
+        //     logger()->info("Module [{$module->getName()}] discovered", $summary);
+        //      if (! empty($logs)) {
+        //         logger()->info("Module [{$module->getName()}] discovery logs", $logs);
+        //     }
+        // }
     }
 
 

@@ -303,10 +303,10 @@ class ModuleAutoDiscovery
     {
         // 检查模块是否启用
         if (! $this->module->isEnabled()) {
-            $this->log("模块 [{$this->module->getName()}] 已禁用，跳过自动发现");
             return;
         }
 
+        // 按顺序执行所有发现任务
         $this->discoverProviders();
         $this->discoverConfigs();
         $this->discoverMiddlewares();
@@ -766,16 +766,29 @@ class ModuleAutoDiscovery
 
             // 注册翻译命名空间
             $translator = app('translator');
+
+            // 检查 translator 是否有 addNamespace 方法
+            if (! method_exists($translator, 'addNamespace')) {
+                return;
+            }
+
+            // 检查 loader 是否有 addNamespace 方法
+            $loader = $translator->getLoader();
+            if (! method_exists($loader, 'addNamespace')) {
+                return;
+            }
+
+            $namespace = $this->module->getLowerName();
+
             $translator->addNamespace(
-                $this->module->getLowerName(),
+                $namespace,
                 $langPath
             );
 
             // 记录缓存
             $this->cache['translation'] = true;
-            $this->log("成功注册翻译命名空间: {$this->module->getLowerName()} -> {$langPath}");
         } catch (\Throwable $e) {
-            $this->log("注册翻译命名空间失败, 错误: {$e->getMessage()}");
+            // 静默失败，避免影响模块加载
         }
     }
 
@@ -1253,7 +1266,8 @@ class ModuleAutoDiscovery
      */
     protected function log(string $message): void
     {
-        $this->logs[date('Y-m-d H:i:s')] = $message;
+        $timestamp = date('Y-m-d H:i:s');
+        $this->logs[$timestamp] = $message;
     }
 
     /**
