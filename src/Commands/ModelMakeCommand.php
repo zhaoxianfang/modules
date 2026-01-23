@@ -303,10 +303,11 @@ class ModelMakeCommand extends Command
     ): string {
         $lines = [];
 
+        $modelDir = config('modules.paths.generator.model.path', 'Models');;
         // 开始类定义
         $lines[] = "<?php";
         $lines[] = "";
-        $lines[] = "namespace {$namespace}\\{$moduleName};";
+        $lines[] = "namespace {$namespace}\\{$moduleName}\\{$modelDir};";
         $lines[] = "";
         $lines[] = "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;";
         $lines[] = "use Illuminate\\Database\\Eloquent\\Model;";
