@@ -1,6 +1,8 @@
 <?php
 
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Support\StubGenerator;
@@ -67,7 +69,7 @@ if (! function_exists('module_name')) {
                 $moduleDir = $segments[0] ?? '';
 
                 if ($moduleDir) {
-                    $moduleName = \Illuminate\Support\Str::studly($moduleDir);
+                    $moduleName = Str::studly($moduleDir);
 
                     if ($moduleName && module_exists($moduleName)) {
                         $result = $moduleName;
@@ -820,7 +822,7 @@ if (! function_exists('module_config_files')) {
                 return [];
             }
 
-            return array_map('basename', \Illuminate\Support\Facades\File::glob($configPath . '/*.php'));
+            return array_map('basename', File::glob($configPath . '/*.php'));
         } catch (\Throwable) {
             return [];
         }
@@ -855,7 +857,7 @@ if (! function_exists('module_route_files')) {
                 return [];
             }
 
-            return array_map(fn($file) => pathinfo($file, PATHINFO_FILENAME), \Illuminate\Support\Facades\File::glob($routesPath . '/*.php'));
+            return array_map(fn($file) => pathinfo($file, PATHINFO_FILENAME), File::glob($routesPath . '/*.php'));
         } catch (\Throwable) {
             return [];
         }
@@ -949,7 +951,7 @@ if (! function_exists('module_has_migration')) {
                 return false;
             }
 
-            return ! empty(\Illuminate\Support\Facades\File::glob(module_migrations_path($module) . '/*_' . $migrationName . '.php'));
+            return ! empty(File::glob(module_migrations_path($module) . '/*_' . $migrationName . '.php'));
         } catch (\Throwable) {
             return false;
         }
@@ -984,7 +986,7 @@ if (! function_exists('module_all_migrations')) {
                 return [];
             }
 
-            return array_map('basename', \Illuminate\Support\Facades\File::glob($migrationsPath . '/*.php'));
+            return array_map('basename', File::glob($migrationsPath . '/*.php'));
         } catch (\Throwable) {
             return [];
         }

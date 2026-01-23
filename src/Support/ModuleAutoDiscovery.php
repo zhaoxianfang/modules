@@ -4,6 +4,7 @@ namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 
 /**
@@ -160,12 +161,12 @@ class ModuleAutoDiscovery
 
             public function getCamelName(): string
             {
-                return \Illuminate\Support\Str::camel($this->name);
+                return Str::camel($this->name);
             }
 
             public function getLowerCamelName(): string
             {
-                return lcfirst(\Illuminate\Support\Str::camel($this->name));
+                return lcfirst(Str::camel($this->name));
             }
 
             public function getLowerName(): string

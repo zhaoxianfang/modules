@@ -4,6 +4,7 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use zxf\Modules\Facades\Module;
 
 class ModuleDeleteCommand extends Command
