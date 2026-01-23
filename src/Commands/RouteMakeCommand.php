@@ -68,12 +68,14 @@ class RouteMakeCommand extends Command
             $this->warn("正在覆盖已存在的路由文件 [{$routeName}]");
         }
 
-        $namespace = config('modules.namespace', 'Modules');
-
         // 使用不同的 stub 模板
         $stubFile = "route/{$type}.stub";
 
-        $stubGenerator = new StubGenerator($moduleName);
+        // 安全校验文件名（防止路径遍历）
+        if (! preg_match('/^[a-zA-Z0-9_\/\-]+\.stub$/', $stubFile)) {
+            $this->error("路由类型格式不合法: [{$type}]");
+            return Command::FAILURE;
+        }
 
         // 检查是否有对应的 stub
         $stubPath = __DIR__ . '/stubs/' . $stubFile;
@@ -81,7 +83,17 @@ class RouteMakeCommand extends Command
             // 使用通用模板
             $content = $this->getGenericRouteContent($moduleName, $routeName, $type);
         } else {
-            $content = $stubGenerator->getStubContent($stubPath);
+            // 安全读取 stub 文件内容
+            try {
+                $content = File::get($stubPath);
+                // 应用变量替换
+                $stubGenerator = new StubGenerator($moduleName);
+                $content = $this->applyReplacements($content, $stubGenerator->getReplacements());
+            } catch (\Throwable $e) {
+                $this->error("读取 stub 文件失败: " . $e->getMessage());
+                // 回退到通用模板
+                $content = $this->getGenericRouteContent($moduleName, $routeName, $type);
+            }
         }
 
         // 确保路由目录存在
@@ -116,5 +128,20 @@ class RouteMakeCommand extends Command
         $lowerName = strtolower($moduleName);
 
         return "<?php\n\nuse Illuminate\\Support\\Facades\\Route;\n\n/*\n|--------------------------------------------------------------------------\n| {$routeName} Routes ({$type})\n|--------------------------------------------------------------------------\n|\n| 在这里注册 {$moduleName} 模块的 {$routeName} 路由\n| 路由前缀: {$lowerName}\n| 路由名称前缀: {$lowerName}.\n|\n*/\n\nRoute::prefix('{$lowerName}')\n    ->name('{$lowerName}.')\n    ->group(function () {\n        // 在这里定义路由\n        Route::get('/', function () {\n            return response()->json([\n                'message' => 'Welcome to {$moduleName} {$routeName} routes',\n            ]);\n        })->name('{$routeName}');\n    });\n";
+    }
+
+    /**
+     * 应用变量替换
+     *
+     * @param string $content
+     * @param array $replacements
+     * @return string
+     */
+    protected function applyReplacements(string $content, array $replacements): string
+    {
+        foreach ($replacements as $search => $replace) {
+            $content = str_replace($search, $replace, $content);
+        }
+        return $content;
     }
 }

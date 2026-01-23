@@ -219,30 +219,46 @@ class PostController extends Controller
 ### 命令
 
 ```bash
-php artisan module:make-model <module> <name> [--migration] [--force]
+php artisan module:make-model <module> <name> [--table=] [--migration] [--factory] [--force]
 ```
 
 ### 参数
 
-- `module`：模块名称（必需）
-- `name`：模型名称（必需）
+- `module`：模块名称（必需，首字母大写）
+- `name`：模型名称（必需，首字母大写）
 
 ### 选项
 
 | 选项 | 说明 | 默认值 |
 |-----|------|-------|
+| `--table` | 从现有数据库表生成模型，自动解析字段信息 | 无 |
 | `--migration` | 创建对应的迁移文件 | false |
+| `--factory` | 同时创建对应的数据工厂类 | false |
 | `--force` | 覆盖已存在的模型 | false |
 
 ### 示例
 
-#### 创建模型
+#### 创建基础模型
 
 ```bash
 php artisan module:make-model Blog Post
 ```
 
 生成文件：`Modules/Blog/Models/Post.php`
+
+#### 从数据库表生成模型
+
+```bash
+php artisan module:make-model Logs SystemLogs --table=system_logs
+```
+
+这将自动：
+- 解析 `system_logs` 表的所有字段
+- 生成完整的 PHPDoc 属性注释
+- 生成 `fillable` 属性
+- 生成 `casts()` 方法
+- 生成 `attributes` 属性
+- datetime/timestamp 字段类型使用 `\Carbon\Carbon`
 
 #### 创建模型并生成迁移
 
@@ -254,19 +270,132 @@ php artisan module:make-model Blog Post --migration
 - `Modules/Blog/Models/Post.php`
 - `Modules/Blog/Database/Migrations/2024_01_20_120000_create_posts_table.php`
 
-### 生成的模型结构
+### 从数据库表生成的模型结构
 
 ```php
 <?php
 
-namespace Modules\Blog\Models;
+namespace Modules\Logs;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Post extends Model
+/**
+ * SystemLogs 模型
+ *
+ * Logs 模块的数据模型
+ * 继承 Eloquent Model，提供完整的数据库操作能力
+ *
+ * @property integer $id 主键 ID
+ * @property integer $user_id 用户 ID
+ * @property string|null $channel 请求通道
+ * @property \Carbon\Carbon|null $created_at 创建时间
+ * @property \Carbon\Carbon|null $updated_at 更新时间
+ */
+class SystemLogs extends Model
 {
+    use HasFactory;
+
+    protected $table = 'system_logs';
+
+    public $timestamps = true;
+
     /**
      * 可批量赋值的属性
+     *
+     * 这些属性可以通过 create()、update()、fill() 方法批量赋值
+     * 出于安全考虑，只列出允许批量赋值的字段
+     *
+     * @var array<int, string>
+     */
+    protected $fillable = [ 'user_id', 'channel', 'ip', 'method', 'url', 'level', 'message', 'is_crawler', 'context', 'extra', 'user_agent' ];
+
+    /**
+     * 获取需要被类型转换的属性。
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'id' => 'integer',
+            'user_id' => 'integer',
+            'channel' => 'string',
+            // ... 其他字段
+            'context' => 'array',
+            'extra' => 'array',
+            'created_at' => 'datetime:Y-m-d H:i:s',
+            'updated_at' => 'datetime:Y-m-d H:i:s',
+        ];
+    }
+
+    /**
+     * 默认属性值
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'user_id' => 0,
+        'level' => 200,
+        'is_crawler' => 0,
+    ];
+}
+```
+
+### 模型生成特性
+
+#### 1. 自动字段类型映射
+
+系统自动将数据库字段类型映射到 Laravel Eloquent 支持的转换类型：
+
+| 数据库类型 | Laravel 类型 |
+|----------|------------|
+| int, integer, tinyint, smallint, mediumint, bigint | integer |
+| float, double, decimal | float, decimal |
+| char, varchar, text | string |
+| date, datetime, timestamp | datetime |
+| json, jsonb | array |
+| boolean, bool | boolean |
+
+#### 2. Carbon 集成
+
+- 所有 `date`、`datetime`、`timestamp` 字段类型自动使用 `\Carbon\Carbon`
+- 在 PHPDoc 中正确标注，IDE 智能提示
+
+#### 3. 字段注释解析
+
+自动从数据库表读取字段注释，并生成到模型的 PHPDoc 中：
+
+```sql
+CREATE TABLE `users` (
+    `id` bigint UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '用户 ID',
+    `name` varchar(255) NOT NULL COMMENT '用户名称',
+    `email` varchar(255) NOT NULL COMMENT '用户邮箱'
+)
+```
+
+生成的模型：
+
+```php
+/**
+ * @property integer $id 用户 ID
+ * @property string $name 用户名称
+ * @property string $email 用户邮箱
+ */
+```
+
+#### 4. 智能默认值
+
+自动识别并设置字段的默认值到 `$attributes` 属性中。
+
+#### 5. 自动排除字段
+
+以下字段自动从 `fillable` 中排除：
+- 主键（`id`）
+- 时间戳字段（`created_at`, `updated_at`）
+- 自动递增字段
+
+### 生成的模型结构
      *
      * @var array
      */

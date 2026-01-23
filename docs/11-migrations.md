@@ -586,6 +586,22 @@ php artisan module:migrate-status
 php artisan module:migrate-status Blog
 ```
 
+### 迁移状态命令选项
+
+```bash
+# 仅查看待运行的迁移
+php artisan module:migrate-status --pending
+
+# 仅查看已运行的迁移
+php artisan module:migrate-status --ran
+
+# 查看不显示统计信息
+php artisan module:migrate-status --no-stats
+
+# 组合使用选项
+php artisan module:migrate-status Blog --pending
+```
+
 ### 输出示例
 
 ```
@@ -595,12 +611,25 @@ php artisan module:migrate-status Blog
 | 1 | Blog   | 2024_01_01_000001_...   | 1     | 已运行   |
 | 2 | Blog   | 2024_01_02_000002_...   | -     | 待运行   |
 +---+--------+-------------------------+-------+----------+
+
+迁移统计:
+  模块总数: 1 / 3
+  迁移文件总数: 2
+  已运行: 1
+  待运行: 1
 ```
 
 ### 状态说明
 
 - **已运行**：迁移已经执行
 - **待运行**：迁移尚未执行
+
+### 统计信息说明
+
+- **模块总数**：当前模块总数中包含迁移文件的模块数量
+- **迁移文件总数**：所有迁移文件的数量
+- **已运行**：已执行的迁移数量
+- **待运行**：尚未执行的迁移数量
 
 ---
 

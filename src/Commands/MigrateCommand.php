@@ -11,26 +11,45 @@ class MigrateCommand extends Command
     /**
      * 命令签名
      *
+     * 定义命令的名称、参数和选项
+     *
+     * 参数：
+     * - module: 可选参数，指定要运行的模块名称，不指定则运行所有模块
+     *
+     * 选项：
+     * - --force: 强制运行，在生产环境使用时请谨慎
+     * - --path: 指定自定义的迁移文件路径
+     * - --seed: 运行迁移后自动执行数据填充
+     * - --seeder: 指定特定的数据填充器类
+     *
      * @var string
      */
     protected $signature = 'module:migrate
-                            {module? : 模块名称（可选）}
-                            {--force : 强制运行，不提示确认}
-                            {--path= : 指定迁移路径}
-                            {--seed : 运行数据填充}
-                            {--seeder= : 指定数据填充器}';
+                            {module? : 模块名称（可选，不指定则运行所有模块）}
+                            {--force : 强制运行，不提示确认（生产环境使用时请谨慎）}
+                            {--path= : 指定自定义迁移文件路径}
+                            {--seed : 迁移完成后自动运行数据填充}
+                            {--seeder= : 指定特定的数据填充器类}';
 
     /**
      * 命令描述
      *
+     * 执行数据库迁移，将迁移文件应用到数据库
+     * 可以运行所有模块或指定模块的迁移
+     *
      * @var string
      */
-    protected $description = '运行所有模块的数据库迁移';
+    protected $description = '运行所有模块或指定模块的数据库迁移，可配合数据填充一起使用';
 
     /**
      * 执行命令
      *
-     * @return int
+     * 主要逻辑：
+     * 1. 获取命令参数和选项
+     * 2. 根据是否指定模块调用不同的方法
+     * 3. 执行迁移并显示结果
+     *
+     * @return int 命令执行状态码
      */
     public function handle(): int
     {

@@ -369,18 +369,21 @@ php artisan module:migrate-refresh Blog
 
 ### module:migrate-status
 
-显示所有模块或指定模块的迁移状态。
+显示所有模块或指定模块的迁移状态，支持统计信息和状态筛选。
 
 **签名：**
 ```bash
-php artisan module:migrate-status [module] [--path=]
+php artisan module:migrate-status [module] [--path=] [--pending] [--ran] [--no-stats]
 ```
 
 **参数：**
-- `module`：模块名称（可选）
+- `module`：模块名称（可选，不指定则显示所有模块）
 
 **选项：**
-- `--path=`：指定迁移路径
+- `--path=`：指定自定义迁移文件路径
+- `--pending`：仅显示待运行的迁移
+- `--ran`：仅显示已运行的迁移
+- `--no-stats`：不显示统计信息
 
 **示例：**
 ```bash
@@ -389,6 +392,12 @@ php artisan module:migrate-status
 
 # 查看指定模块的迁移状态
 php artisan module:migrate-status Blog
+
+# 仅查看待运行的迁移
+php artisan module:migrate-status --pending
+
+# 仅查看已运行的迁移
+php artisan module:migrate-status --ran
 ```
 
 **输出示例：**
@@ -397,6 +406,19 @@ php artisan module:migrate-status Blog
 | # | 模块   | 迁移文件                | 批次  | 状态     |
 +---+--------+-------------------------+-------+----------+
 | 1 | Blog   | 2024_01_01_000001_...   | 1     | 已运行   |
+| 2 | Blog   | 2024_01_02_000002_...   | -     | 待运行   |
++---+--------+-------------------------+-------+----------+
+
+迁移统计:
+  模块总数: 1 / 3
+  迁移文件总数: 2
+  已运行: 1
+  待运行: 1
+```
+
+**状态说明：**
+- **已运行**：迁移已经执行
+- **待运行**：迁移尚未执行
 | 2 | Blog   | 2024_01_02_000002_...   | -     | 待运行   |
 +---+--------+-------------------------+-------+----------+
 ```
@@ -434,19 +456,21 @@ php artisan module:make-controller Blog PostController --type=admin
 
 ### module:make-model
 
-在指定模块中创建一个模型。
+在指定模块中创建一个模型，支持从现有数据库表自动解析字段信息。
 
 **签名：**
 ```bash
-php artisan module:make-model <module> <name> [--migration] [--force]
+php artisan module:make-model <module> <name> [--table=] [--migration] [--factory] [--force]
 ```
 
 **参数：**
-- `module`：模块名称（必需）
-- `name`：模型名称（必需）
+- `module`：模块名称（必需，首字母大写）
+- `name`：模型名称（必需，首字母大写）
 
 **选项：**
+- `--table`：从现有数据库表生成模型，自动解析所有字段信息
 - `--migration`：创建对应的迁移文件
+- `--factory`：同时创建对应的数据工厂类
 - `--force`：覆盖已存在的模型
 
 **示例：**
@@ -456,7 +480,19 @@ php artisan module:make-model Blog Post
 
 # 在 Blog 模块中创建一个 Post 模型并生成迁移
 php artisan module:make-model Blog Post --migration
+
+# 从数据库表生成模型，自动解析字段信息
+php artisan module:make-model Logs SystemLogs --table=system_logs
 ```
+
+**特性：**
+- ✅ 自动解析数据库表结构
+- ✅ 生成完整的 PHPDoc 属性注释
+- ✅ 包含数据库字段注释
+- ✅ datetime/timestamp 字段使用 `\Carbon\Carbon` 类型
+- ✅ 自动生成 `fillable` 属性
+- ✅ 自动生成 `casts()` 方法
+- ✅ 自动生成 `attributes` 默认值
 
 ### module:make-migration
 
