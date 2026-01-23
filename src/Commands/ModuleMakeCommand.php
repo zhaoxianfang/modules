@@ -85,7 +85,7 @@ class ModuleMakeCommand extends Command
             // 创建目录结构
             $this->createModuleStructure($stubGenerator);
 
-            // 根据 stub 映射生成所有文件（已移除 README.md）
+            // 根据 stub 映射生成所有文件
             $this->generateFilesFromStubMapping($stubGenerator);
 
             $this->info("模块 [{$name}] 创建成功");
@@ -155,10 +155,13 @@ class ModuleMakeCommand extends Command
         $namespace = $generator->getNamespace();
         $lowerName = strtolower($moduleName);
 
+        // 从配置中获取 generator 配置
+        $generatorConfig = config('modules.paths.generator', []);
+
         // === 服务提供者 ===
-        $this->stubMapping[] = [
+        $generatorConfig['provider']['generate'] && $this->stubMapping[] = [
             'stub' => 'provider.stub',
-            'destination' => 'Providers/' . $moduleName . 'ServiceProvider.php',
+            'destination' => $generatorConfig['provider']['path'] . '/' . $moduleName . 'ServiceProvider.php',
             'replacements' => [
                 '{{CLASS}}' => $moduleName . 'ServiceProvider',
                 '{{LOWER_NAME}}' => $lowerName,
@@ -167,9 +170,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 配置文件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['config']['generate'] && $this->stubMapping[] = [
             'stub' => 'config.stub',
-            'destination' => 'Config/' . $lowerName . '.php',
+            'destination' => $generatorConfig['config']['path'] . '/' . $lowerName . '.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
@@ -177,9 +180,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 路由文件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['route']['generate'] && $this->stubMapping[] = [
             'stub' => 'route/web.stub',
-            'destination' => 'Routes/web.php',
+            'destination' => $generatorConfig['route']['path'] . '/web.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -189,9 +192,9 @@ class ModuleMakeCommand extends Command
             ],
         ];
 
-        $this->stubMapping[] = [
+        $generatorConfig['route']['generate'] && $this->stubMapping[] = [
             'stub' => 'route/api.stub',
-            'destination' => 'Routes/api.php',
+            'destination' => $generatorConfig['route']['path'] . '/api.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -201,9 +204,9 @@ class ModuleMakeCommand extends Command
             ],
         ];
 
-        $this->stubMapping[] = [
+        $generatorConfig['route']['generate'] && in_array('admin', config('modules.routes.default_files', ['web', 'api'])) && $this->stubMapping[] = [
             'stub' => 'route/admin.stub',
-            'destination' => 'Routes/admin.php',
+            'destination' => $generatorConfig['route']['path'] . '/admin.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -214,9 +217,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 基础控制器 ===
-        $this->stubMapping[] = [
+        $generatorConfig['controller']['generate'] && $this->stubMapping[] = [
             'stub' => 'controller.base.stub',
-            'destination' => 'Http/Controllers/Controller.php',
+            'destination' => $generatorConfig['controller']['path'] . '/Controller.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
@@ -224,9 +227,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === Web 控制器 ===
-        $this->stubMapping[] = [
+        $generatorConfig['controller.web']['generate'] && $this->stubMapping[] = [
             'stub' => 'controller.stub',
-            'destination' => 'Http/Controllers/Web/' . $moduleName . 'Controller.php',
+            'destination' => $generatorConfig['controller.web']['path'] . '/' . $moduleName . 'Controller.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{CONTROLLER_SUBNAMESPACE}}' => '\\Web',
@@ -235,9 +238,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === Api 控制器 ===
-        $this->stubMapping[] = [
+        $generatorConfig['controller.api']['generate'] && $this->stubMapping[] = [
             'stub' => 'controller.stub',
-            'destination' => 'Http/Controllers/Api/' . $moduleName . 'Controller.php',
+            'destination' => $generatorConfig['controller.api']['path'] . '/' . $moduleName . 'Controller.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{CONTROLLER_SUBNAMESPACE}}' => '\\Api',
@@ -246,9 +249,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === Admin 控制器 ===
-        $this->stubMapping[] = [
+        $generatorConfig['controller.admin']['generate'] && $this->stubMapping[] = [
             'stub' => 'controller.stub',
-            'destination' => 'Http/Controllers/Admin/' . $moduleName . 'Controller.php',
+            'destination' => $generatorConfig['controller.admin']['path'] . '/' . $moduleName . 'Controller.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{CONTROLLER_SUBNAMESPACE}}' => '\\Admin',
@@ -257,9 +260,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 模型 ===
-        $this->stubMapping[] = [
+        $generatorConfig['model']['generate'] && $this->stubMapping[] = [
             'stub' => 'model.stub',
-            'destination' => 'Models/' . $moduleName . '.php',
+            'destination' => $generatorConfig['model']['path'] . '/' . $moduleName . '.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -267,9 +270,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 观察者 ===
-        $this->stubMapping[] = [
+        $generatorConfig['observer']['generate'] && $this->stubMapping[] = [
             'stub' => 'observer.stub',
-            'destination' => 'Observers/' . $moduleName . 'Observer.php',
+            'destination' => $generatorConfig['observer']['path'] . '/' . $moduleName . 'Observer.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -278,9 +281,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 策略 ===
-        $this->stubMapping[] = [
+        $generatorConfig['policy']['generate'] && $this->stubMapping[] = [
             'stub' => 'policy.stub',
-            'destination' => 'Policies/' . $moduleName . 'Policy.php',
+            'destination' => $generatorConfig['policy']['path'] . '/' . $moduleName . 'Policy.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -289,9 +292,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 仓库 ===
-        $this->stubMapping[] = [
+        $generatorConfig['repository']['generate'] && $this->stubMapping[] = [
             'stub' => 'repository.stub',
-            'destination' => 'Repositories/' . $moduleName . 'Repository.php',
+            'destination' => $generatorConfig['repository']['path'] . '/' . $moduleName . 'Repository.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -300,9 +303,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 请求验证 ===
-        $this->stubMapping[] = [
+        $generatorConfig['request']['generate'] && $this->stubMapping[] = [
             'stub' => 'request.stub',
-            'destination' => 'Http/Requests/' . $moduleName . 'Request.php',
+            'destination' => $generatorConfig['request']['path'] . '/' . $moduleName . 'Request.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -311,9 +314,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 资源类 ===
-        $this->stubMapping[] = [
+        $generatorConfig['resource']['generate'] && $this->stubMapping[] = [
             'stub' => 'resource.stub',
-            'destination' => 'Http/Resources/' . $moduleName . 'Resource.php',
+            'destination' => $generatorConfig['resource']['path'] . '/' . $moduleName . 'Resource.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -322,9 +325,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 中间件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['middleware']['generate'] && $this->stubMapping[] = [
             'stub' => 'middleware.stub',
-            'destination' => 'Http/Middleware/' . $moduleName . 'Middleware.php',
+            'destination' => $generatorConfig['middleware']['path'] . '/' . $moduleName . 'Middleware.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -333,9 +336,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 命令 ===
-        $this->stubMapping[] = [
+        $generatorConfig['command']['generate'] && $this->stubMapping[] = [
             'stub' => 'command.stub',
-            'destination' => 'Console/Commands/' . $moduleName . 'Command.php',
+            'destination' => $generatorConfig['command']['path'] . '/' . $moduleName . 'Command.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -347,9 +350,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 事件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['event']['generate'] && $this->stubMapping[] = [
             'stub' => 'event.stub',
-            'destination' => 'Events/' . $moduleName . 'Event.php',
+            'destination' => $generatorConfig['event']['path'] . '/' . $moduleName . 'Event.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -358,9 +361,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 监听器 ===
-        $this->stubMapping[] = [
+        $generatorConfig['listener']['generate'] && $this->stubMapping[] = [
             'stub' => 'listener.stub',
-            'destination' => 'Listeners/' . $moduleName . 'Listener.php',
+            'destination' => $generatorConfig['listener']['path'] . '/' . $moduleName . 'Listener.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -371,9 +374,9 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 数据填充器 ===
-        $this->stubMapping[] = [
+        $generatorConfig['seeder']['generate'] && $this->stubMapping[] = [
             'stub' => 'seeder.stub',
-            'destination' => 'Database/Seeders/' . $moduleName . 'Seeder.php',
+            'destination' => $generatorConfig['seeder']['path'] . '/' . $moduleName . 'Seeder.php',
             'replacements' => [
                 '{{NAMESPACE}}' => $namespace,
                 '{{NAME}}' => $moduleName,
@@ -381,21 +384,10 @@ class ModuleMakeCommand extends Command
             ],
         ];
 
-        // === 测试 ===
-        $this->stubMapping[] = [
-            'stub' => 'test.stub',
-            'destination' => 'Tests/' . $moduleName . 'Test.php',
-            'replacements' => [
-                '{{NAMESPACE}}' => $namespace,
-                '{{NAME}}' => $moduleName,
-                '{{CLASS}}' => $moduleName . 'Test',
-            ],
-        ];
-
         // === 示例迁移 ===
-        $this->stubMapping[] = [
+        $generatorConfig['migration']['generate'] && $this->stubMapping[] = [
             'stub' => 'migration/create.stub',
-            'destination' => 'Database/Migrations/'.date('Y_m_d_His').'_create_' . $lowerName . '_table.php',
+            'destination' => $generatorConfig['migration']['path'] . '/' . date('Y_m_d_His').'_create_' . $lowerName . '_table.php',
             'replacements' => [
                 '{{TABLE}}' => $lowerName,
                 '{{NAME}}' => $moduleName,
@@ -404,27 +396,27 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 视图文件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['views']['generate'] && $this->stubMapping[] = [
             'stub' => 'view.stub',
-            'destination' => 'Resources/views/welcome.blade.php',
+            'destination' => $generatorConfig['views']['path'] . '/welcome.blade.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
             ],
         ];
 
-        $this->stubMapping[] = [
+        $generatorConfig['views']['generate'] && $this->stubMapping[] = [
             'stub' => 'view.index.stub',
-            'destination' => 'Resources/views/index.blade.php',
+            'destination' => $generatorConfig['views']['path'] . '/index.blade.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
             ],
         ];
 
-        $this->stubMapping[] = [
+        $generatorConfig['views']['generate'] && $this->stubMapping[] = [
             'stub' => 'view.show.stub',
-            'destination' => 'Resources/views/show.blade.php',
+            'destination' => $generatorConfig['views']['path'] . '/show.blade.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
@@ -432,18 +424,18 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 布局文件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['views']['generate'] && $this->stubMapping[] = [
             'stub' => 'layout.app.stub',
-            'destination' => 'Resources/views/layouts/app.blade.php',
+            'destination' => $generatorConfig['views']['path'] . '/layouts/app.blade.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
             ],
         ];
 
-        $this->stubMapping[] = [
+        $generatorConfig['views']['generate'] && $this->stubMapping[] = [
             'stub' => 'layout.simple.stub',
-            'destination' => 'Resources/views/layouts/simple.blade.php',
+            'destination' => $generatorConfig['views']['path'] . '/layouts/simple.blade.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
@@ -451,12 +443,22 @@ class ModuleMakeCommand extends Command
         ];
 
         // === 语言文件 ===
-        $this->stubMapping[] = [
+        $generatorConfig['lang']['generate'] && $this->stubMapping[] = [
             'stub' => 'lang.stub',
-            'destination' => 'Resources/lang/zh-CN/messages.php',
+            'destination' => $generatorConfig['lang']['path'] . '/zh-CN/messages.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
+            ],
+        ];
+        // === 测试 ===
+        $generatorConfig['test']['generate'] && $this->stubMapping[] = [
+            'stub' => 'test.stub',
+            'destination' => $generatorConfig['test']['path'] . '/' . $moduleName . 'Test.php',
+            'replacements' => [
+                '{{NAMESPACE}}' => $namespace,
+                '{{NAME}}' => $moduleName,
+                '{{CLASS}}' => $moduleName . 'Test',
             ],
         ];
     }
@@ -464,39 +466,58 @@ class ModuleMakeCommand extends Command
     /**
      * 创建模块目录结构
      *
+     * 根据 modules.paths.generator 配置动态生成目录
+     * 如果配置项被注释或删除，则不会生成对应的目录
+     *
      * @param StubGenerator $generator
      * @return void
      */
     protected function createModuleStructure(StubGenerator $generator): void
     {
-        $this->info("Creating module structure...");
+        $this->info("创建模块结构...");
 
         try {
-            $directories = [
-                'Config',
-                'Routes',
-                'Providers',
-                'Console/Commands',
-                'Http/Controllers/Web',
-                'Http/Controllers/Api',
-                'Http/Controllers/Admin',
-                'Http/Middleware',
-                'Http/Requests',
-                'Http/Resources',
-                'Database/Migrations',
-                'Database/Seeders',
-                'Models',
-                'Resources/views',
-                'Resources/views/layouts',
-                'Resources/assets',
-                'Resources/lang',
-                'Events',
-                'Listeners',
-                'Observers',
-                'Policies',
-                'Repositories',
-                'Tests',
-            ];
+            // 从配置中获取 generator 配置
+            $generatorConfig = config('modules.paths.generator', []);
+
+            // 如果没有配置，使用默认目录
+            if (empty($generatorConfig)) {
+                $directories = [
+                    'Config',
+                    'Routes',
+                    'Providers',
+                    'Console/Commands',
+                    'Http/Controllers/Web',
+                    'Http/Controllers/Api',
+                    'Http/Controllers/Admin',
+                    'Http/Middleware',
+                    'Http/Requests',
+                    'Http/Resources',
+                    'Database/Migrations',
+                    'Database/Seeders',
+                    'Models',
+                    'Resources/views',
+                    'Resources/views/layouts',
+                    'Resources/assets',
+                    'Resources/lang',
+                    'Events',
+                    'Listeners',
+                    'Observers',
+                    'Policies',
+                    'Repositories',
+                    'Tests',
+                ];
+            } else {
+                // 根据 generator 配置动态生成目录
+                $directories = [];
+
+                foreach ($generatorConfig as $generatorItem) {
+                    // 只生成有 generate 为开启的 path 目录
+                    if (is_array($generatorItem) && !empty($generatorItem['generate'])) {
+                        $directories[] = $generatorItem['path'];
+                    }
+                }
+            }
 
             $generator->generateDirectories($directories);
         } catch (\Exception $e) {
@@ -514,7 +535,7 @@ class ModuleMakeCommand extends Command
      */
     protected function generateFilesFromStubMapping(StubGenerator $generator): void
     {
-        $this->info("Generating files from stubs...");
+        $this->info("从 stubs 中生成文件...");
 
         try {
             $generatedCount = 0;

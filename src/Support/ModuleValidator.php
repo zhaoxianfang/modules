@@ -44,8 +44,10 @@ class ModuleValidator
         }
 
         // 检查配置文件
-        if (! file_exists($module->getConfigPath() . DIRECTORY_SEPARATOR . 'config.php')) {
-            $errors[] = '缺少主配置文件 (config.php)';
+        $configValidate = self::validateConfig($module);
+        if(!$configValidate['valid']){
+            // 配置文件异常
+            $errors[] = $configValidate['error'];
         }
 
         // 检查控制器目录
@@ -73,12 +75,14 @@ class ModuleValidator
      */
     public static function validateConfig(ModuleInterface $module): array
     {
-        $configFile = $module->getConfigPath() . DIRECTORY_SEPARATOR . 'config.php';
+        // 配置文件命名规则：小写模块名.php
+        $file = $module->getLowerName() . '.php';
+        $configFile = $module->getConfigPath() . DIRECTORY_SEPARATOR . $file;
 
         if (! file_exists($configFile)) {
             return [
                 'valid' => false,
-                'errors' => ['配置文件不存在'],
+                'error' => '配置文件不存在:' . $file,
             ];
         }
 
@@ -87,21 +91,21 @@ class ModuleValidator
         if (! is_array($config)) {
             return [
                 'valid' => false,
-                'errors' => ['配置文件必须返回一个数组'],
+                'error' => '配置文件必须返回一个数组:' . $file,
             ];
         }
 
-        $errors = [];
+        $error = '';
 
         if (! isset($config['enable'])) {
-            $errors[] = '配置文件缺少 enable 键';
+            $error = '配置文件缺少 enable 键';
         } elseif (! is_bool($config['enable'])) {
-            $errors[] = 'enable 键必须是布尔值';
+            $error = 'enable 键必须是布尔值';
         }
 
         return [
             'valid' => empty($errors),
-            'errors' => $errors,
+            'error' => $error .':'. $file,
         ];
     }
 

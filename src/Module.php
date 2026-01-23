@@ -256,7 +256,7 @@ class Module implements ModuleInterface
      */
     public function getServiceProviderClass(): ?string
     {
-        $className = $this->namespace . '\\' . $this->name . '\\' . $this->name . 'ServiceProvider';
+        $className = $this->namespace . '\\' . $this->name . '\\Providers\\' . $this->name . 'ServiceProvider';
 
         if (class_exists($className)) {
             return $className;

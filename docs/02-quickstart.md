@@ -38,11 +38,7 @@ return [
     */
     'enabled' => true,  // 设置为 false 可禁用此模块
 
-    'name' => 'Blog',
-    'version' => '1.0.0',
-    'description' => 'Blog 模块',
-    'author' => '',
-    'options' => [],
+    ...
 ];
 ```
 

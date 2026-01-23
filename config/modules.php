@@ -53,56 +53,56 @@ return [
         |--------------------------------------------------------------------------
         | 代码生成器路径配置
         |--------------------------------------------------------------------------
-        | 定义各类代码生成的目标路径
+        | 定义各类代码生成的目标路径: 根据 generate 决定是否创建文件或目录
         |
         */
         'generator' => [
-            // 资源文件
-            'assets' => 'Resources/assets',
-            // 配置文件
-            'config' => 'Config',
-            // 控制台命令
-            'command' => 'Console/Commands',
-            // 事件
-            'event' => 'Events',
-            // 事件监听器
-            'listener' => 'Listeners',
-            // 数据库迁移
-            'migration' => 'Database/Migrations',
-            // 模型
-            'model' => 'Models',
-            // 模型观察者
-            'observer' => 'Observers',
-            // 策略类
-            'policy' => 'Policies',
             // 服务提供者
-            'provider' => 'Providers',
-            // 仓库类
-            'repository' => 'Repositories',
-            // 表单验证请求
-            'request' => 'Http/Requests',
-            // API 资源转换器
-            'resource' => 'Http/Resources',
+            'provider' => ['path' => 'Providers', 'generate' => true],
+            // 配置文件
+            'config' => ['path' => 'Config', 'generate' => true],
             // 路由文件
-            'route' => 'Routes',
-            // 数据填充器
-            'seeder' => 'Database/Seeders',
-            // 测试文件
-            'test' => 'Tests',
+            'route' => ['path' => 'Routes', 'generate' => true],
             // 控制器
-            'controller' => 'Http/Controllers',
+            'controller' => ['path' => 'Http/Controllers', 'generate' => true],
             // Web控制器子目录
-            'controller.web' => 'Http/Controllers/Web',
+            'controller.web' => ['path' => 'Http/Controllers/Web', 'generate' => true],
             // API控制器子目录
-            'controller.api' => 'Http/Controllers/Api',
+            'controller.api' => ['path' => 'Http/Controllers/Api', 'generate' => true],
             // Admin控制器子目录
-            'controller.admin' => 'Http/Controllers/Admin',
+            'controller.admin' => ['path' => 'Http/Controllers/Admin', 'generate' => false],
+            // 模型
+            'model' => ['path' => 'Models', 'generate' => true],
+            // 模型观察者
+            'observer' => ['path' => 'Observers', 'generate' => false],
+            // 策略类
+            'policy' => ['path' => 'Policies', 'generate' => false],
+            // 仓库类
+            'repository' => ['path' => 'Repositories', 'generate' => false],
+            // 表单验证请求
+            'request' => ['path' => 'Http/Requests', 'generate' => false],
+            // API 资源转换器
+            'resource' => ['path' => 'Http/Resources', 'generate' => true],
             // 中间件
-            'filter' => 'Http/Middleware',
-            // 语言文件
-            'lang' => 'Resources/lang',
+            'middleware' => ['path' => 'Http/Middleware', 'generate' => false],
+            // 控制台命令
+            'command' => ['path' => 'Console/Commands', 'generate' => false],
+            // 事件
+            'event' => ['path' => 'Events', 'generate' => false],
+            // 事件监听器
+            'listener' => ['path' => 'Listeners', 'generate' => false],
+            // 数据库迁移[注：示例迁移]
+            'migration' => ['path' => 'Database/Migrations', 'generate' => false],
+            // 数据填充器
+            'seeder' => ['path' => 'Database/Seeders', 'generate' => true],
             // 视图文件
-            'views' => 'Resources/views',
+            'views' => ['path' => 'Resources/views', 'generate' => true],
+            // 语言文件
+            'lang' => ['path' => 'Resources/lang', 'generate' => false],
+            // 测试文件
+            'test' => ['path' => 'Tests', 'generate' => false],
+            // 资源文件
+            'assets' => ['path' => 'Resources/assets', 'generate' => false],
         ],
     ],
 
@@ -144,8 +144,8 @@ return [
         'prefix' => true,
         // 是否自动添加模块名称到路由名称
         'name_prefix' => true,
-        // 默认路由文件列表
-        'default_files' => ['web', 'api', 'admin'],
+        // 默认路由文件列表 eg: ['web', 'api', admin],
+        'default_files' => ['web', 'api'],
     ],
 
     /*
