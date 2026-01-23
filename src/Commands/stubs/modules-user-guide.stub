@@ -24,104 +24,79 @@ php artisan module:make Blog
 - API 路由：`http://your-domain/api/blog`
 - Admin 路由：`http://your-domain/admin/blog`
 
-## 📖 完整文档
-
-本扩展包提供了详尽的文档，涵盖从入门到高级的所有内容：
-
-### 入门指南
-- [安装指南](../vendor/zxf/modules/docs/01-installation.md) - 详细的安装和配置步骤
-- [快速开始](../vendor/zxf/modules/docs/02-quickstart.md) - 快速上手示例和最佳实践
-- [功能一览](../vendor/zxf/modules/docs/00-overview.md) - 所有功能的完整列表
-
-### 核心概念
-- [模块结构](../vendor/zxf/modules/docs/03-module-structure.md) - 完整的模块目录结构说明
-- [配置详解](../vendor/zxf/modules/docs/04-configuration.md) - 所有配置选项的详细说明
-- [架构设计](../vendor/zxf/modules/docs/13-architecture.md) - 系统架构和设计原理
-
-### 开发工具
-- [Helper 函数](../vendor/zxf/modules/docs/05-helper-functions.md) - 40+ 个助手函数的完整参考
-- [命令参考](../vendor/zxf/modules/docs/09-commands.md) - 所有 Artisan 命令的详细说明
-- [代码生成](../vendor/zxf/modules/docs/10-code-generation.md) - 代码生成器的使用和配置
-
-### 高级功能
-- [智能检测](../vendor/zxf/modules/docs/06-intelligent-detection.md) - 自动检测当前模块的机制
-- [自动发现](../vendor/zxf/modules/docs/14-auto-discovery.md) - 自动发现组件的详细机制
-- [路由指南](../vendor/zxf/modules/docs/07-routes.md) - 路由配置和使用方法
-
-### 实用指南
-- [视图使用](../vendor/zxf/modules/docs/08-views.md) - 视图命名空间和加载方法
-- [迁移管理](../vendor/zxf/modules/docs/11-migrations.md) - 数据库迁移的管理方法
-- [最佳实践](../vendor/zxf/modules/docs/12-best-practices.md) - 模块开发的最佳实践
-
-### 调试与优化
-- [命令故障排除](../vendor/zxf/modules/docs/16-command-troubleshooting.md) - 命令问题的诊断和解决
-- [命令测试指南](../vendor/zxf/modules/docs/17-command-testing-guide.md) - 命令测试的完整指南
-- [快速参考](../vendor/zxf/modules/docs/18-quick-reference.md) - 常用命令和函数的速查表
 
 ## 🛠️ 常用命令速查
 
 ### 模块管理
 ```bash
 # 创建模块
-php artisan module:make ModuleName
+php artisan module:make Blog
 
 # 列出所有模块
 php artisan module:list
 
 # 查看模块信息
-php artisan module:info ModuleName
+php artisan module:info Blog
 
 # 删除模块
-php artisan module:delete ModuleName
+php artisan module:delete Blog
 
 # 验证模块
-php artisan module:validate ModuleName
+php artisan module:validate Blog
 ```
 
 ### 代码生成
 ```bash
-# 创建控制器
-php artisan module:make-controller ModuleName ControllerName --type=web
+# 创建控制器 可以指定类型
+php artisan module:make-controller Blog PostController --type=web
 
 # 创建模型
-php artisan module:make-model ModuleName ModelName --migration
+// 创建模型 - 同时创建对应的数据库迁移文件
+php artisan module:make-model Blog Blogs --migration
+// 在 Blog 模块下 创建 Blogs 模型，并且把 数据库中的 blogs 表字段信息解析到模型类中
+php artisan module:make-model Blog Blogs --table=blogs --force
 
 # 创建迁移
-php artisan module:make-migration ModuleName create_table_name
+php artisan module:make-migration Blog create_blogs_table // 创建
+php artisan module:make-migration Blog drop_blogs_table // 更新
+php artisan module:make-migration Blog add_name_to_blogs_table // 更新迁移
+
 
 # 创建命令
-php artisan module:make-command ModuleName CommandName
+// 创建一个 blog:sync-posts 命令
+php artisan module:make-command Blog SyncPosts --command=blog:sync-posts
 
 # 创建事件
-php artisan module:make-event ModuleName EventName
+php artisan module:make-event Blog EventName
 
 # 创建监听器
-php artisan module:make-listener ModuleName ListenerName --event=EventName
+php artisan module:make-listener Blog ListenerName --event=EventName
 
 # 创建中间件
-php artisan module:make-middleware ModuleName MiddlewareName
+php artisan module:make-middleware Blog MiddlewareName
 
 # 创建请求验证
-php artisan module:make-request ModuleName RequestName
+php artisan module:make-request Blog RequestName
 
 # 创建资源类
-php artisan module:make-resource ModuleName ResourceName
+php artisan module:make-resource Blog ResourceName
 ```
 
 ### 迁移管理
 ```bash
 # 运行迁移
-php artisan module:migrate
+php artisan module:migrate Blog
 
 # 回滚迁移
-php artisan module:migrate-rollback
+php artisan module:migrate-rollback Blog
 
 # 刷新迁移
-php artisan module:migrate-refresh
+php artisan module:migrate-refresh Blog
 
 # 查看迁移状态
-php artisan module:migrate-status
+php artisan module:migrate-status Blog
 ```
+
 
 ## 📚 模块结构示例
 
@@ -169,6 +144,7 @@ Modules/Blog/
 └── Tests/                    # 测试文件
 ```
 
+
 ## 💡 使用提示
 
 ### 访问模块配置
@@ -212,6 +188,41 @@ route('admin.blog.index') // Admin 路由
 - `cache`: 模块缓存配置
 
 详细配置说明请参考：[配置详解](../vendor/zxf/modules/docs/04-configuration.md)
+
+## 📖 完整文档
+
+本扩展包提供了详尽的文档，涵盖从入门到高级的所有内容：
+
+### 入门指南
+- [安装指南](../vendor/zxf/modules/docs/01-installation.md) - 详细的安装和配置步骤
+- [快速开始](../vendor/zxf/modules/docs/02-quickstart.md) - 快速上手示例和最佳实践
+- [功能一览](../vendor/zxf/modules/docs/00-overview.md) - 所有功能的完整列表
+
+### 核心概念
+- [模块结构](../vendor/zxf/modules/docs/03-module-structure.md) - 完整的模块目录结构说明
+- [配置详解](../vendor/zxf/modules/docs/04-configuration.md) - 所有配置选项的详细说明
+- [架构设计](../vendor/zxf/modules/docs/13-architecture.md) - 系统架构和设计原理
+
+### 开发工具
+- [Helper 函数](../vendor/zxf/modules/docs/05-helper-functions.md) - 40+ 个助手函数的完整参考
+- [命令参考](../vendor/zxf/modules/docs/09-commands.md) - 所有 Artisan 命令的详细说明
+- [代码生成](../vendor/zxf/modules/docs/10-code-generation.md) - 代码生成器的使用和配置
+
+### 高级功能
+- [智能检测](../vendor/zxf/modules/docs/06-intelligent-detection.md) - 自动检测当前模块的机制
+- [自动发现](../vendor/zxf/modules/docs/14-auto-discovery.md) - 自动发现组件的详细机制
+- [路由指南](../vendor/zxf/modules/docs/07-routes.md) - 路由配置和使用方法
+
+### 实用指南
+- [视图使用](../vendor/zxf/modules/docs/08-views.md) - 视图命名空间和加载方法
+- [迁移管理](../vendor/zxf/modules/docs/11-migrations.md) - 数据库迁移的管理方法
+- [最佳实践](../vendor/zxf/modules/docs/12-best-practices.md) - 模块开发的最佳实践
+
+### 调试与优化
+- [命令故障排除](../vendor/zxf/modules/docs/16-command-troubleshooting.md) - 命令问题的诊断和解决
+- [命令测试指南](../vendor/zxf/modules/docs/17-command-testing-guide.md) - 命令测试的完整指南
+- [快速参考](../vendor/zxf/modules/docs/18-quick-reference.md) - 常用命令和函数的速查表
+
 
 ## 📖 更多资源
 

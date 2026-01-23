@@ -171,7 +171,6 @@ class MigrationMakeCommand extends Command
         $patterns = [
             'update' => '/^update_([^_]+?)(?:_table|_tables)?$/i',
             'drop' => '/^drop_([^_]+?)(?:_table|_tables)?$/i',
-            'rename' => '/^rename_([^_]+?)_to_/i',
             'change' => '/^change_.+_in_([^_]+?)(?:_table|_tables)?$/i',
         ];
 
