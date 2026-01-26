@@ -8,7 +8,12 @@
 
 | 命令 | 说明 | 用法 |
 |------|------|------|
-| `module:make` | 创建新模块 | `php artisan module:make <name> [--force]` |
+| `module:make` | 创建新模块 | `php artisan module:make <name> [--force] [--full]` |
+
+**`module:make` 选项说明：**
+- `name`: 模块名称（必需）
+- `--force`: 覆盖已存在的模块
+- `--full`: 强制生成所有文件，忽略配置中的 `generate` 设置（详见下方）
 | `module:delete` | 删除模块 | `php artisan module:delete <name> [--force]` |
 
 ### 代码生成命令（13个）
@@ -60,6 +65,108 @@
 12. [路由生成](#路由生成)
 13. [配置生成](#配置生成)
 14. [代码生成最佳实践](#代码生成最佳实践)
+
+---
+
+## `--full` 参数详解
+
+### 什么是 `--full` 参数
+
+`--full` 参数用于 `module:make` 命令，可以强制生成所有模块组件文件，忽略 `config/modules.php` 中 `paths.generator` 配置项的 `generate` 设置。
+
+### 使用场景
+
+1. **需要完整模块结构**：当项目需要完整的模块结构，包括所有可选组件时
+2. **快速原型开发**：快速创建一个包含所有可能组件的模块，然后选择性使用
+3. **团队标准统一**：确保所有模块都包含相同的组件结构
+
+### 默认配置 vs --full 参数
+
+#### 默认行为（不使用 --full）
+
+根据 `config/modules.php` 中的 `paths.generator` 配置决定是否生成对应文件：
+
+```php
+'generator' => [
+    'provider' => ['path' => 'Providers', 'generate' => true],     // ✓ 生成
+    'controller.admin' => ['path' => 'Http/Controllers/Admin', 'generate' => false],  // ✗ 不生成
+    'observer' => ['path' => 'Observers', 'generate' => false],    // ✗ 不生成
+    'policy' => ['path' => 'Policies', 'generate' => false],      // ✗ 不生成
+    'repository' => ['path' => 'Repositories', 'generate' => false], // ✗ 不生成
+    'migration' => ['path' => 'Database/Migrations', 'generate' => false], // ✗ 不生成
+    // ...
+],
+```
+
+#### 使用 --full 参数
+
+所有 `generate` 设置会被强制为 `true`，生成所有组件文件：
+
+```bash
+php artisan module:make Blog --full
+```
+
+生成的文件包括：
+- ✓ Service Provider
+- ✓ Config
+- ✓ Routes (web.php, api.php, admin.php)
+- ✓ Controllers (base, Web, Api, Admin)
+- ✓ Models
+- ✓ Observers
+- ✓ Policies
+- ✓ Repositories
+- ✓ Requests
+- ✓ Resources
+- ✓ Middleware
+- ✓ Commands
+- ✓ Events
+- ✓ Listeners
+- ✓ Seeders
+- ✓ Migrations (示例迁移)
+- ✓ Views (包括布局文件)
+- ✓ Lang
+- ✓ Tests
+- ✓ Assets
+
+### 使用示例
+
+#### 创建标准模块
+```bash
+php artisan module:make Blog
+```
+
+根据配置生成，可能只生成部分文件（如 provider、model、controller 等）。
+
+#### 创建完整模块
+```bash
+php artisan module:make Blog --full
+```
+
+生成所有 28 个组件文件，包括默认不生成的 observer、policy、repository 等。
+
+#### 覆盖已存在模块
+```bash
+php artisan module:make Blog --force --full
+```
+
+强制覆盖已存在的 Blog 模块，并生成所有文件。
+
+### 配合其他参数
+
+`--full` 可以与 `--force` 参数配合使用：
+
+```bash
+# 覆盖并生成所有文件
+php artisan module:make Blog --force --full
+```
+
+### 注意事项
+
+⚠️ **重要提示**：
+- 使用 `--full` 会生成大量文件，请根据实际需求选择
+- 某些组件（如 Observer、Policy、Repository）可能需要额外配置才能正常工作
+- 生成的迁移文件是示例文件，需要根据实际需求修改表结构
+- 建议在创建模块后，根据项目需求删除不需要的组件文件
 
 ---
 

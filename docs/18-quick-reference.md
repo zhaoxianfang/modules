@@ -26,7 +26,7 @@ php artisan module:migrate
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `module:make` | 创建新模块 | `php artisan module:make Blog` |
+| `module:make` | 创建新模块 | `php artisan module:make Blog [--full]` |
 | `module:list` | 列出所有模块 | `php artisan module:list` |
 | `module:info` | 查看模块详情 | `php artisan module:info Blog` |
 | `module:validate` | 验证模块完整性 | `php artisan module:validate Blog` |

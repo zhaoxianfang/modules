@@ -22,7 +22,8 @@ class ModuleMakeCommand extends Command
      */
     protected $signature = 'module:make
                             {name : 模块名称}
-                            {--force : 覆盖已存在的模块}';
+                            {--force : 覆盖已存在的模块}
+                            {--full : 强制生成所有文件,忽略配置中的 generate 设置}';
 
     /**
      * 命令描述
@@ -50,6 +51,7 @@ class ModuleMakeCommand extends Command
         try {
             $name = Str::studly($this->argument('name'));
             $force = $this->option('force');
+            $full = $this->option('full');
 
             // 检查多模块发布并发布用户指南
             $this->publishModulesUserGuide();
@@ -157,6 +159,16 @@ class ModuleMakeCommand extends Command
 
         // 从配置中获取 generator 配置
         $generatorConfig = config('modules.paths.generator', []);
+
+        // 如果指定了 --full 参数,强制所有 generate 为 true
+        $full = $this->option('full');
+        if ($full) {
+            foreach ($generatorConfig as $key => $config) {
+                if (is_array($config) && isset($config['generate'])) {
+                    $generatorConfig[$key]['generate'] = true;
+                }
+            }
+        }
 
         // === 服务提供者 ===
         $generatorConfig['provider']['generate'] && $this->stubMapping[] = [
@@ -479,6 +491,16 @@ class ModuleMakeCommand extends Command
         try {
             // 从配置中获取 generator 配置
             $generatorConfig = config('modules.paths.generator', []);
+
+            // 如果指定了 --full 参数,强制所有 generate 为 true
+            $full = $this->option('full');
+            if ($full) {
+                foreach ($generatorConfig as $key => $config) {
+                    if (is_array($config) && isset($config['generate'])) {
+                        $generatorConfig[$key]['generate'] = true;
+                    }
+                }
+            }
 
             // 如果没有配置，使用默认目录
             if (empty($generatorConfig)) {

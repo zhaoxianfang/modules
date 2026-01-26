@@ -87,8 +87,17 @@ if (module_enabled()) {
 使用以下命令创建一个名为 `Blog` 的模块：
 
 ```bash
+# 创建模块（根据配置生成）
 php artisan module:make Blog
+
+# 创建模块（强制生成所有文件）
+php artisan module:make Blog --full
 ```
+
+**`--full` 参数说明：**
+- 使用 `--full` 参数时,会忽略 `config/modules.php` 中 `paths.generator` 配置项的 `generate` 设置
+- 所有组件文件都会按照 `generate = true` 来生成,包括默认设置为 `false` 的组件
+- 适用于需要完整模块结构的场景
 
 这会在 `Modules` 目录下创建以下结构：
 
