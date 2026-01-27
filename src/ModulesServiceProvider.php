@@ -133,6 +133,7 @@ class ModulesServiceProvider extends ServiceProvider
                 Commands\MigrateResetCommand::class,
                 Commands\MigrateRefreshCommand::class,
                 Commands\MigrateStatusCommand::class,
+                Commands\ModuleCheckLangCommand::class,
             ]);
         }
     }

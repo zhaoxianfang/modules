@@ -44,6 +44,7 @@
 - 列出模块：[命令参考](09-commands.md#module-list)
 - 删除模块：[命令参考](09-commands.md#module-delete)
 - 验证模块：[命令参考](09-commands.md#module-validate)
+- 检查本地化：[本地化文件检查](19-check-lang.md)
 
 ### 代码生成
 - 控制器：[代码生成](10-code-generation.md#控制器)

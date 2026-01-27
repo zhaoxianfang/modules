@@ -30,6 +30,7 @@ php artisan module:migrate
 | `module:list` | 列出所有模块 | `php artisan module:list` |
 | `module:info` | 查看模块详情 | `php artisan module:info Blog` |
 | `module:validate` | 验证模块完整性 | `php artisan module:validate Blog` |
+| `module:check-lang` | 检查模块本地化文件差异 | `php artisan module:check-lang Blog` |
 | `module:delete` | 删除模块 | `php artisan module:delete Blog` |
 
 ### 代码生成
