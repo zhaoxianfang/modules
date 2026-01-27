@@ -130,10 +130,6 @@ php artisan module:delete Blog --force
 - [自动发现机制](docs/14-auto-discovery.md)
 - [Stub 模板映射](docs/15-stub-mapping.md)
 
-### 调试与故障排除
-- [命令故障排除](docs/16-command-troubleshooting.md)
-- [命令测试指南](docs/17-command-testing-guide.md)
-
 ### 最佳实践
 - [最佳实践](docs/12-best-practices.md)
 - [架构设计](docs/13-architecture.md)

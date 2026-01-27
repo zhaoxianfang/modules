@@ -6,19 +6,19 @@
 
 ### 创建迁移
 
-| 命令 | 说明 | 用法 |
-|------|------|------|
+| 命令                      | 说明     | 用法                                                                                                              |
+|-------------------------|--------|-----------------------------------------------------------------------------------------------------------------|
 | `module:make-migration` | 创建迁移文件 | `php artisan module:make-migration <module> <name> [--create=] [--update=] [--path=] [--realpath] [--fullpath]` |
 
 ### 运行和管理迁移
 
-| 命令 | 说明 | 用法 |
-|------|------|------|
-| `module:migrate` | 运行所有或指定模块的迁移 | `php artisan module:migrate [module] [--force] [--path=] [--seed] [--seeder=]` |
-| `module:migrate-reset` | 回滚最后一次迁移 | `php artisan module:migrate-reset [module] [--force] [--path=]` |
-| `module:migrate-refresh` | 回滚并重新运行迁移 | `php artisan module:migrate-refresh [module] [--force] [--seed] [--seeder=]` |
-| `module:migrate-rollback` | 回滚指定步数的迁移 | `php artisan module:migrate-rollback [module] [--step=] [--force] [--path=]` |
-| `module:migrate-status` | 查看迁移状态 | `php artisan module:migrate-status [module] [--path=]` |
+| 命令                        | 说明           | 用法                                                                             |
+|---------------------------|--------------|--------------------------------------------------------------------------------|
+| `module:migrate`          | 运行所有或指定模块的迁移 | `php artisan module:migrate [module] [--force] [--path=] [--seed] [--seeder=]` |
+| `module:migrate-reset`    | 回滚最后一次迁移     | `php artisan module:migrate-reset [module] [--force] [--path=]`                |
+| `module:migrate-refresh`  | 回滚并重新运行迁移    | `php artisan module:migrate-refresh [module] [--force] [--seed] [--seeder=]`   |
+| `module:migrate-rollback` | 回滚指定步数的迁移    | `php artisan module:migrate-rollback [module] [--step=] [--force] [--path=]`   |
+| `module:migrate-status`   | 查看迁移状态       | `php artisan module:migrate-status [module] [--path=]`                         |
 
 ---
 

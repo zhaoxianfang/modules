@@ -624,13 +624,7 @@ class ModuleAutoDiscovery
             $this->module->getPath('views'),
         ];
 
-        $viewsPath = null;
-        foreach ($possiblePaths as $path) {
-            if (is_dir($path)) {
-                $viewsPath = $path;
-                break;
-            }
-        }
+        $viewsPath = $this->findFirstExistingPath($possiblePaths);
 
         if (! $viewsPath) {
             $this->log("视图目录不存在，尝试创建: Resources/views");
@@ -690,13 +684,7 @@ class ModuleAutoDiscovery
                 $this->module->getPath('database/migrations'),
             ];
 
-            $migrationsPath = null;
-            foreach ($possiblePaths as $path) {
-                if (is_dir($path)) {
-                    $migrationsPath = $path;
-                    break;
-                }
-            }
+            $migrationsPath = $this->findFirstExistingPath($possiblePaths);
 
             if (! $migrationsPath) {
                 return;
@@ -753,13 +741,7 @@ class ModuleAutoDiscovery
                 $this->module->getPath('resources/lang'),
             ];
 
-            $langPath = null;
-            foreach ($possiblePaths as $path) {
-                if (is_dir($path)) {
-                    $langPath = $path;
-                    break;
-                }
-            }
+            $langPath = $this->findFirstExistingPath($possiblePaths);
 
             if (! $langPath) {
                 return;
@@ -788,7 +770,7 @@ class ModuleAutoDiscovery
 
             // 记录缓存
             $this->cache['translation'] = true;
-        } catch (\Throwable $e) {
+        } catch (\Throwable) {
             // 静默失败，避免影响模块加载
         }
     }
@@ -806,7 +788,7 @@ class ModuleAutoDiscovery
      *
      * @return void
      */
-    protected function discoverCommands(): void
+    public function discoverCommands(): void
     {
         // 只在命令模式下注册命令
         if (! $this->app->runningInConsole()) {
@@ -1373,5 +1355,21 @@ class ModuleAutoDiscovery
             'repositories_count' => is_array($this->cache['repositories'] ?? null) ? count($this->cache['repositories']) : 0,
             'logs_count' => count($this->logs),
         ];
+    }
+
+    /**
+     * 查找第一个存在的路径
+     *
+     * @param array $possiblePaths 可能的路径数组
+     * @return string|null 第一个存在的路径，如果都不存在则返回 null
+     */
+    protected function findFirstExistingPath(array $possiblePaths): ?string
+    {
+        foreach ($possiblePaths as $path) {
+            if (is_dir($path)) {
+                return $path;
+            }
+        }
+        return null;
     }
 }

@@ -135,6 +135,12 @@ class ModuleDebugCommandsCommand extends Command
                     // 检查命令签名
                     try {
                         if (class_exists($commandClass)) {
+                            // 过滤掉 Laravel 内核类
+                            if (in_array($commandClass, ['artisan', 'Illuminate\\Foundation\\Console\\Kernel'])) {
+                                $this->line("      <comment>Laravel 内核类，跳过签名检查</comment>");
+                                continue;
+                            }
+
                             $reflection = new \ReflectionClass($commandClass);
                             if ($reflection->hasProperty('signature')) {
                                 $signatureProperty = $reflection->getProperty('signature');
@@ -166,15 +172,21 @@ class ModuleDebugCommandsCommand extends Command
         // 检查 Laravel Artisan 应用中的命令
         $this->newLine();
         $this->info("已注册到 Artisan 的命令:");
-        $artisan = app('artisan');
-        $allCommands = $artisan->all();
-        $moduleCommands = array_filter($allCommands, function ($command) use ($moduleName) {
-            return str_contains($command->getName(), strtolower($moduleName));
-        });
+        try {
+            $artisan = app('Illuminate\Contracts\Console\Kernel');
+            $allCommands = $artisan->all();
+            $moduleCommands = array_filter($allCommands, function ($command) use ($moduleName) {
+                return str_contains($command->getName(), strtolower($moduleName));
+            });
+        } catch (\Throwable $e) {
+            $this->line("  <comment>无法获取已注册命令: {$e->getMessage()}</comment>");
+            $moduleCommands = [];
+        }
 
         if (! empty($moduleCommands)) {
             foreach ($moduleCommands as $name => $command) {
-                $this->line("  ✓ {$name}");
+                $description = $command->getDescription() ?? '无描述';
+                $this->line("  ✓ {$name} - {$description}");
             }
         } else {
             $this->line("  ✗ 未找到已注册的 {$moduleName} 命令");

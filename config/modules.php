@@ -128,8 +128,6 @@ return [
         // 'admin' => ['web', 'admin'], // 需要自定义实现 admin 中间件
         'admin' => ['web'],
         // 可以添加更多自定义路由类型
-        // 'mobile' => ['mobile'],
-        // 'miniapp' => ['auth:miniapp'],
     ],
 
     /*
@@ -144,7 +142,7 @@ return [
         'prefix' => true,
         // 是否自动添加模块名称到路由名称
         'name_prefix' => true,
-        // 默认路由文件列表 eg: ['web', 'api', admin],
+        // 默认路由文件列表 eg: ['web', 'api', 'admin'],
         'default_files' => ['web', 'api'],
     ],
 

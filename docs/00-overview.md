@@ -4,29 +4,32 @@
 
 ### 1. 命令功能
 
-| 命令                       | 说明       | 参数/选项                                          | 示例                                                                              |
-|--------------------------|----------|------------------------------------------------|---------------------------------------------------------------------------------|
-| `module:make`            | 创建新模块    | `{name}` `{--force}`                           | `php artisan module:make Blog`                                                  |
-| `module:list`            | 列出所有模块   | 无                                              | `php artisan module:list`                                                       |
-| `module:info`            | 显示模块详细信息 | `{module}`                                     | `php artisan module:info Blog`                                                  |
-| `module:validate`        | 验证模块完整性  | `{module}`                                     | `php artisan module:validate Blog`                                              |
-| `module:delete`          | 删除模块     | `{module}`                                     | `php artisan module:delete Blog`                                                |
-| `module:make-controller` | 创建控制器    | `{module} {name} {--type} {--force} {--plain}` | `php artisan module:make-controller Blog Post --type=web`                       |
-| `module:make-model`      | 创建模型     | `{module} {name} {--force}`                    | `php artisan module:make-model Blog Post`                                       |
-| `module:make-migration`  | 创建迁移     | `{module} {name} {--force}`                    | `php artisan module:make-migration Blog create_posts_table`                     |
-| `module:make-request`    | 创建表单请求   | `{module} {name} {--force}`                    | `php artisan module:make-request Blog StorePost`                                |
-| `module:make-command`    | 创建命令     | `{module} {name} {--command} {--force}`        | `php artisan module:make-command Blog SendEmail`                                |
-| `module:make-event`      | 创建事件     | `{module} {name} {--force}`                    | `php artisan module:make-event Blog UserRegistered`                             |
-| `module:make-listener`   | 创建监听器    | `{module} {name} {--event} {--force}`          | `php artisan module:make-listener Blog SendWelcomeEmail --event=UserRegistered` |
-| `module:make-middleware` | 创建中间件    | `{module} {name} {--force}`                    | `php artisan module:make-middleware Blog CheckAuth`                             |
-| `module:make-provider`   | 创建服务提供者  | `{module} {name} {--force}`                    | `php artisan module:make-provider Blog BlogServiceProvider`                     |
-| `module:make-route`      | 创建路由文件   | `{module} {name} {--type} {--force}`           | `php artisan module:make-route Blog mobile --type=web`                          |
-| `module:make-seeder`     | 创建数据填充器  | `{module} {name} {--force}`                    | `php artisan module:make-seeder Blog UserSeeder`                                |
-| `module:make-config`     | 创建配置文件   | `{module} {name} {--force}`                    | `php artisan module:make-config Blog settings`                                  |
-| `module:migrate`         | 运行模块迁移   | `{module?}`                                    | `php artisan module:migrate Blog`                                               |
-| `module:migrate:refresh` | 刷新模块迁移   | `{module}`                                     | `php artisan module:migrate:refresh Blog`                                       |
-| `module:migrate:reset`   | 回滚模块迁移   | `{module}`                                     | `php artisan module:migrate:reset Blog`                                         |
-| `module:migrate-status`  | 查看迁移状态   | 无                                              | `php artisan module:migrate-status`                                             |
+| 命令                       | 说明       | 参数/选项                                                                      | 示例                                                                              |
+|--------------------------|----------|----------------------------------------------------------------------------|---------------------------------------------------------------------------------|
+| `module:make`            | 创建新模块    | `{name}` `{--force}` `{--full}`                                            | `php artisan module:make Blog`                                                  |
+| `module:list`            | 列出所有模块   | 无                                                                          | `php artisan module:list`                                                       |
+| `module:info`            | 显示模块详细信息 | `{module}`                                                                 | `php artisan module:info Blog`                                                  |
+| `module:validate`        | 验证模块完整性  | `{module?}`                                                                | `php artisan module:validate Blog`                                              |
+| `module:delete`          | 删除模块     | `{module}` `{--force}`                                                     | `php artisan module:delete Blog`                                                |
+| `module:publish`         | 发布模块资源   | `{--guide}` `{--config}`                                                   | `php artisan module:publish --config`                                           |
+| `module:make-controller` | 创建控制器    | `{module} {name} {--type} {--force} {--plain}`                             | `php artisan module:make-controller Blog Post --type=web`                       |
+| `module:make-model`      | 创建模型     | `{module} {name} {--table} {--migration} {--factory} {--force}`            | `php artisan module:make-model Blog Post`                                       |
+| `module:make-migration`  | 创建迁移     | `{module} {name} {--create} {--update} {--path} {--realpath} {--fullpath}` | `php artisan module:make-migration Blog create_posts_table`                     |
+| `module:make-request`    | 创建表单请求   | `{module} {name} {--force}`                                                | `php artisan module:make-request Blog StorePost`                                |
+| `module:make-command`    | 创建命令     | `{module} {name} {--command} {--force}`                                    | `php artisan module:make-command Blog SendEmail`                                |
+| `module:make-event`      | 创建事件     | `{module} {name} {--force}`                                                | `php artisan module:make-event Blog UserRegistered`                             |
+| `module:make-listener`   | 创建监听器    | `{module} {name} {--event} {--force}`                                      | `php artisan module:make-listener Blog SendWelcomeEmail --event=UserRegistered` |
+| `module:make-middleware` | 创建中间件    | `{module} {name} {--force}`                                                | `php artisan module:make-middleware Blog CheckAuth`                             |
+| `module:make-provider`   | 创建服务提供者  | `{module} {name} {--force}`                                                | `php artisan module:make-provider Blog BlogServiceProvider`                     |
+| `module:make-route`      | 创建路由文件   | `{module} {name} {--type} {--force}`                                       | `php artisan module:make-route Blog mobile --type=web`                          |
+| `module:make-seeder`     | 创建数据填充器  | `{module} {name} {--force}`                                                | `php artisan module:make-seeder Blog UserSeeder`                                |
+| `module:make-config`     | 创建配置文件   | `{module} {name} {--force}`                                                | `php artisan module:make-config Blog settings`                                  |
+| `module:check-lang`      | 检查本地化文件  | `{name?}` `{--path}`                                                       | `php artisan module:check-lang Blog`                                            |
+| `module:debug-commands`  | 调试命令注册   | `{--module}`                                                               | `php artisan module:debug-commands --module=Blog`                               |
+| `module:migrate`         | 运行模块迁移   | `{module?}` `{--force}` `{--path}` `{--seed}` `{--seeder}`                 | `php artisan module:migrate Blog`                                               |
+| `module:migrate:refresh` | 刷新模块迁移   | `{module?}` `{--force}` `{--seed}` `{--seeder}`                            | `php artisan module:migrate:refresh Blog`                                       |
+| `module:migrate:reset`   | 回滚模块迁移   | `{module?}` `{--force}` `{--path}`                                         | `php artisan module:migrate:reset Blog`                                         |
+| `module:migrate-status`  | 查看迁移状态   | `{module?}` `{--path}` `{--pending}` `{--ran}` `{--no-stats}`              | `php artisan module:migrate-status`                                             |
 
 ### 2. 配置功能
 

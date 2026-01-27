@@ -4,53 +4,52 @@
 
 ## 代码生成命令一览表
 
-### 模块管理命令（2个）
+### 模块管理命令（6个）
 
-| 命令 | 说明 | 用法 |
-|------|------|------|
-| `module:make` | 创建新模块 | `php artisan module:make <name> [--force] [--full]` |
-| `module:delete` | 删除模块 | `php artisan module:delete <name> [--force]` |
+| 命令                | 说明       | 用法                                                  |
+|-------------------|----------|-----------------------------------------------------|
+| `module:make`     | 创建新模块    | `php artisan module:make <name> [--force] [--full]` |
+| `module:list`     | 列出所有模块   | `php artisan module:list`                           |
+| `module:info`     | 显示模块详细信息 | `php artisan module:info <name>`                    |
+| `module:validate` | 验证模块     | `php artisan module:validate [name]`                |
+| `module:delete`   | 删除模块     | `php artisan module:delete <name> [--force]`        |
+| `module:publish`  | 发布模块资源   | `php artisan module:publish [--guide] [--config]`   |
 
-### 模块检查命令（1个）
+### 调试检查命令（2个）
 
-| 命令 | 说明 | 用法 |
-|------|------|------|
-| `module:check-lang` | 检查模块本地化文件差异 | `php artisan module:check-lang [name] [--path=]` |
+| 命令                      | 说明          | 用法                                               |
+|-------------------------|-------------|--------------------------------------------------|
+| `module:check-lang`     | 检查模块本地化文件差异 | `php artisan module:check-lang [name] [--path=]` |
+| `module:debug-commands` | 调试命令注册和发现   | `php artisan module:debug-commands [--module=]`  |
 
 **`module:check-lang` 选项说明：**
 - `name`: 模块名称（可选），不指定则检查所有模块
 - `--path=`: 自定义本地化路径（默认：`Resources/lang`）
 
-### 模块管理命令（2个）
-
-| 命令 | 说明 | 用法 |
-|------|------|------|
-| `module:make` | 创建新模块 | `php artisan module:make <name> [--force] [--full]` |
-| `module:check-lang` | 检查模块本地化文件差异 | `php artisan module:check-lang [name] [--path=]` |
+**`module:debug-commands` 选项说明：**
+- `--module=`: 指定模块名称（不指定则检查所有模块）
 
 **`module:make` 选项说明：**
 - `name`: 模块名称（必需）
 - `--force`: 覆盖已存在的模块
 - `--full`: 强制生成所有文件，忽略配置中的 `generate` 设置（详见下方）
-| `module:delete` | 删除模块 | `php artisan module:delete <name> [--force]` |
 
-### 代码生成命令（13个）
+### 代码生成命令（12个）
 
-| 命令 | 说明 | 用法 |
-|------|------|------|
-| `module:make-controller` | 创建控制器 | `php artisan module:make-controller <module> <name> [--type=web] [--force] [--plain]` |
-| `module:make-model` | 创建模型 | `php artisan module:make-model <module> <name> [--migration] [--factory] [--force]` |
-| `module:make-migration` | 创建迁移 | `php artisan module:make-migration <module> <name> [--create=] [--update=] [--path=] [--realpath] [--fullpath]` |
-| `module:make-request` | 创建请求类 | `php artisan module:make-request <module> <name> [--force]` |
-| `module:make-view` | 创建视图 | `php artisan module:make-view <module> <name> [--force]` |
-| `module:make-middleware` | 创建中间件 | `php artisan module:make-middleware <module> <name> [--force]` |
-| `module:make-event` | 创建事件类 | `php artisan module:make-event <module> <name> [--force]` |
-| `module:make-listener` | 创建监听器 | `php artisan module:make-listener <module> <name> [--event=] [--force]` |
-| `module:make-provider` | 创建服务提供者 | `php artisan module:make-provider <module> <name> [--force]` |
-| `module:make-seeder` | 创建数据填充器 | `php artisan module:make-seeder <module> <name> [--force]` |
-| `module:make-command` | 创建命令 | `php artisan module:make-command <module> <name> [--command=] [--force]` |
-| `module:make-route` | 创建路由文件 | `php artisan module:make-route <module> <name> [--type=web] [--force]` |
-| `module:make-config` | 创建配置文件 | `php artisan module:make-config <module> <name> [--force]` |
+| 命令                       | 说明      | 用法                                                                                                              |
+|--------------------------|---------|-----------------------------------------------------------------------------------------------------------------|
+| `module:make-controller` | 创建控制器   | `php artisan module:make-controller <module> <name> [--type=web] [--force] [--plain]`                           |
+| `module:make-model`      | 创建模型    | `php artisan module:make-model <module> <name> [--table=] [--migration] [--factory] [--force]`                  |
+| `module:make-migration`  | 创建迁移    | `php artisan module:make-migration <module> <name> [--create=] [--update=] [--path=] [--realpath] [--fullpath]` |
+| `module:make-request`    | 创建请求类   | `php artisan module:make-request <module> <name> [--force]`                                                     |
+| `module:make-middleware` | 创建中间件   | `php artisan module:make-middleware <module> <name> [--force]`                                                  |
+| `module:make-event`      | 创建事件类   | `php artisan module:make-event <module> <name> [--force]`                                                       |
+| `module:make-listener`   | 创建监听器   | `php artisan module:make-listener <module> <name> [--event=] [--force]`                                         |
+| `module:make-provider`   | 创建服务提供者 | `php artisan module:make-provider <module> <name> [--force]`                                                    |
+| `module:make-seeder`     | 创建数据填充器 | `php artisan module:make-seeder <module> <name> [--force]`                                                      |
+| `module:make-command`    | 创建命令    | `php artisan module:make-command <module> <name> [--command=] [--force]`                                        |
+| `module:make-route`      | 创建路由文件  | `php artisan module:make-route <module> <name> [--type=web] [--force]`                                          |
+| `module:make-config`     | 创建配置文件  | `php artisan module:make-config <module> <name> [--force]`                                                      |
 
 **⭐ 重要说明**：
 - `--type` 选项不再限制于 web/api/admin，支持任意自定义类型（如 mobile、miniapp、admin 等）
@@ -58,12 +57,12 @@
 
 ### 迁移管理命令（4个）
 
-| 命令 | 说明 | 用法 |
-|------|------|------|
-| `module:migrate` | 运行迁移 | `php artisan module:migrate [module] [--force] [--path=] [--seed] [--seeder=]` |
-| `module:migrate-reset` | 回滚迁移 | `php artisan module:migrate-reset [module] [--force] [--path=]` |
-| `module:migrate-refresh` | 刷新迁移 | `php artisan module:migrate-refresh [module] [--force] [--seed] [--seeder=]` |
-| `module:migrate-status` | 查看迁移状态 | `php artisan module:migrate-status [module] [--path=]` |
+| 命令                       | 说明     | 用法                                                                             |
+|--------------------------|--------|--------------------------------------------------------------------------------|
+| `module:migrate`         | 运行迁移   | `php artisan module:migrate [module] [--force] [--path=] [--seed] [--seeder=]` |
+| `module:migrate-reset`   | 回滚迁移   | `php artisan module:migrate-reset [module] [--force] [--path=]`                |
+| `module:migrate-refresh` | 刷新迁移   | `php artisan module:migrate-refresh [module] [--force] [--seed] [--seeder=]`   |
+| `module:migrate-status`  | 查看迁移状态 | `php artisan module:migrate-status [module] [--path=]`                         |
 
 ---
 
@@ -74,14 +73,14 @@
 3. [模型生成](#模型生成)
 4. [迁移生成](#迁移生成)
 5. [请求类生成](#请求类生成)
-6. [视图生成](#视图生成)
-7. [中间件生成](#中间件生成)
-8. [事件和监听器生成](#事件和监听器生成)
-9. [服务提供者生成](#服务提供者生成)
-10. [数据填充器生成](#数据填充器生成)
-11. [命令生成](#命令生成)
-12. [路由生成](#路由生成)
-13. [配置生成](#配置生成)
+6. [中间件生成](#中间件生成)
+7. [事件和监听器生成](#事件和监听器生成)
+8. [服务提供者生成](#服务提供者生成)
+9. [数据填充器生成](#数据填充器生成)
+10. [命令生成](#命令生成)
+11. [路由生成](#路由生成)
+12. [配置生成](#配置生成)
+13. [调试检查命令](#调试检查命令)
 14. [代码生成最佳实践](#代码生成最佳实践)
 
 ---
@@ -410,11 +409,11 @@ php artisan module:make-controller <module> <name> [--type=web] [--force]
 
 ### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
+| 选项              | 说明                                   | 默认值   |
+|-----------------|--------------------------------------|-------|
 | `--type=<type>` | 控制器类型（可自定义，如 web、api、admin、mobile 等） | `web` |
-| `--force` | 覆盖已存在的控制器 | false |
-| `--plain` | 创建空控制器（无 CRUD 方法） | false |
+| `--force`       | 覆盖已存在的控制器                            | false |
+| `--plain`       | 创建空控制器（无 CRUD 方法）                    | false |
 
 ### 示例
 
@@ -502,11 +501,11 @@ class PostController extends Controller
 
 ### 控制器类型说明
 
-| 类型 | 目录 | 中间件 | 用途 |
-|-----|------|--------|------|
-| `web` | `Http/Controllers/` | `web` | Web 应用控制器 |
-| `api` | `Http/Controllers/Api/` | `api` | API 控制器 |
-| `admin` | `Http/Controllers/Admin/` | `web,admin` | 后台管理控制器 |
+| 类型      | 目录                        | 中间件         | 用途        |
+|---------|---------------------------|-------------|-----------|
+| `web`   | `Http/Controllers/`       | `web`       | Web 应用控制器 |
+| `api`   | `Http/Controllers/Api/`   | `api`       | API 控制器   |
+| `admin` | `Http/Controllers/Admin/` | `web,admin` | 后台管理控制器   |
 
 ---
 
@@ -525,12 +524,12 @@ php artisan module:make-model <module> <name> [--table=] [--migration] [--factor
 
 ### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
-| `--table` | 从现有数据库表生成模型，自动解析字段信息 | 无 |
-| `--migration` | 创建对应的迁移文件 | false |
-| `--factory` | 同时创建对应的数据工厂类 | false |
-| `--force` | 覆盖已存在的模型 | false |
+| 选项            | 说明                   | 默认值   |
+|---------------|----------------------|-------|
+| `--table`     | 从现有数据库表生成模型，自动解析字段信息 | 无     |
+| `--migration` | 创建对应的迁移文件            | false |
+| `--factory`   | 同时创建对应的数据工厂类         | false |
+| `--force`     | 覆盖已存在的模型             | false |
 
 ### 示例
 
@@ -644,14 +643,14 @@ class SystemLogs extends Model
 
 系统自动将数据库字段类型映射到 Laravel Eloquent 支持的转换类型：
 
-| 数据库类型 | Laravel 类型 |
-|----------|------------|
-| int, integer, tinyint, smallint, mediumint, bigint | integer |
-| float, double, decimal | float, decimal |
-| char, varchar, text | string |
-| date, datetime, timestamp | datetime |
-| json, jsonb | array |
-| boolean, bool | boolean |
+| 数据库类型                                              | Laravel 类型     |
+|----------------------------------------------------|----------------|
+| int, integer, tinyint, smallint, mediumint, bigint | integer        |
+| float, double, decimal                             | float, decimal |
+| char, varchar, text                                | string         |
+| date, datetime, timestamp                          | datetime       |
+| json, jsonb                                        | array          |
+| boolean, bool                                      | boolean        |
 
 #### 2. Carbon 集成
 
@@ -747,24 +746,24 @@ php artisan module:make-migration <module> <name> [--create=] [--table=]
 
 ### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
-| `--create=` | 要创建的表名（已弃用，请使用命名规范） | - |
-| `--table=` | 要修改的表名（已弃用，请使用命名规范） | - |
+| 选项          | 说明                  | 默认值 |
+|-------------|---------------------|-----|
+| `--create=` | 要创建的表名（已弃用，请使用命名规范） | -   |
+| `--table=`  | 要修改的表名（已弃用，请使用命名规范） | -   |
 
 ### 命名规范
 
 模块系统的迁移生成支持 Laravel 11+ 的智能命名规范：
 
-| 操作类型 | 命名格式 | 示例 |
-|---------|-----------|------|
-| 创建表 | `create_{table}_table` | `create_users_table` |
-| 删除表 | `drop_{table}_table` | `drop_users_table` |
-| 重命名表 | `rename_{old}_to_{new}_table` | `rename_users_to_customers_table` |
-| 添加字段 | `add_{field}_to_{table}_table` | `add_email_to_users_table` |
-| 删除字段 | `drop_{field}_from_{table}_table` | `drop_email_from_users_table` |
-| 修改字段 | `change_{field}_in_{table}_table` | `change_email_in_users_table` |
-| 添加索引 | `add_{index}_index_on_{table}_table` | `add_email_index_on_users_table` |
+| 操作类型 | 命名格式                                  | 示例                                |
+|------|---------------------------------------|-----------------------------------|
+| 创建表  | `create_{table}_table`                | `create_users_table`              |
+| 删除表  | `drop_{table}_table`                  | `drop_users_table`                |
+| 重命名表 | `rename_{old}_to_{new}_table`         | `rename_users_to_customers_table` |
+| 添加字段 | `add_{field}_to_{table}_table`        | `add_email_to_users_table`        |
+| 删除字段 | `drop_{field}_from_{table}_table`     | `drop_email_from_users_table`     |
+| 修改字段 | `change_{field}_in_{table}_table`     | `change_email_in_users_table`     |
+| 添加索引 | `add_{index}_index_on_{table}_table`  | `add_email_index_on_users_table`  |
 | 删除索引 | `drop_{index}_index_on_{table}_table` | `drop_email_index_on_users_table` |
 
 ### 示例
@@ -806,8 +805,8 @@ php artisan module:make-request <module> <name> [--force]
 
 ### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
+| 选项        | 说明        | 默认值   |
+|-----------|-----------|-------|
 | `--force` | 覆盖已存在的请求类 | false |
 
 ### 示例
@@ -907,10 +906,10 @@ php artisan module:make-view <module> <name> [--type=index] [--force]
 
 ### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
-| `--type=index\|show` | 视图类型 | `index` |
-| `--force` | 覆盖已存在的视图 | false |
+| 选项                   | 说明       | 默认值     |
+|----------------------|----------|---------|
+| `--type=index\|show` | 视图类型     | `index` |
+| `--force`            | 覆盖已存在的视图 | false   |
 
 ### 示例
 
@@ -987,8 +986,8 @@ php artisan module:make-middleware <module> <name> [--force]
 
 ### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
+| 选项        | 说明        | 默认值   |
+|-----------|-----------|-------|
 | `--force` | 覆盖已存在的中间件 | false |
 
 ### 示例
@@ -1090,10 +1089,10 @@ php artisan module:make-listener <module> <name> [--event=] [--force]
 
 #### 选项
 
-| 选项 | 说明 | 默认值 |
-|-----|------|-------|
-| `--event=` | 要监听的事件类 | - |
-| `--force` | 覆盖已存在的监听器 | false |
+| 选项         | 说明        | 默认值   |
+|------------|-----------|-------|
+| `--event=` | 要监听的事件类   | -     |
+| `--force`  | 覆盖已存在的监听器 | false |
 
 #### 示例
 

@@ -122,7 +122,6 @@ class MigrationMakeCommand extends Command
     {
         $name = strtolower($name);
         $stub_type = 'migration';
-        $description = '自定义迁移逻辑';
 
         // 解析迁移文件名和表名
         $parseTypeAndTable = $this->parseTableAndTypeByMigrationName($name);
@@ -131,11 +130,9 @@ class MigrationMakeCommand extends Command
         if(empty($createTable) && empty($updateTable)){
             if($parseTypeAndTable['type'] == 'create'){
                 $stub_type = 'create';
-                $description = "创建数据表：{$table}";
             }
             if($parseTypeAndTable['type'] == 'update'){
                 $stub_type = 'update';
-                $description = "修改数据表：{$table}";
             }
         }else{
             $table = !empty($createTable)?$createTable:$updateTable;
@@ -146,7 +143,7 @@ class MigrationMakeCommand extends Command
         return [
             'stub_type' => $stub_type,
             'table' => $table,
-            'description' => $description,
+            'description' => $parseTypeAndTable['description'],
             'migration_name' => $name,
         ];
     }
@@ -157,30 +154,92 @@ class MigrationMakeCommand extends Command
         // 移除时间戳前缀
         $name = preg_replace('/^\d+_\d+_\d+_\d+_/', '', $migrationName);
 
-        // 匹配 create 类型
-        if (preg_match('/^create_([^_]+?)(?:_table|_tables)?$/i', $name, $m)) {
-            return ['type' => 'create', 'table' => $m[1]];
-        }
-
-        // 匹配 add 类型
-        if (preg_match('/^add_.+_to_([^_]+?)(?:_table|_tables)?$/i', $name, $m)) {
-            return ['type' => 'update', 'table' => $m[1]];
-        }
-
-        // 匹配其他类型
+        // 所有 Laravel 支持的迁移模式
         $patterns = [
-            'update' => '/^update_([^_]+?)(?:_table|_tables)?$/i',
-            'drop' => '/^drop_([^_]+?)(?:_table|_tables)?$/i',
-            'change' => '/^change_.+_in_([^_]+?)(?:_table|_tables)?$/i',
+            // 基础模式
+            '/^create_([\w]+)_table$/' => function($m) {
+                return ['type' => 'create', 'table' => $m[1], 'description' => '创建表:'.$m[1]];
+            },
+            '/^drop_([\w]+)_table$/' => function($m) {
+                return ['type' => 'drop', 'table' => $m[1], 'description' => '删除表:'. $m[1]];
+            },
+            '/^alter_([\w]+)_table$/' => function($m) {
+                return ['type' => 'alter', 'table' => $m[1], 'description' => '修改表:'.$m[1]];
+            },
+
+            // 字段操作
+            '/^add_([\w]+)_to_([\w]+)_table$/' => function($m) {
+                return ['type' => 'add_column', 'column' => $m[1], 'table' => $m[2], 'description' => '添加字段:'.$m[1]];
+            },
+            '/^remove_([\w]+)_from_([\w]+)_table$/' => function($m) {
+                return ['type' => 'remove_column', 'column' => $m[1], 'table' => $m[2], 'description' => '移除字段:'.$m[1]];
+            },
+            '/^update_([\w]+)_in_([\w]+)_table$/' => function($m) {
+                return ['type' => 'update_column', 'column' => $m[1], 'table' => $m[2], 'description' => '更新字段:'.$m[1]];
+            },
+            '/^change_([\w]+)_in_([\w]+)_table$/' => function($m) {
+                return ['type' => 'change_column', 'column' => $m[1], 'table' => $m[2], 'description' => '修复字段:'.$m[1]];
+            },
+            '/^delete_([\w]+)_from_([\w]+)_table$/' => function($m) {
+                return ['type' => 'delete_column', 'column' => $m[1], 'table' => $m[2], 'description' => '删除字段:'.$m[1]];
+            },
+
+            // 重命名
+            '/^rename_([\w]+)_to_([\w]+)_table$/' => function($m) {
+                return ['type' => 'rename_table', 'from' => $m[1], 'to' => $m[2], 'table' => $m[1], 'description' => '重命名表:'.$m[1]];
+            },
+
+            // 索引操作
+            '/^add_([\w]+)_index_to_([\w]+)_table$/' => function($m) {
+                return ['type' => 'add_index', 'column' => $m[1], 'table' => $m[2], 'description' => '添加索引:'.$m[1].'到'.$m[2]];
+            },
+            '/^drop_([\w]+)_index_from_([\w]+)_table$/' => function($m) {
+                return ['type' => 'drop_index', 'column' => $m[1], 'table' => $m[2], 'description' => '删除索引:'.$m[1].'从'.$m[2]];
+            },
+
+            // 关联表
+            '/^create_([\w]+)_([\w]+)_table$/' => function($m) {
+                return ['type' => 'create_pivot', 'table1' => $m[1], 'table2' => $m[2], 'table' => $m[1], 'description' => '创建关联表:'.$m[1].' 关联 '.$m[2]];
+            },
+
+            // 外键操作
+            '/^add_foreign_(?:key_)?([\w]+)_to_([\w]+)_table$/' => function($m) {
+                return ['type' => 'add_foreign', 'key' => $m[1], 'table' => $m[2], 'description' => '添加外键:'.$m[1].' 到 '.$m[2]];
+            },
+            '/^drop_foreign_(?:key_)?([\w]+)_from_([\w]+)_table$/' => function($m) {
+                return ['type' => 'drop_foreign', 'key' => $m[1], 'table' => $m[2], 'description' => '删除外键:'. $m[1].' 从 '.$m[2]];
+            },
+
+            // 枚举字段 (Laravel 9+)
+            '/^add_([\w]+)_enum_to_([\w]+)_table$/' => function($m) {
+                return ['type' => 'add_enum', 'column' => $m[1], 'table' => $m[2], 'description' => '添加枚举字段:'. $m[1].' 到 '.$m[2]];
+            },
+
+            // 视图操作
+            '/^create_([\w]+)_view$/' => function($m) {
+                return ['type' => 'create_view', 'view' => $m[1], 'table' => $m[1], 'description' => '创建视图:'. $m[1]];
+            },
+            '/^drop_([\w]+)_view$/' => function($m) {
+                return ['type' => 'drop_view', 'view' => $m[1], 'table' => $m[1], 'description' => '删除视图:'. $m[1]];
+            },
         ];
 
-        foreach ($patterns as $type => $pattern) {
-            if (preg_match($pattern, $name, $m)) {
-                return ['type' => $type, 'table' => $m[1]];
+        // 尝试匹配模式
+        foreach ($patterns as $pattern => $handler) {
+            if (preg_match($pattern, $name, $matches)) {
+                $result = $handler($matches);
+                $result['name'] = $name;
+                return $result;
             }
         }
 
-        return ['type' => 'update', 'table' => preg_replace('/_(?:table|tables)$/i', '', $name)];
+        // 通用解析（如果以上都不匹配）
+        return [
+            'name' => $name,
+            'type' => 'migration',
+            'table' => preg_replace('/_(?:table|tables)$/i', '', $name),
+            'description' => '自定义迁移操作'
+        ];
     }
 
     /**
