@@ -106,6 +106,76 @@ php artisan module:delete Blog
 php artisan module:delete Blog --force
 ```
 
+
+## 扩展宏
+> 弥补 laravel 中的查询缺陷和扩展新的宏查询函数
+
+### random
+
+> 随机查询多少条数据
+> @param int $limit 查询条数
+> @param string $primaryKey 主键字段，默认为id
+> random(int $limit = 10, string $primaryKey = 'id')
+
+示例:
+```
+// 随机选择5名学生
+Student::where('class_id', 101)->random(5)->get();
+```
+
+## groupRandom
+> 按照指定字段进行分组后从每组中随机取出N条数据
+
+示例:
+```
+// 每个班级随机选择2名学生
+Student::groupRandom('class_id', 2)->get();;
+```
+
+
+### whereHasIn
+
+> whereHasIn(string $relation, ?\Closure $callable = null)
+> whereHasNotIn(string $relation, ?\Closure $callable = null)
+
+```
+$model->whereHasIn('section', function ($query) {
+    $query->where('id', 1);
+});
+```
+
+### 其他方法
+
+```
+/**
+ * @method $this whereHasIn(string $relation, ?\Closure $callable = null)
+ * @method $this orWhereHasIn(string $relation, ?\Closure $callable = null)
+ * @method $this whereHasNotIn(string $relation, ?\Closure $callable = null)
+ * @method $this orWhereHasNotIn(string $relation, ?\Closure $callable = null)
+ *
+ * 关联查询
+ * @method $this whereHasJoin(string $relation, ?\Closure $callable = null)
+ * @method $this whereHasCrossJoin(string $relation, ?\Closure $callable = null)
+ * @method $this whereHasLeftJoin(string $relation, ?\Closure $callable = null)
+ * @method $this whereHasRightJoin(string $relation, ?\Closure $callable = null)
+ *
+ * @method $this whereHasMorphIn(string $relation, $types, ?\Closure $callable = null)
+ * @method $this orWhereHasMorphIn(string $relation, $types, ?\Closure $callable = null)
+ * 
+ * 主表字段查询
+ *         eg: User::query()->mainWhere('id', 1); => selsect xxx where user.id = 1
+ * @method $this mainWhere(string $relation, ?\Closure $callable = null)
+ * @method $this mainSum(string $relation, ?\Closure $callable = null)
+ * @method $this mainPluck(string $relation, ?\Closure $callable = null)
+ * @method $this mainWhereBetween(string $relation, ?\Closure $callable = null)
+ * @method $this mainWhereIn(string $relation, ?\Closure $callable = null)
+ * @method $this mainOrderBy(string $relation, ?\Closure $callable = null)
+ * @method $this mainOrderByDesc(string $relation, ?\Closure $callable = null)
+ * @method $this mainSelect(string $relation, ?\Closure $callable = null)
+ */
+```
+
+
 ## 📖 文档目录
 
 ### 快速开始
@@ -161,6 +231,7 @@ php artisan module:delete Blog --force
 - **Carbon 集成**：datetime/timestamp 字段自动使用 Carbon 类型
 - **迁移状态过滤**：支持按状态筛选迁移（已运行/待运行）
 - **迁移统计信息**：显示迁移统计汇总信息
+- **扩展查询宏**：支持whereHasIn、orWhereHasIn、whereHasNotIn、random、groupRandom 等宏查询
 
 ## 💡 核心功能示例
 

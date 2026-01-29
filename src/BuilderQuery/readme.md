@@ -13,6 +13,21 @@
 > @param string $primaryKey 主键字段，默认为id
 > random(int $limit = 10, string $primaryKey = 'id')
 
+示例:
+```
+// 随机选择5名学生
+Student::where('class_id', 101)->random(5)->get();
+```
+
+## groupRandom
+> 按照指定字段进行分组后从每组中随机取出N条数据
+
+示例:
+```
+// 每个班级随机选择2名学生
+Student::groupRandom('class_id', 2)->get();;
+```
+
 
 ### whereHasIn
 
