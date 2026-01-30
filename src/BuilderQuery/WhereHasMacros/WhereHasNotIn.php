@@ -1,6 +1,6 @@
 <?php
 
-namespace zxf\Modules\BuilderQuery;
+namespace zxf\Modules\BuilderQuery\WhereHasMacros;
 
 class WhereHasNotIn extends WhereHasIn
 {

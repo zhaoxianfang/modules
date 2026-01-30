@@ -1,6 +1,6 @@
 <?php
 
-namespace zxf\Modules\BuilderQuery;
+namespace zxf\Modules\BuilderQuery\WhereHasMacros;
 
 use Illuminate\Database\Eloquent\Relations\Relation;
 

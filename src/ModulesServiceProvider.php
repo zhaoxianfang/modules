@@ -5,7 +5,7 @@ namespace zxf\Modules;
 use Composer\InstalledVersions;
 use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Support\ServiceProvider;
-use zxf\Modules\BuilderQuery\Builder as ExtendQueryBuilder;
+use zxf\Modules\BuilderQuery\MacrosBuilder;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Repository;
 use zxf\Modules\Support\ModuleLoader;
@@ -29,7 +29,7 @@ class ModulesServiceProvider extends ServiceProvider
         $this->mergeConfig();
 
         // 注册 whereHasIn 的几个查询方式来替换 whereHas 查询全表扫描的问题
-        ExtendQueryBuilder::register($this);
+        MacrosBuilder::register($this);
     }
 
     /**

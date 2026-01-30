@@ -4,9 +4,16 @@ namespace zxf\Modules\BuilderQuery;
 
 use Illuminate\Database\Eloquent;
 use Illuminate\Support\ServiceProvider;
-use zxf\Modules\BuilderQuery\Macros\GroupSortMacro;
-use zxf\Modules\BuilderQuery\Macros\RandomMacro;
-use zxf\Modules\BuilderQuery\Macros\WithRecursiveMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\GroupSortMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\RandomMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasCrossJoin;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasIn;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasJoin;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasLeftJoin;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasMorphIn;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasNotIn;
+use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
 
 /**
  * Macros 宏定义
@@ -52,7 +59,7 @@ use zxf\Modules\BuilderQuery\Macros\WithRecursiveMacro;
  * @method $this mainOrderByDesc(string $relation, ?\Closure $callable = null)
  * @method $this mainSelect(string $relation, ?\Closure $callable = null)
  */
-class Builder extends Eloquent\Builder
+class MacrosBuilder extends Eloquent\Builder
 {
     // 注册宏指令
     // 框架自带的 whereHas 模型查询方法会进行全表扫描，导致查询巨慢，使用下面几个方法进行弥补不足

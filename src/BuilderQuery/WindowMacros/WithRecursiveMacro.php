@@ -1,6 +1,6 @@
 <?php
 
-namespace zxf\Modules\BuilderQuery\Macros;
+namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
