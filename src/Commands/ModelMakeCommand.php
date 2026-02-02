@@ -309,7 +309,7 @@ class ModelMakeCommand extends Command
         $lines[] = "";
         $lines[] = "namespace {$namespace}\\{$moduleName}\\{$modelDir};";
         $lines[] = "";
-        $lines[] = "use Illuminate\\Database\\Eloquent\\Factories\\HasFactory;";
+        $lines[] = "use Carbon\Carbon;";
         $lines[] = "use Illuminate\\Database\\Eloquent\\Model;";
         $lines[] = "";
         $lines[] = "/**";
@@ -339,7 +339,6 @@ class ModelMakeCommand extends Command
         $lines[] = " */";
         $lines[] = "class {$modelName} extends Model";
         $lines[] = "{";
-        $lines[] = "    use HasFactory;";
         $lines[] = "";
         $lines[] = "    /**";
         $lines[] = "     * 数据表名称";
@@ -462,12 +461,12 @@ class ModelMakeCommand extends Command
 
         // 特殊处理：datetime 和 timestamp 类型使用 Carbon
         if ($baseType === 'datetime' || $baseType === 'timestamp') {
-            $phpType = '\\Carbon\\Carbon';
+            $phpType = 'Carbon';
         }
 
         // 特殊处理：date 类型使用 Carbon
         if ($baseType === 'date') {
-            $phpType = '\\Carbon\\Carbon';
+            $phpType = 'Carbon';
         }
 
         // 特殊处理：json 类型
