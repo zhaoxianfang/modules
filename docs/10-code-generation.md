@@ -572,7 +572,6 @@ php artisan module:make-model Blog Post --migration
 
 namespace Modules\Logs;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -589,7 +588,6 @@ use Illuminate\Database\Eloquent\Model;
  */
 class SystemLogs extends Model
 {
-    use HasFactory;
 
     protected $table = 'system_logs';
 
