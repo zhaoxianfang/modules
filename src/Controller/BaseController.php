@@ -5,6 +5,7 @@ namespace zxf\Modules\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Auth\Access\Gate as AuthGate;
 use zxf\Modules\Controller\Trait\ControllerTrait;
 
 /**
@@ -19,7 +20,7 @@ class BaseController extends Controller
      * 策略判断(默认使用User模型) 例如： $this->gate::authorize('update', $photo);
      * 设置指定模型的用户判断：$this->gate::forUser(auth('admin')->user())->authorize('update', $article);
      */
-    protected string|null|Gate $gate = null;
+    protected string|null|Gate|AuthGate $gate = null;
 
     public function __construct(Request $request)
     {
