@@ -4,8 +4,19 @@ namespace zxf\Modules\BuilderQuery;
 
 use Illuminate\Database\Eloquent;
 use Illuminate\Support\ServiceProvider;
+use zxf\Modules\BuilderQuery\WindowMacros\AggregateMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\AnalyticsMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\ConditionalAggregateMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\CteMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\DataQualityMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\GroupSortMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\JsonMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\PaginationMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\RankingMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\RandomMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\StringWindowMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\TimeSeriesMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\WindowFunctionMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasCrossJoin;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasIn;
@@ -76,6 +87,50 @@ class MacrosBuilder extends Eloquent\Builder
         // 注册递归查询宏
         WithRecursiveMacro::register();
 
+        // 注册 MySQL 8.4+ 窗口函数宏
+        self::registerMySql84Macros();
+    }
+
+    /**
+     * 注册 MySQL 8.4+ 高级特性宏
+     *
+     * 包含：窗口函数、JSON 函数、CTE、排名函数、分析函数、聚合函数、
+     *       时间序列分析、字符串处理、条件聚合、数据质量检测、高效分页
+     */
+    public static function registerMySql84Macros(): void
+    {
+        // 窗口函数（ROW_NUMBER, RANK, LAG, LEAD 等）
+        WindowFunctionMacro::register();
+
+        // JSON 函数（MySQL 8.4 JSON 增强）
+        JsonMacro::register();
+
+        // CTE 增强（递归 CTE、层次查询）
+        CteMacro::register();
+
+        // 排名函数（RANK, DENSE_RANK, NTILE, 百分位数）
+        RankingMacro::register();
+
+        // 分析函数（移动平均、同比增长、异常值检测）
+        AnalyticsMacro::register();
+
+        // 高级聚合函数（列表聚合、帕累托分析、线性回归）
+        AggregateMacro::register();
+
+        // 时间序列分析函数（趋势分析、季节性分解、会话化）
+        TimeSeriesMacro::register();
+
+        // 字符串处理窗口函数（字符串聚合、透视）
+        StringWindowMacro::register();
+
+        // 条件聚合函数（条件计数、求和、平均值）
+        ConditionalAggregateMacro::register();
+
+        // 数据质量检测函数（空值检测、异常值、重复值）
+        DataQualityMacro::register();
+
+        // 大数据表高效分页函数（fastPaginate, seekPaginate 等）
+        PaginationMacro::register();
     }
 
     public static function registerWhereHasInQuery(ServiceProvider $provider)

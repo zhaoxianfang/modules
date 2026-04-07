@@ -590,7 +590,7 @@ protected $listen = [
 
 ### ModuleAutoDiscovery 类
 
-从 v2.3.0 开始，模块系统引入了统一的自动发现机制类 `ModuleAutoDiscovery`。
+模块系统引入了统一的自动发现机制类 `ModuleAutoDiscovery`。
 
 **核心特性**：
 - ✅ **统一发现入口**：所有模块组件通过一个类统一发现

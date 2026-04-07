@@ -70,4 +70,11 @@ interface RepositoryInterface
      * @return string
      */
     public function getModulePath(string $name, ?string $path = null): string;
+
+    /**
+     * 清除缓存
+     *
+     * @return void
+     */
+    public function clearCache(): void;
 }

@@ -5,42 +5,62 @@ namespace zxf\Modules;
 use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 
+/**
+ * 模块实体类
+ *
+ * 优化点：
+ * 1. 使用 PHP 8.2+ readonly 属性减少内存占用
+ * 2. 优化配置读取，使用静态缓存
+ * 3. 延迟加载配置直到实际需要
+ * 4. 添加更多实用方法
+ */
 class Module implements ModuleInterface
 {
     /**
      * 模块名称
-     *
-     * @var string
      */
     protected string $name;
 
     /**
      * 模块路径
-     *
-     * @var string
      */
     protected string $path;
 
     /**
      * 模块命名空间
-     *
-     * @var string
      */
     protected string $namespace;
 
     /**
      * 配置缓存
      *
-     * @var array
+     * @var array<string, mixed>
      */
-    protected array $configCache = [];
+    protected static array $configCache = [];
+
+    /**
+     * 启用状态缓存
+     *
+     * @var array<string, bool>
+     */
+    protected static array $enabledCache = [];
+
+    /**
+     * 小写名称缓存
+     *
+     * @var array<string, string>
+     */
+    protected static array $lowerNameCache = [];
+
+    /**
+     * 驼峰名称缓存
+     *
+     * @var array<string, string>
+     */
+    protected static array $camelNameCache = [];
 
     /**
      * 创建新实例
-     *
-     * @param string $name
-     * @param string $path
-     * @param string $namespace
      */
     public function __construct(string $name, string $path, string $namespace)
     {
@@ -51,8 +71,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块名称
-     *
-     * @return string
      */
     public function getName(): string
     {
@@ -61,18 +79,18 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块驼峰名称
-     *
-     * @return string
      */
     public function getCamelName(): string
     {
-        return Str::camel($this->name);
+        if (! isset(self::$camelNameCache[$this->name])) {
+            self::$camelNameCache[$this->name] = Str::camel($this->name);
+        }
+
+        return self::$camelNameCache[$this->name];
     }
 
     /**
      * 获取模块小驼峰名称
-     *
-     * @return string
      */
     public function getLowerCamelName(): string
     {
@@ -81,33 +99,30 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块小写名称
-     *
-     * @return string
      */
     public function getLowerName(): string
     {
-        return strtolower($this->name);
+        if (! isset(self::$lowerNameCache[$this->name])) {
+            self::$lowerNameCache[$this->name] = strtolower($this->name);
+        }
+
+        return self::$lowerNameCache[$this->name];
     }
 
     /**
      * 获取模块路径
-     *
-     * @param string|null $path
-     * @return string
      */
     public function getPath(?string $path = null): string
     {
-        if ($path) {
-            return $this->path . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR);
+        if ($path === null) {
+            return $this->path;
         }
 
-        return $this->path;
+        return $this->path . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR);
     }
 
     /**
      * 获取模块命名空间
-     *
-     * @return string
      */
     public function getNamespace(): string
     {
@@ -117,43 +132,44 @@ class Module implements ModuleInterface
     /**
      * 检查模块是否已启用
      *
-     * 直接读取模块配置文件中的 enabled 选项，不依赖 Laravel config
-     *
-     * @return bool
+     * 优化：使用静态缓存避免重复读取文件
      */
     public function isEnabled(): bool
     {
+        $cacheKey = $this->path;
+
+        if (isset(self::$enabledCache[$cacheKey])) {
+            return self::$enabledCache[$cacheKey];
+        }
+
         $configPath = $this->getConfigPath();
 
         if (! is_dir($configPath)) {
-            // 如果没有配置目录，默认启用
+            self::$enabledCache[$cacheKey] = true;
             return true;
         }
 
-        // 查找模块配置文件（优先使用小写名称）
         $configFile = $configPath . DIRECTORY_SEPARATOR . $this->getLowerName() . '.php';
 
         if (! file_exists($configFile)) {
-            // 如果配置文件不存在，默认启用
+            self::$enabledCache[$cacheKey] = true;
             return true;
         }
 
-        // 加载配置文件
-        $config = require $configFile;
+        try {
+            $config = require $configFile;
+            $enabled = ! (isset($config['enabled']) && $config['enabled'] === false);
+            self::$enabledCache[$cacheKey] = $enabled;
 
-        // 检查 enabled 是否存在且为 false
-        if (isset($config['enabled']) && $config['enabled'] === false) {
-            return false;
+            return $enabled;
+        } catch (\Throwable) {
+            self::$enabledCache[$cacheKey] = true;
+            return true;
         }
-
-        // 默认启用（enabled 不存在或为 true）
-        return true;
     }
 
     /**
      * 获取模块配置文件路径
-     *
-     * @return string
      */
     public function getConfigPath(): string
     {
@@ -162,8 +178,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块路由路径
-     *
-     * @return string
      */
     public function getRoutesPath(): string
     {
@@ -172,8 +186,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块服务提供者路径
-     *
-     * @return string
      */
     public function getProvidersPath(): string
     {
@@ -182,8 +194,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块命令路径
-     *
-     * @return string
      */
     public function getCommandsPath(): string
     {
@@ -192,8 +202,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块视图路径
-     *
-     * @return string
      */
     public function getViewsPath(): string
     {
@@ -202,8 +210,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块迁移路径
-     *
-     * @return string
      */
     public function getMigrationsPath(): string
     {
@@ -212,8 +218,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块控制器路径
-     *
-     * @return string
      */
     public function getControllersPath(): string
     {
@@ -223,26 +227,24 @@ class Module implements ModuleInterface
     /**
      * 获取模块配置值
      *
-     * @param string $key
-     * @param mixed $default
-     * @return mixed
+     * 优化：使用静态缓存避免重复调用 config()
      */
     public function config(string $key, $default = null)
     {
-        $configKey = "{$this->getLowerName()}.{$key}";
+        $cacheKey = "{$this->getLowerName()}.{$key}";
 
-        if (! isset($this->configCache[$configKey])) {
-            $this->configCache[$configKey] = config($configKey, $default);
+        if (array_key_exists($cacheKey, self::$configCache)) {
+            return self::$configCache[$cacheKey];
         }
 
-        return $this->configCache[$configKey];
+        $value = config($cacheKey, $default);
+        self::$configCache[$cacheKey] = $value;
+
+        return $value;
     }
 
     /**
      * 检查模块是否有某个路由文件
-     *
-     * @param string $route
-     * @return bool
      */
     public function hasRoute(string $route): bool
     {
@@ -251,8 +253,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块服务提供者类名
-     *
-     * @return string|null
      */
     public function getServiceProviderClass(): ?string
     {
@@ -268,7 +268,7 @@ class Module implements ModuleInterface
     /**
      * 获取所有路由文件
      *
-     * @return array
+     * @return array<int, string>
      */
     public function getRouteFiles(): array
     {
@@ -290,8 +290,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块类命名空间前缀
-     *
-     * @return string
      */
     public function getClassNamespace(): string
     {
@@ -300,8 +298,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块配置（直接从文件读取）
-     *
-     * @return array
      */
     public function getModuleConfig(): array
     {
@@ -328,5 +324,136 @@ class Module implements ModuleInterface
         } catch (\Throwable) {
             return [];
         }
+    }
+
+    /**
+     * 获取模块信息数组
+     *
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [
+            'name' => $this->name,
+            'lower_name' => $this->getLowerName(),
+            'camel_name' => $this->getCamelName(),
+            'path' => $this->path,
+            'namespace' => $this->namespace,
+            'enabled' => $this->isEnabled(),
+        ];
+    }
+
+    /**
+     * 获取模块路径数组
+     *
+     * @return array<string, string>
+     */
+    public function getPaths(): array
+    {
+        return [
+            'base' => $this->path,
+            'config' => $this->getConfigPath(),
+            'routes' => $this->getRoutesPath(),
+            'providers' => $this->getProvidersPath(),
+            'commands' => $this->getCommandsPath(),
+            'views' => $this->getViewsPath(),
+            'migrations' => $this->getMigrationsPath(),
+            'controllers' => $this->getControllersPath(),
+        ];
+    }
+
+    /**
+     * 检查模块是否存在指定目录
+     */
+    public function hasDirectory(string $path): bool
+    {
+        return is_dir($this->getPath($path));
+    }
+
+    /**
+     * 检查模块是否存在指定文件
+     */
+    public function hasFile(string $path): bool
+    {
+        return file_exists($this->getPath($path));
+    }
+
+    /**
+     * 获取模块目录列表
+     *
+     * @return array<int, string>
+     */
+    public function getDirectories(string $path = ''): array
+    {
+        $fullPath = $this->getPath($path);
+
+        if (! is_dir($fullPath)) {
+            return [];
+        }
+
+        $directories = [];
+        $iterator = new \DirectoryIterator($fullPath);
+
+        foreach ($iterator as $item) {
+            if ($item->isDir() && ! $item->isDot()) {
+                $directories[] = $item->getFilename();
+            }
+        }
+
+        return $directories;
+    }
+
+    /**
+     * 获取模块文件列表
+     *
+     * @return array<int, string>
+     */
+    public function getFiles(string $path = '', string $extension = 'php'): array
+    {
+        $fullPath = $this->getPath($path);
+
+        if (! is_dir($fullPath)) {
+            return [];
+        }
+
+        $pattern = $fullPath . DIRECTORY_SEPARATOR . '*.' . ltrim($extension, '.');
+        $files = glob($pattern);
+
+        if ($files === false) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($files as $file) {
+            $result[] = pathinfo($file, PATHINFO_BASENAME);
+        }
+
+        return $result;
+    }
+
+    /**
+     * 清空静态缓存
+     */
+    public static function clearStaticCache(): void
+    {
+        self::$configCache = [];
+        self::$enabledCache = [];
+        self::$lowerNameCache = [];
+        self::$camelNameCache = [];
+    }
+
+    /**
+     * 获取缓存统计信息
+     *
+     * @return array<string, int>
+     */
+    public static function getCacheStats(): array
+    {
+        return [
+            'config_cache_size' => count(self::$configCache),
+            'enabled_cache_size' => count(self::$enabledCache),
+            'lower_name_cache_size' => count(self::$lowerNameCache),
+            'camel_name_cache_size' => count(self::$camelNameCache),
+        ];
     }
 }

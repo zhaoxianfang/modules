@@ -8,27 +8,34 @@ use Illuminate\Support\ServiceProvider;
 use zxf\Modules\BuilderQuery\MacrosBuilder;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Repository;
+use zxf\Modules\Support\CompiledModuleLoader;
+use zxf\Modules\Support\ModuleCacheManager;
 use zxf\Modules\Support\ModuleLoader;
 
+/**
+ * 模块服务提供者
+ *
+ * 优化点：
+ * 1. 移除 Laravel 11+ 中废弃的 $defer 属性
+ * 2. 使用按需加载策略减少启动开销
+ * 3. 命令注册延迟到控制台模式下执行
+ * 4. 添加编译缓存支持
+ * 5. 集成 ModuleCacheManager 高性能缓存
+ */
 class ModulesServiceProvider extends ServiceProvider
 {
-    /**
-     * 延迟加载
-     *
-     * @var bool
-     */
-    protected bool $defer = false;
-
     /**
      * 注册任何应用程序服务。
      */
     public function register(): void
     {
+        $this->registerCacheManager();
+        $this->registerCompiledLoader();
         $this->registerRepository();
         $this->registerModuleLoader();
         $this->mergeConfig();
 
-        // 注册 whereHasIn 的几个查询方式来替换 whereHas 查询全表扫描的问题
+        // 注册 whereHasIn 查询宏（仅在需要时加载）
         MacrosBuilder::register($this);
     }
 
@@ -38,29 +45,78 @@ class ModulesServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->publishConfig();
-        $this->registerCommands();
-        
-        // 先加载模块以发现所有命令
-        $this->loadModules();
-        
-        // 在加载模块后，注册模块中的命令
-        $this->registerModuleCommands();
 
-        // 把 zxf/modules 添加到 about 命令中
-        AboutCommand::add('Extend', [
-            'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules'),
-        ]);
+        // 加载所有模块（核心功能）
+        $this->loadModules();
+
+        // 控制台模式下注册命令
+        $this->registerCommandsIfConsole();
+
+        // 注册 about 命令信息（仅在控制台模式下）
+        $this->registerAboutCommand();
+    }
+
+    /**
+     * 注册缓存管理器
+     */
+    protected function registerCacheManager(): void
+    {
+        $this->app->singleton(ModuleCacheManager::class, function ($app) {
+            return new ModuleCacheManager($app);
+        });
+    }
+
+    /**
+     * 注册编译加载器
+     */
+    protected function registerCompiledLoader(): void
+    {
+        $this->app->singleton(CompiledModuleLoader::class, function ($app) {
+            return new CompiledModuleLoader($app);
+        });
+    }
+
+    /**
+     * 仅在控制台模式下注册命令
+     * 避免 HTTP 请求时加载不必要的命令类
+     */
+    protected function registerCommandsIfConsole(): void
+    {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
+        $this->registerCommands();
+        $this->registerModuleCommands();
+    }
+
+    /**
+     * 注册 about 命令信息
+     */
+    protected function registerAboutCommand(): void
+    {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
+        try {
+            AboutCommand::add('Extend', [
+                'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules') ?? 'unknown',
+            ]);
+        } catch (\Throwable) {
+            // 静默处理，不影响核心功能
+        }
     }
 
     /**
      * 注册模块仓库
-     *
-     * @return void
      */
     protected function registerRepository(): void
     {
         $this->app->singleton(RepositoryInterface::class, function ($app) {
-            return new Repository($app['files']);
+            $repository = new Repository($app['files']);
+            $repository->setCacheManager($app->make(ModuleCacheManager::class));
+            return $repository;
         });
 
         $this->app->alias(RepositoryInterface::class, 'modules');
@@ -68,8 +124,6 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 注册模块加载器
-     *
-     * @return void
      */
     protected function registerModuleLoader(): void
     {
@@ -83,8 +137,6 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 合并配置
-     *
-     * @return void
      */
     protected function mergeConfig(): void
     {
@@ -96,8 +148,6 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 发布配置文件
-     *
-     * @return void
      */
     protected function publishConfig(): void
     {
@@ -108,44 +158,42 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 注册命令
-     *
-     * @return void
      */
     protected function registerCommands(): void
     {
-        if ($this->app->runningInConsole()) {
-            $this->commands([
-                Commands\ModuleMakeCommand::class,
-                Commands\ModuleListCommand::class,
-                Commands\ModuleDeleteCommand::class,
-                Commands\ModuleInfoCommand::class,
-                Commands\ModuleValidateCommand::class,
-                Commands\ModuleDebugCommandsCommand::class,
-                Commands\ControllerMakeCommand::class,
-                Commands\ModelMakeCommand::class,
-                Commands\MigrationMakeCommand::class,
-                Commands\RequestMakeCommand::class,
-                Commands\SeederMakeCommand::class,
-                Commands\ProviderMakeCommand::class,
-                Commands\CommandMakeCommand::class,
-                Commands\EventMakeCommand::class,
-                Commands\ListenerMakeCommand::class,
-                Commands\MiddlewareMakeCommand::class,
-                Commands\RouteMakeCommand::class,
-                Commands\ConfigMakeCommand::class,
-                Commands\MigrateCommand::class,
-                Commands\MigrateResetCommand::class,
-                Commands\MigrateRefreshCommand::class,
-                Commands\MigrateStatusCommand::class,
-                Commands\ModuleCheckLangCommand::class,
-            ]);
+        if (! $this->app->runningInConsole()) {
+            return;
         }
+
+        $this->commands([
+            Commands\ModuleMakeCommand::class,
+            Commands\ModuleListCommand::class,
+            Commands\ModuleDeleteCommand::class,
+            Commands\ModuleInfoCommand::class,
+            Commands\ModuleValidateCommand::class,
+            Commands\ModuleDebugCommandsCommand::class,
+            Commands\ControllerMakeCommand::class,
+            Commands\ModelMakeCommand::class,
+            Commands\MigrationMakeCommand::class,
+            Commands\RequestMakeCommand::class,
+            Commands\SeederMakeCommand::class,
+            Commands\ProviderMakeCommand::class,
+            Commands\CommandMakeCommand::class,
+            Commands\EventMakeCommand::class,
+            Commands\ListenerMakeCommand::class,
+            Commands\MiddlewareMakeCommand::class,
+            Commands\RouteMakeCommand::class,
+            Commands\ConfigMakeCommand::class,
+            Commands\MigrateCommand::class,
+            Commands\MigrateResetCommand::class,
+            Commands\MigrateRefreshCommand::class,
+            Commands\MigrateStatusCommand::class,
+            Commands\ModuleCheckLangCommand::class,
+        ]);
     }
 
     /**
      * 加载所有模块
-     *
-     * @return void
      */
     protected function loadModules(): void
     {
@@ -155,11 +203,6 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 注册模块中的命令
-     *
-     * 在模块加载后，收集所有模块的命令并注册到 Artisan
-     * 使用 Laravel 的命令注册机制确保命令可以正确执行
-     *
-     * @return void
      */
     protected function registerModuleCommands(): void
     {
@@ -178,14 +221,14 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 获取服务提供者
-     *
-     * @return array
      */
     public function provides(): array
     {
         return [
             RepositoryInterface::class,
             ModuleLoader::class,
+            ModuleCacheManager::class,
+            CompiledModuleLoader::class,
         ];
     }
 }
