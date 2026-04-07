@@ -16,7 +16,6 @@ use zxf\Modules\BuilderQuery\WindowMacros\RankingMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\RandomMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\StringWindowMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\TimeSeriesMacro;
-use zxf\Modules\BuilderQuery\WindowMacros\WindowFunctionMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasCrossJoin;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasIn;
@@ -99,9 +98,6 @@ class MacrosBuilder extends Eloquent\Builder
      */
     public static function registerMySql84Macros(): void
     {
-        // 窗口函数（ROW_NUMBER, RANK, LAG, LEAD 等）
-        WindowFunctionMacro::register();
-
         // JSON 函数（MySQL 8.4 JSON 增强）
         JsonMacro::register();
 
