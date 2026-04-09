@@ -10,17 +10,22 @@ use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Repository;
 use zxf\Modules\Support\ModuleLoader;
 
+/**
+ * 模块系统服务提供者
+ *
+ * 为 Laravel 11+ 优化的模块化系统服务提供者
+ * 已移除 Laravel 11 中废弃的 $defer 属性，采用更现代的延迟加载机制
+ *
+ * @package zxf\Modules
+ * @version 2.0.0
+ * @since Laravel 11+
+ */
 class ModulesServiceProvider extends ServiceProvider
 {
     /**
-     * 延迟加载
+     * 注册任何应用程序服务
      *
-     * @var bool
-     */
-    protected bool $defer = false;
-
-    /**
-     * 注册任何应用程序服务。
+     * Laravel 11+ 已移除 $defer 属性，通过 provides() 方法实现延迟加载
      */
     public function register(): void
     {
@@ -179,13 +184,17 @@ class ModulesServiceProvider extends ServiceProvider
     /**
      * 获取服务提供者
      *
-     * @return array
+     * 定义延迟加载的服务，Laravel 11+ 使用此方法替代 $defer 属性
+     * 只有当这些服务被实际需要时，服务提供者才会被加载
+     *
+     * @return array<string>
      */
     public function provides(): array
     {
         return [
             RepositoryInterface::class,
             ModuleLoader::class,
+            'modules',
         ];
     }
 }

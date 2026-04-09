@@ -107,73 +107,147 @@ php artisan module:delete Blog --force
 ```
 
 
-## 扩展宏
-> 弥补 laravel 中的查询缺陷和扩展新的宏查询函数
+## 扩展宏（MySQL 8.4+ 优化版）
 
-### random
+> 弥补 Laravel 查询缺陷，专为 Laravel 11+ 和 MySQL 8.4+ 设计的高性能查询扩展
+> 
+> **新特性 v2.0**:
+> - 8大类 100+ 宏函数
+> - MySQL 8.4+ 窗口函数完整支持
+> - 超大表快速分页（无需游标ID）
+> - 高级 JSON 操作
+> - 正则表达式查询
+> - 纯 SQL 优化，无需缓存
 
-> 随机查询多少条数据
-> @param int $limit 查询条数
-> @param string $primaryKey 主键字段，默认为id
-> random(int $limit = 10, string $primaryKey = 'id')
+### 功能概览
 
-示例:
+| 类别 | 功能数 | 说明 |
+|------|--------|------|
+| whereHas优化 | 10+ | 解决关联查询全表扫描问题 |
+| 随机查询 | 2 | 高效随机数据获取 |
+| 窗口函数 | 25+ | MySQL 8.4+ 窗口函数完整支持 |
+| 递归查询 | 10 | 树形结构数据处理 |
+| 分页优化 | 5 | 超大表快速分页 |
+| JSON操作 | 20+ | 高级JSON查询和操作 |
+| 正则表达式 | 15+ | 强大的文本匹配功能 |
+| 主表字段 | 8 | 自动表前缀避免歧义 |
+
+### 快速示例
+
+```php
+// 窗口函数排名
+Employee::query()
+    ->rowNumber('department_id', 'salary', 'desc', 'rank_in_dept')
+    ->rank(null, 'score', 'desc', 'competition_rank')
+    ->get();
+
+// 超大表快速分页（第5000页）
+$records = BigTable::query()->fastPaginate(30, 5000);
+
+// 游标分页（性能最佳）
+$posts = Post::query()->cursorPaginate(20, null, 'published_at', 'desc');
+
+// JSON 高级查询
+User::query()
+    ->jsonPath('settings', '$.notifications.email', 'email_enabled', false)
+    ->whereJsonArrayContains('tags', 'php')
+    ->get();
+
+// 正则表达式匹配
+User::query()->whereRegexp('email', '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')->get();
 ```
-// 随机选择5名学生
+
+### random / groupRandom - 随机查询
+
+```php
+// 随机查询5条记录
 Student::where('class_id', 101)->random(5)->get();
-```
 
-## groupRandom
-> 按照指定字段进行分组后从每组中随机取出N条数据
-
-示例:
-```
 // 每个班级随机选择2名学生
-Student::groupRandom('class_id', 2)->get();;
+Student::groupRandom('class_id', 2)->get();
 ```
 
+### whereHasIn 系列 - 关联查询优化
 
-### whereHasIn
+```php
+// 优化版关联查询（避免全表扫描）
+User::query()->whereHasIn('posts', fn($q) => $q->where('status', 1))->get();
 
-> whereHasIn(string $relation, ?\Closure $callable = null)
-> whereHasNotIn(string $relation, ?\Closure $callable = null)
+// 关联 JOIN 查询
+User::query()->whereHasLeftJoin('orders')->get();
 
+// 多态关联
+Comment::query()->whereHasMorphIn('commentable', [Post::class, Video::class])->get();
 ```
-$model->whereHasIn('section', function ($query) {
-    $query->where('id', 1);
-});
+
+### 窗口函数 - MySQL 8.4+ 专用
+
+```php
+// 排名函数
+Employee::query()->rowNumber('dept_id', 'salary', 'desc', 'row_num')->get();
+Employee::query()->rank('dept_id', 'salary', 'desc', 'rank_num')->get();
+Employee::query()->denseRank('dept_id', 'salary', 'desc', 'dense_rank')->get();
+
+// 偏移函数（环比分析）
+Sales::query()->lag('amount', 1, 0, null, 'date', 'asc', 'prev_day')->get();
+Sales::query()->lead('amount', 1, null, null, 'date', 'asc', 'next_day')->get();
+
+// 聚合窗口
+Sales::query()->sumOver('amount', 'region', null, 'asc', 'dept_total')->get();
+
+// 累计统计
+Sales::query()->cumulativeSum('amount', 'region', 'date', 'asc', 'running_total')->get();
+Stock::query()->movingAverage('price', 5, 'code', 'date', 'asc', 'ma5')->get();
 ```
 
-### 其他方法
+### 分页优化 - 超大表解决方案
 
+```php
+// 智能快速分页（自动选择最优策略）
+$users = User::query()->fastPaginate(20);
+
+// 简单分页（不计算总数，性能更好）
+$posts = Post::query()->fastSimplePaginate(10);
+
+// 游标分页（键集分页，性能最佳）
+$items = Item::query()->cursorPaginate(20, null, 'created_at', 'desc');
+
+// 寻址分页（适合深度分页）
+$page100 = BigTable::query()->seekPaginate(100, $bookmarks, 100);
 ```
-/**
- * @method $this whereHasIn(string $relation, ?\Closure $callable = null)
- * @method $this orWhereHasIn(string $relation, ?\Closure $callable = null)
- * @method $this whereHasNotIn(string $relation, ?\Closure $callable = null)
- * @method $this orWhereHasNotIn(string $relation, ?\Closure $callable = null)
- *
- * 关联查询
- * @method $this whereHasJoin(string $relation, ?\Closure $callable = null)
- * @method $this whereHasCrossJoin(string $relation, ?\Closure $callable = null)
- * @method $this whereHasLeftJoin(string $relation, ?\Closure $callable = null)
- * @method $this whereHasRightJoin(string $relation, ?\Closure $callable = null)
- *
- * @method $this whereHasMorphIn(string $relation, $types, ?\Closure $callable = null)
- * @method $this orWhereHasMorphIn(string $relation, $types, ?\Closure $callable = null)
- * 
- * 主表字段查询
- *         eg: User::query()->mainWhere('id', 1); => selsect xxx where user.id = 1
- * @method $this mainWhere(string $relation, ?\Closure $callable = null)
- * @method $this mainSum(string $relation, ?\Closure $callable = null)
- * @method $this mainPluck(string $relation, ?\Closure $callable = null)
- * @method $this mainWhereBetween(string $relation, ?\Closure $callable = null)
- * @method $this mainWhereIn(string $relation, ?\Closure $callable = null)
- * @method $this mainOrderBy(string $relation, ?\Closure $callable = null)
- * @method $this mainOrderByDesc(string $relation, ?\Closure $callable = null)
- * @method $this mainSelect(string $relation, ?\Closure $callable = null)
- */
+
+### JSON 操作 - MySQL 8.4+ JSON函数
+
+```php
+// JSON 路径提取
+User::query()->jsonPath('settings', '$.email', 'user_email')->get();
+User::query()->jsonExtract('data', '$.count', 'int', 'item_count', 0)->get();
+
+// JSON 数组操作
+Article::query()->whereJsonArrayContains('tags', 'php')->get();
+Article::query()->whereJsonArrayContainsAny('tags', ['php', 'laravel'])->get();
+Article::query()->jsonArrayLength('tags', null, 'tag_count')->get();
+
+// JSON 存在性检查
+User::query()->whereJsonPathExists('settings', '$.notifications')->get();
 ```
+
+### 正则表达式 - 文本匹配
+
+```php
+// 正则匹配
+User::query()->whereRegexp('email', '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')->get();
+
+// 正则提取
+User::query()->regexpExtract('email', '@([^@]+)$', 1, 1, 'i', 'domain')->get();
+
+// 正则替换
+User::query()->regexpReplace('phone', '(\d{3})\d{4}(\d{4})', '$1****$2', 0, 'c', 'masked_phone')->get();
+```
+
+### 更多文档
+
+详细文档请查看：[扩展宏完整文档](src/BuilderQuery/readme.md)
 
 
 ## 📖 文档目录
