@@ -10,3 +10,8 @@ Thumbs.db
 *.tmp
 .cache/
 coverage/
+# 忽略所有 . 开头的目录
+.*/
+# 忽略所有 . 开头的文件
+.*
+!.gitignore
