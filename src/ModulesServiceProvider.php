@@ -7,7 +7,6 @@ use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Support\ServiceProvider;
 use zxf\Modules\BuilderQuery\MacrosBuilder;
 use zxf\Modules\Contracts\RepositoryInterface;
-use zxf\Modules\Repository;
 use zxf\Modules\Support\ModuleLoader;
 
 /**
@@ -47,6 +46,9 @@ class ModulesServiceProvider extends ServiceProvider
         
         // 先加载模块以发现所有命令
         $this->loadModules();
+
+        // 注册视图命名空间
+        $this->registerViewNamespace();
         
         // 在加载模块后，注册模块中的命令
         $this->registerModuleCommands();
@@ -55,6 +57,39 @@ class ModulesServiceProvider extends ServiceProvider
         AboutCommand::add('Extend', [
             'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules'),
         ]);
+    }
+
+    /**
+     * 注册视图命名空间
+     *
+     * 注册 'modules' 命名空间，使得可以使用 modules:: 前缀访问扩展包的视图
+     *
+     * @return void
+     */
+    private function registerViewNamespace(): void
+    {
+        try {
+            $viewPath = __DIR__ . '/../resources/views';
+
+            // 验证视图目录是否存在
+            if (!is_dir($viewPath)) {
+                return;
+            }
+
+            // 使用 loadViewsFrom 注册命名空间
+            $this->loadViewsFrom($viewPath, 'modules');
+
+            // 如果应用视图目录中存在自定义视图，则优先使用
+            $customViewPath = resource_path('views/vendor/modules');
+            if (is_dir($customViewPath)) {
+                // 确保视图工厂已绑定
+                if ($this->app->bound('view')) {
+                    $this->app->make('view')->prependNamespace('modules', $customViewPath);
+                }
+            }
+        } catch (\Throwable $e) {
+            // 记录错误但不中断应用启动
+        }
     }
 
     /**

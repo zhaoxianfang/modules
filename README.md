@@ -14,7 +14,7 @@ composer require zxf/modules
 ### 1. 发布配置文件
 
 ```bash
-php artisan vendor:publish --provider="zxf\\Modules\\ModulesServiceProvider"
+php artisan vendor:publish --tag=modules-config
 ```
 
 配置文件会发布到：`config/modules.php`

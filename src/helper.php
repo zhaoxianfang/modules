@@ -39,14 +39,11 @@ if (! function_exists('module_name')) {
      * // 在 Blog/Http/Controllers/PostController.php 中调用
      * $moduleName = module_name(); // 'Blog'
      */
-    function module_name(): string
+    function module_name(bool $toLower = false): string
     {
-        static $result = null;
-
-        if ($result !== null) {
-            return $result;
+        if (app()->runningInConsole()) {
+            return $toLower ? 'command' : 'Command';
         }
-
         $modulePath = rtrim(str_replace('\\', '/',
                 config('modules.path', base_path('Modules'))
             ), '/') . '/';
@@ -72,14 +69,13 @@ if (! function_exists('module_name')) {
                     $moduleName = Str::studly($moduleDir);
 
                     if ($moduleName && module_exists($moduleName)) {
-                        $result = $moduleName;
-                        return $moduleName;
+                        return $toLower ? strtolower(preg_replace('/(?<=[a-z])([A-Z])/', '_$1', $moduleName)) : $moduleName;
                     }
                 }
             }
         }
 
-        return 'App';
+        return $toLower ? 'app' : 'App';
     }
 }
 
@@ -1034,5 +1030,125 @@ if (! function_exists('module_disabled_modules')) {
             modules(),
             fn($module) => ! $module->isEnabled()
         );
+    }
+}
+
+if (! function_exists('get_user_info')) {
+    /**
+     * 获取登录用户信息
+     *
+     * @param  string|null  $field  用户信息字段名
+     */
+    function get_user_info(?string $field = null): ?array
+    {
+        $user = null;
+        if (app()->runningInConsole()) {
+            return null;
+        }
+        try {
+            $authConfig = config('auth.guards');
+            foreach ($authConfig as $guard => $config) {
+                if (auth($guard)->check()) {
+                    $user = auth($guard)->user()->toArray();
+                    break;
+                }
+            }
+            return ! empty($user) ? ( empty($field) ? $user : (!empty($user[$field])?$user[$field]: null) ) : null;
+        } catch (Exception $e) {
+            return null;
+        }
+    }
+}
+
+
+if (! function_exists('view_share')) {
+    /**
+     * 与所有视图共享数据
+     */
+    function view_share(string|array $key, mixed $value = ''): void
+    {
+        if (is_array($key)) {
+            foreach ($key as $k => $v) {
+                View::share($k, $v);
+            }
+        } else {
+            View::share($key, $value);
+        }
+    }
+}
+
+if (! function_exists('get_view_share')) {
+    /**
+     * 获取所有视图共享的数据 [仅执行本函数之前共享的数据]
+     *
+     * @param  string  $key  [可选]仅获取某个数据
+     */
+    function get_view_share(string $key = ''): mixed
+    {
+        $data = View::getShared();
+        if (! empty($key)) {
+            return $data[$key] ?? null;
+        }
+
+        return $data;
+    }
+}
+
+if (! function_exists('view_exists')) {
+    /**
+     * 判断视图文件是否存在
+     */
+    function view_exists($view): bool
+    {
+        return View::exists($view);
+    }
+}
+
+if (! function_exists('source_local_website')) {
+    /**
+     * 判断跳转url的上一个地址（来源地址）是不是从本站跳转过来的
+     *
+     * @param  string  $returnType  返回类型，默认返回全部信息，可选值：
+     *                              status: 返回来源地址是否为本站地址
+     *                              url:如果来源地址是本站地址，返回来源地址URL，否则返回 ''
+     *                              uri:如果来源地址是本站地址，返回来源地址URI，否则返回 ''
+     *                              prefix:如果来源地址是本站地址，返回来源地址URI的前缀地址，否则返回 ''
+     *                              all: 返回[是否来源本站,来源URL]
+     */
+    function source_local_website(string $returnType = 'all'): bool|array|string|null
+    {
+        // 获取上一个 地址
+        $sessionUrl = session()->previousUrl();
+        $previousUrl = url()->previous();
+        $referer = ! empty($sessionUrl) ? $sessionUrl : (! empty($previousUrl) ? $previousUrl : request()->header('referer', ''));
+
+        $isLocal = false;
+        if (! empty($referer)) {
+            // 判断是否为本站来源 (本站URL)
+            $isLocal = str_starts_with(
+                parse_url($referer, PHP_URL_HOST) ?? '',
+                parse_url(config('app.url'), PHP_URL_HOST) ?? ''
+            );
+        }
+        $uri = $uriPrefix = '';
+        if ($isLocal) {
+            $uri = parse_url($referer, PHP_URL_PATH) ?? '';
+            // 获取 $uri 中 第一个 / 前的字符串
+            $uriPrefix = explode('/', ltrim(parse_url($uri, PHP_URL_PATH) ?? $uri, '/'))[0] ?? '';
+        }
+
+        // 来源地址不是本站
+        return match ($returnType) {
+            'status' => (bool) $isLocal, // 返回来源是否是本站
+            'url' => ! $isLocal ? '' : $referer  , // 当来源地址是本站时，返回来源地址，否则返回空
+            'uri' => ! $isLocal ? '' : $uri ?? ''  , // 当来源地址是本站时，返回来源uri地址，否则返回空
+            'prefix' => ! $isLocal ? '' : $uriPrefix ?? ''  , // 当来源地址是本站时，返回来源uri地址，否则返回空
+            default => [ // 默认返回 [来源是否为本站,本站来源url]
+                'local' => (bool) $isLocal,
+                'url' => ! $isLocal ? '' : $referer,
+                'uri' => ! $isLocal ? '' : $uri ?? '',
+                'prefix' => ! $isLocal ? '' : $uriPrefix ?? '',
+            ],
+        };
     }
 }
