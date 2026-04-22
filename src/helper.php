@@ -1039,7 +1039,7 @@ if (! function_exists('get_user_info')) {
      *
      * @param  string|null  $field  用户信息字段名
      */
-    function get_user_info(?string $field = null): ?array
+    function get_user_info(?string $field = null): mixed
     {
         $user = null;
         if (app()->runningInConsole()) {
