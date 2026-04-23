@@ -4,18 +4,24 @@
 
 ## 功能概览
 
-本扩展包提供 8 大类宏功能：
+本扩展包提供 14 大类宏功能：
 
 | 类别 | 功能数量 | 说明 |
 |------|---------|------|
 | whereHas 优化 | 10+ | 解决关联查询全表扫描问题 |
 | 随机查询 | 2 | 高效随机数据获取 |
 | 窗口函数 | 25+ | MySQL 8.4+ 窗口函数支持 |
-| 递归查询 | 10 | 树形结构数据处理 |
+| 递归查询 | 16+ | 树形结构数据处理（层级/路径/关系/树构建） |
 | 分页优化 | 5 | 超大表快速分页 |
 | JSON 操作 | 20+ | 高级 JSON 查询和操作 |
 | 正则表达式 | 15+ | 强大的文本匹配功能 |
 | 主表字段 | 8 | 自动表前缀避免歧义 |
+| 集合操作 | 3 | INTERSECT/EXCEPT 集合运算 |
+| QUALIFY 过滤 | 4 | 窗口函数结果过滤（类似 HAVING） |
+| LATERAL JOIN | 4 | 横向连接，高效 Top-N 查询 |
+| 行列转换 | 8 | PIVOT/UNPIVOT 数据透视表 |
+| 数据抽样 | 4 | 随机/分层/系统抽样 |
+| VALUES 构造 | 4 | 批量插入和 UPSERT 优化 |
 
 ---
 
@@ -236,10 +242,13 @@ Orders::query()->runningTotal('amount', 'customer_id', 'created_at', 'asc')->get
 ### 基础递归查询
 
 ```php
-// 获取所有子节点
+// 获取所有子节点（不包含自身）
 $children = Category::withAllChildren(5)->get();
 
-// 获取所有父节点
+// 获取所有子节点（包含自身）
+$children = Category::withAllChildren(5, 'parent_id', 100, true)->get();
+
+// 获取所有父节点（向上递归）
 $parents = Category::withAllParents(8)->get();
 
 // 限制递归深度
@@ -249,17 +258,17 @@ $children = Category::withAllChildren(5, 'parent_id', 10)->get();
 ### 指定层级查询
 
 ```php
-// 获取第N级父节点（0级是自己）
+// 获取第N级父节点（0级是自己，1级是直接父节点）
 $grandparent = Category::withNthParent(10, 2)->first();
 
-// 获取第N级子节点
+// 获取第N级子节点（1级是直接子节点）
 $grandchildren = Category::withNthChildren(1, 2)->get();
 ```
 
 ### 路径查询
 
 ```php
-// 获取完整路径（带 absolute_path 字段）
+// 获取完整路径（带 absolute_path、path_ids、depth 字段）
 $paths = Category::withFullPath([1, 2, 3])->get();
 
 // 自定义路径格式
@@ -270,13 +279,28 @@ $paths = Category::withFullPath(
     'name',
     ' / '
 )->get();
+
+// 面包屑导航（从根到当前节点的祖先链）
+$breadcrumbs = Category::withBreadcrumbs(15)->pluck('name')->implode(' > ');
+
+// 路径长度（到根节点的深度）
+$depth = Category::withPathLength(15)->value('path_length');
 ```
 
 ### 层级关系判断
 
 ```php
-// 检查节点A是否是节点B的父节点
+// 检查节点A是否是节点B的祖先（递归检查）
 $isParent = Category::isParentOf(1, 5);
+
+// 严格模式：只检查直接父节点
+$isDirectParent = Category::isParentOf(1, 5, 'parent_id', true);
+
+// 检查是否为后代节点
+$isChild = Category::isChildOf(5, 1);
+
+// 查找两个节点的最近公共祖先
+$ancestor = Category::withNearestAncestor(15, 20)->first();
 ```
 
 ### 同级节点
@@ -297,6 +321,15 @@ $tree = Category::withTree()->where('status', 1)->get();
 
 // 从指定节点开始的子树
 $subTree = Category::withTree(5, 'parent_id', 'title', 5, ' -> ')->get();
+
+// 查找所有根节点
+$roots = Category::withRoot()->get();
+
+// 查找所有叶子节点（没有子节点的节点）
+$leaves = Category::withLeafNodes()->get();
+
+// 获取后代数量
+$count = Category::withDescendantsCount(1)->value('descendants_count');
 ```
 
 ### 通用递归查询
@@ -318,6 +351,9 @@ $custom = Category::recursiveQuery(
     ['id', 'name', 'parent_id'],
     5
 )->get();
+
+// 设置根节点值（默认为0，可设为null）
+WithRecursiveMacro::setRootValue(null); // 使用NULL作为根节点标识
 ```
 
 ---
@@ -566,6 +602,185 @@ User::query()->mainPluck('email');
 
 // SELECT
 User::query()->mainSelect(['id', 'name', 'email']);
+```
+
+---
+
+## 9. 集合操作系列（MySQL 8.0.31+）
+
+INTERSECT 和 EXCEPT 集合运算。
+
+```php
+// INTERSECT - 交集：既购买了A又购买了B的用户
+$users = User::query()->whereExists(function ($q) {
+    $q->select('user_id')->from('orders')->where('product_id', 1);
+})->intersect(function ($q) {
+    $q->select('id')->from('users')->whereExists(function ($sq) {
+        $sq->select('user_id')->from('orders')->where('product_id', 2);
+    });
+})->get();
+
+// EXCEPT - 差集：活跃但未验证邮箱的用户
+$users = User::query()->where('status', 'active')
+    ->except(function ($q) {
+        $q->select('id')->from('users')->whereNotNull('email_verified_at');
+    })->get();
+
+// UNION DISTINCT - 显式去重
+User::query()->where('role', 'admin')
+    ->unionDistinct(function ($q) {
+        $q->select('users.*')->from('users')
+          ->join('permissions', 'users.id', '=', 'permissions.user_id')
+          ->where('permissions.level', '>=', 5);
+    })->get();
+```
+
+---
+
+## 10. QUALIFY 过滤系列（MySQL 8.0.33+）
+
+过滤窗口函数结果，无需子查询或 CTE。
+
+```php
+// 查找每个部门工资排名前3的员工
+Employee::query()
+    ->select('*')
+    ->selectRaw('RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) as dept_rank')
+    ->qualify('dept_rank', '<=', 3)
+    ->get();
+
+// 销售额超过部门平均的员工
+Sales::query()
+    ->select('*')
+    ->selectRaw('amount - AVG(amount) OVER (PARTITION BY department_id) as above_avg')
+    ->qualify('above_avg', '>', 0)
+    ->get();
+
+// 复杂条件
+Employee::query()
+    ->selectRaw('DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY score DESC) as dr')
+    ->qualifyRaw('dr BETWEEN ? AND ?', [1, 5])
+    ->get();
+```
+
+---
+
+## 11. LATERAL JOIN 系列（MySQL 8.0.14+）
+
+横向连接，子查询可引用主查询列。
+
+```php
+// 每个用户最近的3条订单
+User::query()
+    ->lateralJoin(function ($subQuery) {
+        $subQuery->select('*')->from('orders')
+            ->whereColumn('user_id', 'users.id')
+            ->orderBy('created_at', 'desc')
+            ->limit(3);
+    }, 'recent_orders')
+    ->get();
+
+// 高效 Top-N：每个分类销量最高的5个商品
+Product::query()
+    ->lateralLimit('category_id', 'sales_count', 'desc', 5, 'top_products')
+    ->get();
+
+// 行相关聚合：每个订单的客户历史总消费
+Order::query()
+    ->lateralAggregate('user_id', [
+        ['column' => 'amount', 'function' => 'SUM', 'alias' => 'customer_total'],
+        ['column' => 'amount', 'function' => 'AVG', 'alias' => 'customer_avg'],
+    ], 'status', 'completed', 'customer_stats')
+    ->get();
+```
+
+---
+
+## 12. 行列转换（PIVOT）系列
+
+数据透视表功能。
+
+```php
+// PIVOT - 行转列：每个用户各状态订单金额
+Order::query()
+    ->pivot('status', ['pending', 'paid', 'shipped', 'completed'], 'amount', 'SUM', 'user_id')
+    ->get();
+// 结果: user_id | pending | paid | shipped | completed
+
+// 快捷聚合透视
+Order::query()->pivotCount('status', ['pending', 'paid'], 'id', 'region')->get();
+Order::query()->pivotSum('category', ['A', 'B', 'C'], 'amount', 'month')->get();
+
+// UNPIVOT - 列转行
+MonthlySales::query()
+    ->unpivot([
+        ['column' => 'jan_sales', 'alias' => '一月'],
+        ['column' => 'feb_sales', 'alias' => '二月'],
+        ['column' => 'mar_sales', 'alias' => '三月'],
+    ], 'month', 'sales_amount')
+    ->get();
+
+// 交叉表：按地区和月份统计销售额
+Sales::query()
+    ->crossTab('region', 'month', 'amount', 'SUM', ['01', '02', '03', '04'])
+    ->get();
+```
+
+---
+
+## 13. 数据抽样系列
+
+高效数据抽样，适合大数据分析和统计估算。
+
+```php
+// 随机抽取10%的数据
+User::query()->sample(10)->get();
+
+// 精确抽取100条随机记录
+User::query()->randomSample(100)->get();
+
+// 可重复抽样（使用种子）
+Survey::query()->randomSample(500, 'seed_2024')->get();
+
+// 分层抽样：按性别每层抽50人
+User::query()->stratifiedSample('gender', 50)->get();
+
+// 系统抽样（等距）：每隔10条抽1条
+Log::query()->systematicSample(10)->get();
+```
+
+---
+
+## 14. VALUES 构造系列
+
+批量操作优化，使用 VALUES ROW 语法。
+
+```php
+// 使用 VALUES 作为临时表 JOIN
+$statusMap = [
+    ['id' => 1, 'status' => 'active'],
+    ['id' => 2, 'status' => 'inactive'],
+];
+User::query()
+    ->valuesJoin($statusMap, 'status_map', 'id', 'id')
+    ->select('users.*', 'status_map.status as override_status')
+    ->get();
+
+// 高效批量插入
+Log::query()->valuesInsert([
+    ['level' => 'info', 'message' => 'User login', 'created_at' => now()],
+    ['level' => 'error', 'message' => 'DB fail', 'created_at' => now()],
+]);
+
+// 批量插入或更新（UPSERT）
+User::query()->batchUpsert([
+    ['id' => 1, 'name' => '张三', 'email' => 'zhang@example.com', 'updated_at' => now()],
+    ['id' => 2, 'name' => '李四', 'email' => 'li@example.com', 'updated_at' => now()],
+], 'id', ['name', 'email', 'updated_at']);
+
+// 大批量插入自动分块
+$data = array_map(fn ($i) => ['name' => "Item {$i}", 'sort' => $i], range(1, 10000));
+Item::query()->valuesInsert($data, 1000);
 ```
 
 ---
