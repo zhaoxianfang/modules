@@ -6,46 +6,20 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Validation\ValidatesRequests;
 use zxf\Modules\Controller\BaseController;
 
-abstract class Controller extends BaseController
+/**
+ * {{NAME}} 模块控制器基类
+ *
+ * 1、继承 BaseController类 可调用封装好的 success、error、json、backWithError 等方法
+ * 2、可在此类或继承此类的类中定义前置方法 initialize 和 before 方法，前置方法支持依赖注入；
+ *                  例如： public function initialize(User $user,...){...}
+ *                        public function before(Request $request,...){...}
+ * 3、可以直接使用已经初始化的策略类;
+ *                  例如：$this->gate::authorize('create', User::class);
+ *                       $this->gate::forUser(auth('web')->user())->authorize('create', User::class);
+ * 4、可以直接使用请求对象 $this->request、$this->request->input('name') 等Request方法;
+ */
+abstract class {{NAME}}BaseController extends BaseController
 {
-    use AuthorizesRequests, ValidatesRequests;
+    // use AuthorizesRequests, ValidatesRequests;
 
-    /**
-     * 成功响应
-     *
-     * @param mixed $data
-     * @param string $message
-     * @param int $code
-     * @return \Illuminate\Http\JsonResponse
-     */
-    protected function success($data = null, string $message = '操作成功', int $code = 200)
-    {
-        return response()->json([
-            'code' => 0,
-            'message' => $message,
-            'data' => $data,
-        ], $code);
-    }
-
-    /**
-     * 失败响应
-     *
-     * @param string $message
-     * @param int $code
-     * @param mixed $errors
-     * @return \Illuminate\Http\JsonResponse
-     */
-    protected function error(string $message = '操作失败', int $code = 400, $errors = null)
-    {
-        $response = [
-            'code' => 1,
-            'message' => $message,
-        ];
-
-        if ($errors !== null) {
-            $response['errors'] = $errors;
-        }
-
-        return response()->json($response, $code);
-    }
 }

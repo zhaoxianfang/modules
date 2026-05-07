@@ -3,8 +3,9 @@
 namespace {{NAMESPACE}}\{{NAME}}\Http\Controllers{{CONTROLLER_SUBNAMESPACE}};
 
 use Illuminate\Http\Request;
+use {{NAMESPACE}}\{{NAME}}\Http\Controllers\{{BASE_CLASS}};
 
-class {{CLASS}} extends Controller
+class {{CLASS}} extends {{BASE_CLASS}}
 {
     //
 }

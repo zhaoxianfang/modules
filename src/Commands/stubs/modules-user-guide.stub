@@ -33,38 +33,6 @@ php artisan module:delete Blog
 php artisan module:validate Blog
 ```
 
-
-### 代码生成
-```bash
-# 创建控制器 可以指定类型
-php artisan module:make-controller Blog PostController --type=web
-
-# 创建模型
-// 创建模型 - 同时创建对应的数据库迁移文件
-php artisan module:make-model Blog Blogs --migration
-// 在 Blog 模块下 创建 Blogs 模型，并且把 数据库中的 blogs 表字段信息解析到模型类中
-php artisan module:make-model Blog Blogs --table=blogs --force
-
-# 创建命令
-// 创建一个 blog:sync-posts 命令
-php artisan module:make-command Blog SyncPosts --command=blog:sync-posts
-
-# 创建事件
-php artisan module:make-event Blog EventName
-
-# 创建监听器
-php artisan module:make-listener Blog ListenerName --event=EventName
-
-# 创建中间件
-php artisan module:make-middleware Blog MiddlewareName
-
-# 创建请求验证
-php artisan module:make-request Blog RequestName
-
-# 创建资源类
-php artisan module:make-resource Blog ResourceName
-```
-
 ### 迁移管理
 ```bash
 
@@ -84,6 +52,37 @@ php artisan module:migrate-refresh Blog
 
 # 查看迁移状态
 php artisan module:migrate-status Blog
+```
+
+### 代码生成
+```bash
+# 创建控制器 可以指定类型
+php artisan module:make-controller Blog PostController --type=web
+
+# 创建模型
+// 创建模型 - 同时创建对应的数据库迁移文件
+php artisan module:make-model Blog Article --migration
+// 在 Blog 模块下 创建 Article 模型，并且把 数据库中的 articles 表字段信息解析到模型类中
+php artisan module:make-model Blog Article --table=articles --force
+
+# 创建命令
+// 创建一个 blog:sync-posts 命令
+php artisan module:make-command Blog SyncPosts --command=blog:sync-posts
+
+# 创建事件
+php artisan module:make-event Blog EventName
+
+# 创建监听器
+php artisan module:make-listener Blog ListenerName --event=EventName
+
+# 创建中间件
+php artisan module:make-middleware Blog MiddlewareName
+
+# 创建请求验证
+php artisan module:make-request Blog RequestName
+
+# 创建资源类
+php artisan module:make-resource Blog ResourceName
 ```
 
 ### 本地化差异

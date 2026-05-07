@@ -94,7 +94,7 @@ class ModulePublishCommand extends Command
     protected function publishUserGuide(bool $force): bool
     {
         $modulesPath = config('modules.path', base_path('Modules'));
-        $guidePath = $modulesPath . '/ModulesUserGuide.md';
+        $guidePath = $modulesPath . '/UserGuide.md';
 
         $this->line('<comment>📖 发布用户指南...</comment>');
 

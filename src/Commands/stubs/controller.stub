@@ -3,6 +3,7 @@
 namespace {{NAMESPACE}}\{{NAME}}\Http\Controllers{{CONTROLLER_SUBNAMESPACE}};
 
 use Illuminate\Http\Request;
+use {{NAMESPACE}}\{{NAME}}\Http\Controllers\{{BASE_CLASS}};
 
 /**
  * {{CLASS}} 控制器
@@ -10,7 +11,7 @@ use Illuminate\Http\Request;
  * 处理 {{NAME}} 模块的{{CONTROLLER_SUBNAMESPACE}}类型业务逻辑
  * 继承基础控制器，可以使用 success() 和 error() 方法返回 JSON 响应
  */
-class {{CLASS}} extends \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Controller
+class {{CLASS}} extends {{BASE_CLASS}}
 {
     /**
      * 显示欢迎页面
@@ -122,24 +123,5 @@ class {{CLASS}} extends \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Controller
 
         return $this->success(null, '删除成功（示例）');
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | 自定义方法区域
-    |--------------------------------------------------------------------------
-    | 在此处添加您的自定义业务方法
-    */
-
-    // /**
-    //  * 自定义方法示例
-    //  *
-    //  * @param \Illuminate\Http\Request $request
-    //  * @return \Illuminate\Http\JsonResponse
-    //  */
-    // public function customMethod(Request $request)
-    // {
-    //     // 您的业务逻辑
-    //     return $this->success([], '操作成功');
-    // }
 }
 

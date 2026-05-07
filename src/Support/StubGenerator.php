@@ -162,6 +162,7 @@ class StubGenerator
 
             // === 其他常用变量 ===
             '{{CLASS}}' => $this->moduleName,                                  // 类名（动态设置）
+            '{{BASE_CLASS}}' => $this->moduleName.'BaseController',            // 基础类名（动态设置）
             '{{DATE}}' => date('Y-m-d'),                                       // 当前日期: 2026-01-19
             '{{YEAR}}' => date('Y'),                                           // 当前年份: 2026
             '{{TIME}}' => date('H:i:s'),                                       // 当前时间: 14:30:45

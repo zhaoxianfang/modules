@@ -91,7 +91,7 @@ class ModuleMakeCommand extends Command
             $this->generateFilesFromStubMapping($stubGenerator);
 
             $this->info("模块 [{$name}] 创建成功");
-            $this->line("用户指南位置: " . config('modules.path', base_path('Modules')) . '/ModulesUserGuide.md');
+            $this->line("用户指南位置: " . config('modules.path', base_path('Modules')) . '/UserGuide.md');
 
             return Command::SUCCESS;
         } catch (\Exception $e) {
@@ -108,14 +108,14 @@ class ModuleMakeCommand extends Command
     /**
      * 发布多模块用户指南
      *
-     * 检查多模块路径下是否已存在 ModulesUserGuide.md，如果不存在则发布
+     * 检查多模块路径下是否已存在 UserGuide.md，如果不存在则发布
      *
      * @return void
      */
     protected function publishModulesUserGuide(): void
     {
         $modulesPath = config('modules.path', base_path('Modules'));
-        $guidePath = $modulesPath . '/ModulesUserGuide.md';
+        $guidePath = $modulesPath . '/UserGuide.md';
 
         // 检查是否已存在用户指南
         if (file_exists($guidePath)) {
@@ -233,7 +233,7 @@ class ModuleMakeCommand extends Command
         // === 基础控制器 ===
         $generatorConfig['controller']['generate'] && $this->stubMapping[] = [
             'stub' => 'controller.base.stub',
-            'destination' => $generatorConfig['controller']['path'] . '/Controller.php',
+            'destination' => $generatorConfig['controller']['path'] . '/' . $moduleName . 'BaseController.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
@@ -248,6 +248,7 @@ class ModuleMakeCommand extends Command
                 '{{NAMESPACE}}' => $namespace,
                 '{{CONTROLLER_SUBNAMESPACE}}' => '\\Web',
                 '{{CLASS}}' => $moduleName . 'Controller',
+                '{{BASE_CLASS}}' => $moduleName . 'BaseController',
             ],
         ];
 
@@ -259,6 +260,7 @@ class ModuleMakeCommand extends Command
                 '{{NAMESPACE}}' => $namespace,
                 '{{CONTROLLER_SUBNAMESPACE}}' => '\\Api',
                 '{{CLASS}}' => $moduleName . 'Controller',
+                '{{BASE_CLASS}}' => $moduleName . 'BaseController',
             ],
         ];
 
@@ -270,6 +272,7 @@ class ModuleMakeCommand extends Command
                 '{{NAMESPACE}}' => $namespace,
                 '{{CONTROLLER_SUBNAMESPACE}}' => '\\Admin',
                 '{{CLASS}}' => $moduleName . 'Controller',
+                '{{BASE_CLASS}}' => $moduleName . 'BaseController',
             ],
         ];
 

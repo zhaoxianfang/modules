@@ -59,7 +59,7 @@ php artisan module:publish --config
 php artisan module:publish --force
 ```
 
-发布后，多模块用户指南将位于：`Modules/ModulesUserGuide.md`
+发布后，多模块用户指南将位于：`Modules/UserGuide.md`
 
 ### 7. 运行模块迁移
 

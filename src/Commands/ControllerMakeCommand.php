@@ -76,6 +76,7 @@ class ControllerMakeCommand extends Command
         $stubGenerator->addReplacement('{{CLASS}}', $controllerName);
         $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
         $stubGenerator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', '\\' . Str::studly($type));
+        $stubGenerator->addReplacement('{{BASE_CLASS}}', $moduleName.'BaseController');
 
         // 确保控制器目录存在
         $controllerDir = $module->getPath('Http/Controllers/' . Str::studly($type));
