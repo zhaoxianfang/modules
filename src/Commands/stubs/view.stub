@@ -75,7 +75,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>✨ {{NAME}} 模块！</h1>
+        <h1>✨ {{NAME}} 模块 ✨</h1>
         <div class="success">✓ 运行正常</div>
         <div class="info">
             <p>➤ 1、当前模块: {{NAME}}</p>

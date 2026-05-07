@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use {{NAMESPACE}}\{{NAME}}\Http\Controllers\Api;
 
 /*
 |--------------------------------------------------------------------------
@@ -10,110 +11,13 @@ use Illuminate\Support\Facades\Route;
 | 在这里注册 {{NAME}} 模块的 API 路由
 |
 | 路由配置：
-|   - 自动应用 'api' 中间件组（从 modules.middleware_groups 配置）
+|   - 已经自动应用 modules.middleware_groups 配置的 api 对应项的中间件组
 |   - 路由前缀: {{ROUTE_PREFIX_VALUE}}
 |   - 路由名称前缀: {{ROUTE_NAME_PREFIX_VALUE}}
-|   - 控制器命名空间: {{NAMESPACE}}\{{NAME}}\Http\Controllers\Api
 |   - 响应默认为 JSON 格式
-|
-| Laravel 11+ 最佳实践：
-|   - 使用 apiResource() 自动生成无 create/edit 的 RESTful 路由
-|   - 使用 withTrashed() / onlyTrashed() 软删除路由支持
-|   - 使用 throttledRequest() 便捷限流方法
-|   - 使用 auth:sanctum 无状态认证
-|   - 实现统一的错误响应格式
-|
 */
 
-Route::middleware(['api'])
-    ->prefix('{{ROUTE_PREFIX_VALUE}}')
-    ->name('{{ROUTE_NAME_PREFIX_VALUE}}')
-    ->group(function () {
-        /*
-        |--------------------------------------------------------------------------
-        | 公开路由（无需认证）
-        |--------------------------------------------------------------------------
-        */
-        Route::get('/', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'list'])
-            ->name('list');
-
-        Route::get('/{id}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'show'])
-            ->name('show')
-            ->whereNumber('id');
-
-        /*
-        |--------------------------------------------------------------------------
-        | 需要认证的路由
-        |--------------------------------------------------------------------------
-        | 使用 auth:sanctum 进行认证（推荐）
-        */
-        // Route::middleware('auth:sanctum')
-        //     ->group(function () {
-        //         Route::post('/', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'store'])
-        //             ->name('store');
-        //
-        //         Route::put('/{id}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'update'])
-        //             ->name('update')
-        //             ->whereNumber('id');
-        //
-        //         Route::delete('/{id}', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'destroy'])
-        //             ->name('destroy')
-        //             ->whereNumber('id');
-        //     });
-
-        /*
-        |--------------------------------------------------------------------------
-        | API 资源路由（推荐）
-        |--------------------------------------------------------------------------
-        | 自动生成 RESTful 路由（不包含 create 和 edit）
-        | 路由列表: index, store, show, update, destroy
-        */
-        // Route::apiResource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class)
-        //     ->names('{{LOWER_NAME}}');
-
-        /*
-        |--------------------------------------------------------------------------
-        | 带限流的资源路由
-        |--------------------------------------------------------------------------
-        | 使用 throttle 中间件限制请求频率
-        */
-        // Route::apiResource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class)
-        //     ->names('{{LOWER_NAME}}')
-        //     ->middleware('throttle:60,1'); // 限制每分钟60次请求
-
-        /*
-        |--------------------------------------------------------------------------
-        | 软删除支持的路由
-        |--------------------------------------------------------------------------
-        | 使用 withTrashed() 支持恢复和永久删除操作
-        */
-        // Route::apiResource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class)
-        //     ->names('{{LOWER_NAME}}')
-        //     ->withTrashed(['restore', 'forceDestroy']);
-
-        /*
-        |--------------------------------------------------------------------------
-        | 版本化 API（推荐）
-        |--------------------------------------------------------------------------
-        | 通过路由前缀实现 API 版本控制
-        */
-        // Route::prefix('v1')
-        //     ->name('v1.')
-        //     ->group(function () {
-        //         Route::apiResource('{{LOWER_NAME}}', \{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class);
-        //     });
-
-        /*
-        |--------------------------------------------------------------------------
-        | 自定义方法路由
-        |--------------------------------------------------------------------------
-        */
-        // 示例：批量操作
-        // Route::post('/batch', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'batch'])
-        //     ->name('batch');
-
-        // 示例：搜索
-        // Route::get('/search', [\{{NAMESPACE}}\{{NAME}}\Http\Controllers\Api\{{NAME}}Controller::class, 'search'])
-        //     ->name('search');
-    });
+Route::middleware(['api'])->prefix('{{ROUTE_PREFIX_VALUE}}')->name('{{ROUTE_NAME_PREFIX_VALUE}}')->group(function () {
+    Route::get('/', [Api\{{NAME}}Controller::class, 'list'])->name('list');
+});
 
