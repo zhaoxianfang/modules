@@ -430,9 +430,13 @@ class ModuleAutoDiscovery
                 // 如果配置文件名与模块名相同，直接用模块名
                 $moduleLowerName = $this->module->getLowerName();
 
-                if (strtolower($filename) === $moduleLowerName) {
+                if (in_array(strtolower($filename),[$moduleLowerName,'config'])) {
+                    // 如果配置文件目录下的文件名 为 模块小写或者 config , 都视为当前模块的默认配置文件
+                    // 例如： Blog/Config 配置文件夹下 有 config.php 或者 blog.php(Blog模块的小写形式)，
+                    // 都视为是Blog 模块的默认配置文件 blog.php
                     $configKey = $moduleLowerName;
                 } else {
+                    // 例如： Blog/Config 配置文件夹下 有 test.php 配置文件，则 视为 blog.test 配置文件
                     $configKey = $moduleLowerName . '.' . strtolower($filename);
                 }
 
@@ -446,7 +450,11 @@ class ModuleAutoDiscovery
                     }
 
                     // 合并到全局配置
-                    config([$configKey => $configValue]);
+                    // config([$configKey => $configValue]); 例如 blog.php 配置的值会被同文件夹下config.php 配置覆盖
+
+                    // 把blog.php 和 config.php 两个配置文件的值合并到一个 blog 配置;
+                    // 存在相同配置键值时，后加载的配置会覆盖先加载的配置
+                    config([$configKey => array_merge(config($configKey, []), $configValue)]);
 
                     // 记录缓存
                     $this->cache["config.{$configKey}"] = true;

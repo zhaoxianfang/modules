@@ -100,7 +100,7 @@ class ModulePublishCommand extends Command
 
         // 检查是否已存在
         if (file_exists($guidePath) && ! $force) {
-            $this->warn("用户指南已存在: {$guidePath}");
+            // $this->warn("用户指南已存在: {$guidePath}");
             $this->line("提示：使用 --force 选项覆盖已存在的文件");
             return false;
         }
