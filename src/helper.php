@@ -39,7 +39,7 @@ use zxf\Modules\Support\StubGenerator;
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ 一、模块基本信息与检测                                                    │
  * │    module_name() / module() / modules() / module_exists()                │
- * │    module_enabled() / current_module() / module_namespace()              │
+ * │    module_enabled() / module_namespace()              │
  * │                                                                          │
  * │ 二、模块路径操作                                                          │
  * │    module_path() / module_config_path() / module_routes_path()           │
@@ -72,79 +72,95 @@ use zxf\Modules\Support\StubGenerator;
 
 if (! function_exists('module_name')) {
     /**
-     * 获取当前代码所在的模块名称
+     * 获取模块名称
      *
-     * 通过分析调用栈中的文件路径，自动识别当前执行代码所属的模块。
-     * 这是整个模块系统的核心上下文感知函数，大多数其他助手函数都依赖它
-     * 来自动确定操作的目标模块。
+     * 支持两种检测模式：
+     * 1. 文件检测模式（默认）：基于调用栈文件路径（适合模块内部使用）
+     * 2. 请求检测模式：基于请求 URL/路由（适合全局日志、中间件等）
      *
-     * 检测机制：
-     * 1. 首先检查是否在命令行环境（Console），返回固定值 'Command'
-     * 2. 获取配置的模块根目录路径（默认：base_path('Modules')）
-     * 3. 遍历调用栈（回溯深度：8层），查找第一个位于模块目录中的文件
-     * 4. 从文件路径提取模块目录名，转换为 StudlyCase 格式
-     * 5. 验证模块是否存在（通过 module_exists() 确认）
-     * 6. 如未检测到有效模块，返回 'App' 表示主应用
+     * 性能优化（支持常驻内存）：
+     * - 使用静态缓存但支持内存清理
+     * - debug_backtrace 最多执行一次
+     * - 模块映射表使用 lazy loading
+     * - 避免闭包绑定导致的内存泄漏
      *
-     * @param  bool  $toLower  是否返回小写蛇形命名（如 'blog_module'）
-     * @return string 模块名称（StudlyCase）或 'App'/'Command'
-     *
-     * @example
-     * // 在 Blog/Http/Controllers/PostController.php 中调用
-     * $moduleName = module_name();        // 'Blog'
-     * $moduleName = module_name(true);    // 'blog'
-     *
-     * @see module_exists() 用于验证模块有效性的依赖函数
+     * @param  bool  $requestModule  是否基于请求 url/路由 检测
+     *                                   - true:  基于调用栈文件路径检测（默认）
+     *                                   - false: 基于请求 URL/路由检测
+     * @param  bool  $toLower           是否返回小写蛇形命名
+     * @return string 模块名称或 'App'/'Command'
      */
-    function module_name(bool $toLower = false): string
+    function module_name(bool $toLower = false,bool $requestModule = true): string
     {
-        // 命令行环境下无法通过文件路径检测，返回固定标识
-        if (app()->runningInConsole()) {
-            return $toLower ? 'command' : 'Command';
+        // 确保 request() 函数可用（在 Artisan 命令中不可用）
+        if (! function_exists('request') || app()->runningInConsole()) {
+            return $toLower?strtolower('Command'):'Command';
+        }
+        static $cache = []; // 静态缓存
+        static $repo = null; // 模块仓库
+        static $moduleMap = null; // 模块映射表
+
+        $mode = $requestModule ? 'request_path' : 'current_file';
+        $key = $mode . ($toLower ? '_lower' : '');
+
+        if ($requestModule && isset($cache[$key])) {
+            return $cache[$key];
         }
 
-        // 标准化模块根目录路径（统一使用正斜杠，确保结尾有斜杠）
-        $modulePath = rtrim(str_replace('\\', '/',
-                config('modules.path', base_path('Modules'))
-            ), '/') . '/';
+        $result = 'App';
 
-        // 获取调用栈（限制深度 8 层，忽略参数以减少内存占用）
-        $backtrace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
+        if ($requestModule) {
+            // 请求检测模式
+            try {
+                if ($path = request()->path()) {
+                    $segment = strtok($path, '/');
 
-        foreach ($backtrace as $trace) {
-            $file = $trace['file'] ?? '';
+                    if ($segment) {
+                        $repo ??= App::make(RepositoryInterface::class);
+                        $moduleMap ??= collect($repo->all())->mapWithKeys(
+                            fn($m) => [$m->getLowerName() => $m->getName()]
+                        )->all();
 
-            // 跳过非字符串路径和 vendor 目录中的文件
-            if (!is_string($file) || str_contains($file, '/vendor/')) {
-                continue;
-            }
-
-            $file = str_replace('\\', '/', $file);
-
-            // 检查文件是否位于模块目录下
-            if (str_starts_with($file, $modulePath)) {
-                $relative = substr($file, strlen($modulePath));
-                $segments = explode('/', $relative, 2);
-                $moduleDir = $segments[0] ?? '';
-
-                if ($moduleDir) {
-                    // 将目录名转换为 StudlyCase（驼峰命名）
-                    $moduleName = Str::studly($moduleDir);
-
-                    // 验证模块真实存在后才返回
-                    if ($moduleName && module_exists($moduleName)) {
-                        if ($toLower) {
-                            // 转换为蛇形命名（如 BlogModule => blog_module）
-                            return strtolower(preg_replace('/(?<=[a-z])([A-Z])/', '_$1', $moduleName));
-                        }
-                        return $moduleName;
+                        $result = $moduleMap[$segment] ?? '';
                     }
+                }
+            } catch (\Throwable) {
+                // 静默失败，回退到文件检测
+            }
+            if (!$result) {
+                $result = module_name($toLower, false);
+            }
+        } else {
+            // 文件检测模式
+            $modulePath = rtrim(str_replace('\\', '/',
+                    config('modules.path', base_path('Modules'))
+                ), '/') . '/';
+
+            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
+
+            foreach ($trace as $frame) {
+                $file = $frame['file'] ?? '';
+
+                if (!$file || !str_starts_with($file = str_replace('\\', '/', $file), $modulePath)) {
+                    continue;
+                }
+
+                $dir = strtok(substr($file, strlen($modulePath)), '/');
+
+                if ($dir && ($name = Str::studly($dir)) && module_exists($name)) {
+                    $result = $name;
+                    break;
                 }
             }
         }
 
-        // 未检测到有效模块，返回默认应用标识
-        return $toLower ? 'app' : 'App';
+        $result = !empty($result)?$result:'App';
+        // 格式转换
+        if ($toLower) {
+            $result = strtolower(preg_replace('/(?<=[a-z])([A-Z])/', '_$1', $result));
+        }
+
+        return $cache[$key] = $result;
     }
 }
 
@@ -185,7 +201,7 @@ if (! function_exists('module_path')) {
         $repository ??= App::make(RepositoryInterface::class);
 
         // 自动检测当前模块（如果未指定）
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (empty($module)) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -246,7 +262,7 @@ if (! function_exists('module_config')) {
         // 静态缓存，按请求生命周期持久化配置值
         static $cache = [];
 
-        $useModule = $module ?? module_name();
+        $useModule = $module ?? module_name(false,false);
 
         // 模块名为空时直接返回默认值
         if (!$useModule) {
@@ -313,7 +329,7 @@ if (! function_exists('module_enabled')) {
     {
         static $enabledCache = [];
 
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             return false;
@@ -383,8 +399,8 @@ if (! function_exists('module')) {
      * $blogModule = module('Blog');
      * echo $blogModule->getVersion();
      *
-     * // 获取当前模块实例
-     * $current = module(module_name());
+     * // 获取当前所在模块实例
+     * $current = module(module_name(false,false));
      */
     function module(?string $module = null): ModuleInterface|RepositoryInterface
     {
@@ -457,7 +473,7 @@ if (! function_exists('module_view_path')) {
      */
     function module_view_path(string $view = '', ?string $module = null): string
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         return strtolower($module) . '::' . $view;
     }
 }
@@ -487,63 +503,9 @@ if (! function_exists('module_route_path')) {
      */
     function module_route_path(string $route = '', ?string $module = null): string
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         $prefix = strtolower($module) . '.';
         return $route ? $prefix . $route : $prefix;
-    }
-}
-
-if (! function_exists('current_module')) {
-    /**
-     * 获取当前 HTTP 请求对应的模块名称（通过 URL 路径分析）
-     *
-     * 与 module_name() 不同，此函数基于当前请求的 URL 而非调用栈位置来推断模块。
-     * 适用于需要在中间件、服务提供者等全局位置判断请求所属模块的场景。
-     *
-     * 匹配规则：取 URL 路径的第一个段（如 /blog/posts → blog），
-     * 与所有已注册模块的小写名称比对，匹配成功则返回模块的标准名称。
-     *
-     * @return string|null 模块名称（StudlyCase），未匹配则返回 null
-     *
-     * @example
-     * // 访问 /blog/posts 时
-     * $moduleName = current_module(); // 'Blog'
-     *
-     * // 访问 /api/v1/users 且没有 Api 模块时
-     * $moduleName = current_module(); // null
-     *
-     * @see module_name() 基于文件路径的模块检测（更适合在控制器/模型中使用）
-     */
-    function current_module(): ?string
-    {
-        // 确保 request() 函数可用（在 Artisan 命令中不可用）
-        if (! function_exists('request')) {
-            return null;
-        }
-
-        try {
-            // 获取 URL 路径的第一段
-            $segments = explode('/', request()->path());
-            $firstSegment = $segments[0] ?? null;
-
-            if (! $firstSegment) {
-                return null;
-            }
-
-            // 遍历所有模块，比对 URL 前缀
-            $repository = App::make(RepositoryInterface::class);
-
-            foreach ($repository->all() as $module) {
-                if ($module->getLowerName() === $firstSegment) {
-                    return $module->getName();
-                }
-            }
-
-            return null;
-        } catch (\Throwable) {
-            // 请求周期外或仓库异常时安全返回 null
-            return null;
-        }
     }
 }
 
@@ -571,7 +533,7 @@ if (! function_exists('module_namespace')) {
      */
     function module_namespace(?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
         $defaultNamespace = config('modules.namespace', 'Modules');
 
         if (! $module) {
@@ -615,7 +577,7 @@ if (! function_exists('module_url')) {
      */
     function module_url(string $path = '', ?string $module = null): string
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         return url(strtolower($module) . '/' . ltrim($path, '/'));
     }
 }
@@ -647,7 +609,7 @@ if (! function_exists('module_route')) {
      */
     function module_route(string $route = '', array $params = [], ?string $module = null): string
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         return route(strtolower($module) . '.' . $route, $params);
     }
 }
@@ -678,7 +640,7 @@ if (! function_exists('module_asset')) {
      */
     function module_asset(string $asset = '', ?string $module = null): string
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         return asset('modules/' . strtolower($module) . '/' . ltrim($asset, '/'));
     }
 }
@@ -710,7 +672,7 @@ if (! function_exists('module_view')) {
      */
     function module_view(string $view = '', array $data = [], ?string $module = null): \Illuminate\View\View
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         return view(strtolower($module) . '::' . $view, $data);
     }
 }
@@ -742,7 +704,7 @@ if (! function_exists('module_lang')) {
      */
     function module_lang(string $key = '', array $replace = [], ?string $locale = null, ?string $module = null): string|array
     {
-        $module ??= module_name() ?? 'default';
+        $module ??= module_name(false,false) ?? 'default';
         return trans(strtolower($module) . '::' . $key, $replace, $locale);
     }
 }
@@ -833,7 +795,7 @@ if (! function_exists('module_has_config')) {
     function module_has_config(string $configFile = '', string $key = '', ?string $module = null): bool
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module) {
                 return false;
@@ -880,7 +842,7 @@ if (! function_exists('module_config_path')) {
      */
     function module_config_path(string $configFile = 'config.php', ?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -915,7 +877,7 @@ if (! function_exists('module_has_view')) {
     function module_has_view(string $view = '', ?string $module = null): bool
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             return $module && view()->exists(strtolower($module) . '::' . $view);
         } catch (\Throwable) {
@@ -951,7 +913,7 @@ if (! function_exists('module_routes_path')) {
      */
     function module_routes_path(string $route = 'web', ?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -982,7 +944,7 @@ if (! function_exists('module_migrations_path')) {
      */
     function module_migrations_path(?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -1006,7 +968,7 @@ if (! function_exists('module_models_path')) {
      */
     function module_models_path(?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -1040,7 +1002,7 @@ if (! function_exists('module_controllers_path')) {
      */
     function module_controllers_path(string $controller = 'Web', ?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -1064,7 +1026,7 @@ if (! function_exists('module_views_path')) {
      */
     function module_views_path(?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -1088,7 +1050,7 @@ if (! function_exists('module_trans_path')) {
      */
     function module_trans_path(?string $module = null): string
     {
-        $module ??= module_name();
+        $module ??= module_name(false,false);
 
         if (! $module) {
             throw new RuntimeException('无法确定模块名称，请传递明确的模块名或确保在模块内部调用');
@@ -1123,7 +1085,7 @@ if (! function_exists('module_config_files')) {
     function module_config_files(?string $module = null): array
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module) {
                 return [];
@@ -1166,7 +1128,7 @@ if (! function_exists('module_route_files')) {
     function module_route_files(?string $module = null): array
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module) {
                 return [];
@@ -1213,7 +1175,7 @@ if (! function_exists('module_get_config')) {
     function module_get_config(string $configFile = '', ?string $module = null): array
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module || empty($configFile)) {
                 return [];
@@ -1261,7 +1223,7 @@ if (! function_exists('module_set_config')) {
     function module_set_config(string $configFile = '', string $key = '', mixed $value = null, ?string $module = null): void
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module || empty($configFile) || empty($key)) {
                 return;
@@ -1304,7 +1266,7 @@ if (! function_exists('module_has_migration')) {
     function module_has_migration(string $migrationName = '', ?string $module = null): bool
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module || empty($migrationName)) {
                 return false;
@@ -1339,7 +1301,7 @@ if (! function_exists('module_all_migrations')) {
     function module_all_migrations(?string $module = null): array
     {
         try {
-            $module ??= module_name();
+            $module ??= module_name(false,false);
 
             if (! $module) {
                 return [];

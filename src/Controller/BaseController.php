@@ -22,7 +22,7 @@ class BaseController extends Controller
      */
     protected string|null|Gate|AuthGate $gate = null;
 
-    public function __construct(Request $request)
+    public function __construct(protected Request $request)
     {
         // 此处未加载完中间件, 所以无法使用auth('admin')->check() 等操作
 
