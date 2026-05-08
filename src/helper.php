@@ -74,79 +74,86 @@ if (! function_exists('module_name')) {
     /**
      * 获取模块名称
      *
-     * 支持两种检测模式：
-     * 1. 文件检测模式（默认）：基于调用栈文件路径（适合模块内部使用）
-     * 2. 请求检测模式：基于请求 URL/路由（适合全局日志、中间件等）
-     *
-     * 性能优化（支持常驻内存）：
-     * - 使用静态缓存但支持内存清理
-     * - debug_backtrace 最多执行一次
-     * - 模块映射表使用 lazy loading
-     * - 避免闭包绑定导致的内存泄漏
-     *
-     * @param  bool  $requestModule  是否基于请求 url/路由 检测
-     *                                   - true:  基于调用栈文件路径检测（默认）
-     *                                   - false: 基于请求 URL/路由检测
-     * @param  bool  $toLower           是否返回小写蛇形命名
+     * @param  bool  $toLower         是否返回小写蛇形命名
+     * @param  bool  $requestModule   是否基于请求路由检测（true: 路由检测，false: 文件检测）
      * @return string 模块名称或 'App'/'Command'
      */
-    function module_name(bool $toLower = false,bool $requestModule = true): string
+    function module_name(bool $toLower = false, bool $requestModule = true): string
     {
-        // 确保 request() 函数可用（在 Artisan 命令中不可用）
-        if (! function_exists('request') || app()->runningInConsole()) {
-            return $toLower?strtolower('Command'):'Command';
-        }
-        static $cache = []; // 静态缓存
-        static $repo = null; // 模块仓库
-        static $moduleMap = null; // 模块映射表
-
-        $mode = $requestModule ? 'request_path' : 'current_file';
-        $key = $mode . ($toLower ? '_lower' : '');
-
-        if ($requestModule && isset($cache[$key])) {
-            return $cache[$key];
+        // 命令行环境
+        if (app()->runningInConsole()) {
+            return $toLower ? 'command' : 'Command';
         }
 
-        $result = 'App';
-
+        // 路由检测模式
         if ($requestModule) {
-            // 请求检测模式
-            try {
-                if ($path = request()->path()) {
-                    $segment = strtok($path, '/');
+            static $cache = null;
+            static $moduleMap = null;
 
-                    if ($segment) {
-                        $repo ??= App::make(RepositoryInterface::class);
-                        $moduleMap ??= collect($repo->all())->mapWithKeys(
-                            fn($m) => [$m->getLowerName() => $m->getName()]
-                        )->all();
+            if ($cache !== null) {
+                $result = $cache;
+            } else {
+                $result = 'App';
 
-                        $result = $moduleMap[$segment] ?? '';
+                try {
+                    if (function_exists('request') && request() && ($route = request()->route())) {
+                        $action = $route->getActionName();
+
+                        // 从控制器类解析模块
+                        if ($action !== 'Closure') {
+                            $class = explode('@', $action)[0];
+                            $namespace = config('modules.namespace', 'Modules');
+
+                            // 匹配模块命名空间
+                            if (preg_match('/^' . preg_quote($namespace, '/') . '\\\\([^\\\\]+)/', $class, $matches)) {
+                                $result = $matches[1];
+                            } elseif ($namespace !== 'Modules' && preg_match('/^Modules\\\\([^\\\\]+)/', $class, $matches)) {
+                                $result = $matches[1];
+                            } elseif (preg_match('/([A-Z][a-zA-Z0-9]*)\/(?:Http|Controllers|Models)/', str_replace('\\', '/', $class), $matches)) {
+                                $result = module_exists($matches[1]) ? $matches[1] : 'App';
+                            }
+                        }
+
+                        // 兜底：从路由名或URL解析
+                        if ($result === 'App') {
+                            $moduleMap ??= collect(app(RepositoryInterface::class)->all())->mapWithKeys(
+                                fn($m) => [$m->getLowerName() => $m->getName()]
+                            )->all();
+
+                            // 路由名解析
+                            if ($name = $route->getName()) {
+                                $result = $moduleMap[strtok($name, '.')] ?? '';
+                            }
+
+                            // URL路径解析
+                            if (!$result && ($path = request()->path())) {
+                                $result = $moduleMap[strtok($path, '/')] ?? '';
+                            }
+                        }
+
+                        $result = $result && module_exists($result) ? $result : 'App';
                     }
+                } catch (\Throwable) {
+                    $result = 'App';
                 }
-            } catch (\Throwable) {
-                // 静默失败，回退到文件检测
-            }
-            if (!$result) {
-                $result = module_name($toLower, false);
-            }
-        } else {
-            // 文件检测模式
-            $modulePath = rtrim(str_replace('\\', '/',
-                    config('modules.path', base_path('Modules'))
-                ), '/') . '/';
 
-            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8);
+                $cache = $result;
+            }
+        }
+        // 文件检测模式
+        else {
+            $modulePath = rtrim(str_replace('\\', '/', config('modules.path', base_path('Modules'))), '/') . '/';
+            $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15);
+            $result = 'App';
 
             foreach ($trace as $frame) {
                 $file = $frame['file'] ?? '';
+                if (!$file || str_contains($file, '/vendor/')) continue;
 
-                if (!$file || !str_starts_with($file = str_replace('\\', '/', $file), $modulePath)) {
-                    continue;
-                }
+                $file = str_replace('\\', '/', $file);
+                if (!str_starts_with($file, $modulePath)) continue;
 
                 $dir = strtok(substr($file, strlen($modulePath)), '/');
-
                 if ($dir && ($name = Str::studly($dir)) && module_exists($name)) {
                     $result = $name;
                     break;
@@ -154,13 +161,12 @@ if (! function_exists('module_name')) {
             }
         }
 
-        $result = !empty($result)?$result:'App';
         // 格式转换
-        if ($toLower) {
+        if ($toLower && $result !== 'App' && $result !== 'Command') {
             $result = strtolower(preg_replace('/(?<=[a-z])([A-Z])/', '_$1', $result));
         }
 
-        return $cache[$key] = $result;
+        return $toLower && $result === 'App' ? 'app' : ($toLower && $result === 'Command' ? 'command' : $result);
     }
 }
 
