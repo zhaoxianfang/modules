@@ -19,7 +19,7 @@ use InvalidArgumentException;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 2.0.0
- * @requires PHP 8.2+, Laravel 11+, MySQL 8.0+
+ * @requires PHP 8.2+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
  */
 class WithRecursiveMacro
 {
@@ -800,7 +800,10 @@ class WithRecursiveMacro
         }
 
         // rootValue为特定值时，根节点是parent_id等于该值的节点
-        return "`{$table}`.`{$pidColumn}` = {$rootValue} OR NOT EXISTS (SELECT 1 FROM `{$table}` AS parent WHERE parent.`{$primaryKey}` = `{$table}`.`{$pidColumn}`)";
+        return sprintf(
+            "`{$table}`.`{$pidColumn}` = %s OR NOT EXISTS (SELECT 1 FROM `{$table}` AS parent WHERE parent.`{$primaryKey}` = `{$table}`.`{$pidColumn}`)",
+            is_int($rootValue) ? $rootValue : "'" . str_replace("'", "''", (string) $rootValue) . "'"
+        );
     }
 
     /**

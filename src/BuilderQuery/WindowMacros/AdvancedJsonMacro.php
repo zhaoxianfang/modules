@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * MySQL 8.4+ JSON 高级操作宏
+ * MySQL 8.0+ JSON 高级操作宏
  *
  * 提供丰富的 JSON 字段查询和操作功能：
  * - JSON 路径查询和提取
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class AdvancedJsonMacro
 {
@@ -43,7 +43,7 @@ class AdvancedJsonMacro
         /**
          * 使用 JSON Path 提取嵌套 JSON 值
          *
-         * MySQL 8.4+ 支持 JSON Path 表达式，比 JSON_EXTRACT 更强大
+         * MySQL 8.0+ 支持 JSON Path 表达式，功能丰富
          *
          * @param string $column JSON 列名
          * @param string $path JSON Path 表达式，例如: '$.name', '$.items[0].price'
@@ -397,21 +397,20 @@ class AdvancedJsonMacro
             $table = $this->getModel()->getTable();
             $primaryKey = $this->getModel()->getKeyName();
 
-            // MySQL 8.4+ 不支持直接删除数组元素，需要使用复杂表达式
-            // 这里使用 JSON_REMOVE 通过索引删除
+            // MySQL 8.0+ 不支持直接删除数组元素，使用 JSON_REMOVE 通过索引删除
             $jsonValue = is_string($value) ? '"' . $value . '"' : json_encode($value);
             $target = $path ? "JSON_EXTRACT(`{$column}`, '{$path}')" : "`{$column}`";
 
-            // 使用子查询找到索引并删除
+            // 使用关联子查询找到索引并删除，支持批量更新
             $expr = "(
-                SELECT JSON_REMOVE(`{$column}`, CONCAT('$[', idx, ']'))
+                SELECT JSON_REMOVE(`{$table}`.`{$column}`, CONCAT('$[', idx, ']'))
                 FROM (
-                    SELECT JSON_SEARCH(`{$column}`, 'one', {$jsonValue}) as idx_path,
-                           SUBSTRING_INDEX(JSON_SEARCH(`{$column}`, 'one', {$jsonValue}), '[', -1) as idx
-                    FROM `{$table}`
-                    WHERE {$primaryKey} = {$this->getModel()->getKey()}
+                    SELECT JSON_SEARCH(`{$table}`.`{$column}`, 'one', {$jsonValue}) as idx_path,
+                           SUBSTRING_INDEX(JSON_SEARCH(`{$table}`.`{$column}`, 'one', {$jsonValue}), '[', -1) as idx
+                    FROM `{$table}` AS inner_t
+                    WHERE inner_t.`{$primaryKey}` = `{$table}`.`{$primaryKey}`
                 ) AS t
-                WHERE idx_path IS NOT NULL
+                WHERE t.idx_path IS NOT NULL
             )";
 
             return $this->update([$column => DB::raw($expr)]);

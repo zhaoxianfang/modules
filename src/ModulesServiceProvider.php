@@ -12,11 +12,11 @@ use zxf\Modules\Support\ModuleLoader;
 /**
  * 模块系统服务提供者
  *
- * 为 Laravel 11+ 优化的模块化系统服务提供者
+ * 为 Laravel 11+ / 12+ / 13+ 优化的模块化系统服务提供者
  * 已移除 Laravel 11 中废弃的 $defer 属性，采用更现代的延迟加载机制
  *
  * @package zxf\Modules
- * @version 2.0.0
+ * @version 3.0.0
  * @since Laravel 11+
  */
 class ModulesServiceProvider extends ServiceProvider

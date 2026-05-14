@@ -5,7 +5,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * MySQL 8.4+ 集合操作宏
+ * MySQL 8.0.31+ 集合操作宏
  *
  * 提供 INTERSECT、EXCEPT 等集合操作支持：
  * - intersect: 返回两个查询的交集

@@ -114,7 +114,7 @@ class RandomMacro
                         break;
                     case 'Nested':
                         $dest->whereNested(function ($query) use ($where) {
-                            $this->replicateWheres($where['query'], $query, $where['boolean'] ?? 'and');
+                            self::replicateWheres($where['query'], $query, $where['boolean'] ?? 'and');
                         }, $boolean);
                         break;
                     case 'Column':
@@ -167,16 +167,11 @@ class RandomMacro
          * @return Builder
          */
         Builder::macro('random', function (int $limit = 10, string $primaryKey = 'id') {
+            /** @var Builder $this */
             $model = $this->getModel();
             $table = $model->getTable();
 
-            // 创建全新的查询构建器
-            $baseQuery = $model->newQuery()->getQuery();
-
-            // 复制完整的查询条件（包括所有where类型）
-            $this->replicateQuery($this->getQuery(), $baseQuery);
-
-            // 构建窗口函数子查询
+            // 构建窗口函数子查询：使用 ROW_NUMBER() + RAND() 实现高效随机
             $subQuery = DB::table($table)
                 ->select(
                     $primaryKey,
@@ -188,8 +183,8 @@ class RandomMacro
 
             // 构建主查询
             return $model->newQuery()
-                ->when(property_exists($this->getQuery(), 'columns'), function ($query) {
-                    $query->select($this->getQuery()->columns ?? '*');
+                ->when(!empty($this->getQuery()->columns), function ($query) {
+                    $query->select($this->getQuery()->columns);
                 })
                 ->whereIn("$table.$primaryKey", function ($query) use ($subQuery, $limit, $primaryKey) {
                     $query->select($primaryKey)
@@ -215,14 +210,9 @@ class RandomMacro
          * @return Builder
          */
         Builder::macro('groupRandom', function (string $groupColumn, int $limit = 10, string $primaryKey = 'id') {
+            /** @var Builder $this */
             $model = $this->getModel();
             $table = $model->getTable();
-
-            // 创建全新的查询构建器
-            $baseQuery = $model->newQuery()->getQuery();
-
-            // 复制完整的查询条件（包括所有where类型）
-            $this->replicateQuery($this->getQuery(), $baseQuery);
 
             // 构建窗口函数子查询 - 按分组随机排序
             $subQuery = DB::table($table)
@@ -237,8 +227,8 @@ class RandomMacro
 
             // 构建主查询
             return $model->newQuery()
-                ->when(property_exists($this->getQuery(), 'columns'), function ($query) {
-                    $query->select($this->getQuery()->columns ?? '*');
+                ->when(!empty($this->getQuery()->columns), function ($query) {
+                    $query->select($this->getQuery()->columns);
                 })
                 ->whereIn("$table.$primaryKey", function ($query) use ($subQuery, $limit, $primaryKey) {
                     $query->select($primaryKey)

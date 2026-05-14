@@ -20,7 +20,7 @@ use zxf\Modules\Support\StubGenerator;
  * ============================================================================
  *
  * 本文件提供了一套完整、高效的模块系统操作接口，基于 Laravel 框架构建。
- * 所有函数均针对 Laravel 11+ 和 PHP 8.2+ 环境进行了深度优化。
+ * 所有函数均针对 Laravel 11+ / 12+ / 13+ 和 PHP 8.2+ 环境进行了深度优化。
  *
  * 架构设计原则：
  * - 自动上下文感知：大多数函数支持自动检测当前模块，减少重复传参
@@ -28,7 +28,7 @@ use zxf\Modules\Support\StubGenerator;
  * - 防御性编程：所有函数均包含异常捕获，避免运行时错误中断流程
  * - 链式友好：返回值类型统一，便于在业务代码中链式调用
  *
- * PHP 8.2+ 特性应用：
+ * PHP 8.2+/8.3+ 特性应用：
  * - 使用 `mixed` 返回类型实现真正的泛型支持
  * - 使用 `??=` (null 合并赋值) 简化缓存逻辑
  * - 使用 `str_starts_with` / `str_contains` 替代复杂的 strpos 判断
@@ -1624,5 +1624,95 @@ if (! function_exists('source_local_website')) {
                 'prefix' => $isLocal ? $uriPrefix : '',
             ],
         };
+    }
+}
+
+if (! function_exists('after_class_calling')) {
+    /**
+     * 核心功能
+     *  class 类在调用方法之前，先执行指定的初始化方法$method,并解析和传入$method方法中的依赖关系参数
+     *
+     * 适用场景：
+     *   在路由调用控制器方法之前，先执行 initialize 方法，并传入依赖关系参数，需要在构造函数中调用本方法
+     *      eg:
+     *          class WebBaseController
+     *              public function __construct(Request $request)
+     *              {
+     *                  parent::__construct($request);
+     *                  // 路由执行被调用方法之前，先执行 initialize 方法
+     *                  after_class_calling($this, 'initialize');
+     *                  // 路由执行被调用方法之前，先执行 test 方法 ,且传入参数
+     *                  after_class_calling($this, 'test',[ $name='张三',$age = 18]);
+     *               }
+     *
+     *               public function initialize(Request $request,...其他的自定义依赖注入)
+     *
+     *               public function test(...自定义依赖注入或者不传入参数)
+     *          }
+     *
+     * @param  object  $class  类对象 eg: $this、MyClass、MyController
+     * @param  string  $method  方法名称 默认为 initialize
+     * @param  array  ...$args  可以给被调用函数传参； eg:[ $name='张三',$age = 18], 数组中参数下标N对应被调用函数的第N个参数
+     *
+     * @throws Exception
+     */
+    function after_class_calling(object $class, string $method = 'initialize', array ...$args): void
+    {
+        try {
+            // 判断 $class 是不是一个class 或者 $method 是不是一个方法
+            if (! is_object($class) || ! method_exists($class, $method)) {
+                return;
+            }
+            // 1、获取 $class 中 $method 方法的依赖关系(参数列表)
+
+            // 使用反射获取方法信息
+            $reflectionMethod = new \ReflectionMethod($class, $method);
+
+            // 获取$args的参数
+            $paramsArgs = ! empty($args) ? reset($args) : [];
+            $index = -1;
+
+            // 获取参数类型名，形成数组返回
+            $dependencies = array_map(function ($parameter) use (&$index, $paramsArgs) {
+                $index++;
+                $paramName = $parameter->getType()?->getName(); // 参数类型名, eg: int、string、array
+                // 类 或者 函数
+                if (! empty($paramName) && (class_exists($paramName) || is_callable($paramName))) {
+                    return $paramName;
+                }
+                $argIndex = $index + 1;
+                // 有传入值就使用传入值
+                if (! empty($paramsArgs[$index])) {
+                    // 没有定义参数类型 || 参数类型不匹配
+                    if (empty($paramName) || (call_user_func('is_'.$paramName, $paramsArgs[$index]))) {
+                        return $paramsArgs[$index];
+                    }
+                    throw new Exception("第{$argIndex}个参数的类型不是指定的「{$paramName}」类型");
+                }
+                // 检查是否有默认值
+                if ($parameter->isDefaultValueAvailable()) {
+                    // 有默认值直接返回默认值
+                    return $parameter->getDefaultValue();
+                }
+                // 没有默认参数的普通参数
+                throw new Exception("第{$argIndex}个参数「\${$parameter->getName()}」不能为空");
+            }, $reflectionMethod->getParameters());
+
+            // 2、 解析依赖注入对象
+            $resolvedDependencies = array_map(function ($parameter) {
+                // 如果参数是类名，则尝试解析依赖注入
+                if (is_string($parameter) && class_exists($parameter)) {
+                    // 如果是 Laravel 则使用 app 函数实例化，否则直接 new 一个类
+                    return app($parameter);
+                }
+
+                return $parameter;
+            }, $dependencies);
+
+            // 3、 通过反射 $method 方法并传入解析后的依赖注入对象或普通参数
+            $reflectionMethod->invokeArgs($class, $resolvedDependencies);
+        } catch (ReflectionException $e) {
+            return;
+        }
     }
 }

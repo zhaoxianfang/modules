@@ -1,6 +1,6 @@
 # Laravel 模块系统 - 完整指南
 
-一个为 Laravel 11+ 设计的现代化、工业级模块化系统，基于 PHP 8.2+ 开发。
+一个为 Laravel 11+ / 12+ / 13+ 设计的现代化、工业级模块化系统，基于 PHP 8.2+ 开发。
 
 
 ## 📦 快速安装
@@ -107,9 +107,9 @@ php artisan module:delete Blog --force
 ```
 
 
-## 扩展宏（MySQL 8.4+ 优化版）
+## 扩展宏（MySQL 8.0+ 优化版）
 
-> 弥补 Laravel 查询缺陷，专为 Laravel 11+ 和 MySQL 8.4+ 设计的高性能查询扩展
+> 弥补 Laravel 查询缺陷，专为 Laravel 11+ / 12+ / 13+ 和 MySQL 8.0+ 设计的高性能查询扩展
 > 
 > **新特性 v2.0**:
 > - 8大类 100+ 宏函数
@@ -180,7 +180,7 @@ User::query()->whereHasLeftJoin('orders')->get();
 Comment::query()->whereHasMorphIn('commentable', [Post::class, Video::class])->get();
 ```
 
-### 窗口函数 - MySQL 8.4+ 专用
+### 窗口函数 - MySQL 8.0+ 专用
 
 ```php
 // 排名函数
@@ -216,7 +216,7 @@ $items = Item::query()->cursorPaginate(20, null, 'created_at', 'desc');
 $page100 = BigTable::query()->seekPaginate(100, $bookmarks, 100);
 ```
 
-### JSON 操作 - MySQL 8.4+ JSON函数
+### JSON 操作 - MySQL 8.0+ JSON函数
 
 ```php
 // JSON 路径提取
@@ -280,7 +280,7 @@ User::query()->regexpReplace('phone', '(\d{3})\d{4}(\d{4})', '$1****$2', 0, 'c',
 
 ## 🚀 特性
 
-- **现代化架构**：专为 Laravel 11+ 和 PHP 8.2+ 设计
+- **现代化架构**：专为 Laravel 11+ / 12+ / 13+ 和 PHP 8.2+ 设计
 - **配置驱动**：通过 config 控制所有模块行为，无需 JSON 文件
 - **模块启用/禁用**：通过配置文件控制模块是否启用，禁用时完全不加载模块组件
 - **动态路由生成**：路由前缀和名称前缀根据配置动态生成

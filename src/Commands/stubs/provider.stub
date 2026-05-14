@@ -7,7 +7,7 @@ use Illuminate\Support\ServiceProvider;
 /**
  * {{NAME}} 模块服务提供者
  *
- * 本服务提供者采用 Laravel 11+ 最佳实践
+ * 本服务提供者采用 Laravel 11+ / 12+ / 13+ 最佳实践
  * 所有自动发现功能（配置、路由、视图、迁移、命令、事件等）均由 ModuleAutoDiscovery 自动处理
  * 开发者只需在此处编写自定义的业务逻辑和功能扩展
  */

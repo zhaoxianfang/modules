@@ -5,7 +5,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * MySQL 8.4+ QUALIFY 子句宏
+ * MySQL 8.0.33+ QUALIFY 子句宏
  *
  * QUALIFY 用于过滤窗口函数的结果，类似于 HAVING 过滤聚合函数
  * MySQL 8.0.33+ 开始支持 QUALIFY 子句

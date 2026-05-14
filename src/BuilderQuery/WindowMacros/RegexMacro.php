@@ -5,7 +5,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * MySQL 8.4+ 正则表达式匹配宏
+ * MySQL 8.0+ 正则表达式匹配宏
  *
  * 提供强大的正则表达式查询功能：
  * - REGEXP_LIKE: 正则匹配
@@ -16,7 +16,7 @@ use Illuminate\Database\Eloquent\Builder;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class RegexMacro
 {
@@ -42,7 +42,7 @@ class RegexMacro
         /**
          * 正则表达式匹配筛选
          *
-         * MySQL 8.4+ 支持完整的 ICU 正则表达式语法
+         * MySQL 8.0+ 支持完整的 ICU 正则表达式语法
          *
          * @param string $column 要匹配的列
          * @param string $pattern 正则表达式模式

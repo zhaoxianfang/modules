@@ -26,12 +26,12 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasNotIn;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
 
 /**
- * Macros 宏定义构建器 - Laravel 11+ & MySQL 8.4+ 优化版
+ * Macros 宏定义构建器 - Laravel 11+ / 12+ / 13+ & MySQL 8.0+ 优化版
  *
- * 提供11大类查询宏扩展：
+ * 提供14大类查询宏扩展：
  * 1. whereHas优化 - 解决关联查询全表扫描问题
  * 2. 随机查询 - 高效随机数据获取
- * 3. 窗口函数 - MySQL 8.4+ 窗口函数支持
+ * 3. 窗口函数 - MySQL 8.0+ 窗口函数支持
  * 4. 递归查询 - 树形结构数据处理
  * 5. 分页优化 - 超大表快速分页
  * 6. JSON操作 - 高级JSON查询
@@ -45,8 +45,8 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * 14. VALUES构造 - 批量插入和UPSERT
  *
  * @package zxf\Modules\BuilderQuery
- * @version 2.1.0
- * @requires PHP 8.2+, Laravel 11+, MySQL 8.4+
+ * @version 2.2.0
+ * @requires PHP 8.2+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
  *
  * ============================================
  * 1. whereHas 优化系列 - 解决关联查询性能问题
@@ -86,7 +86,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this groupSort(string $groupBy, int|array $ranks, string $orderBy = 'read', string $direction = 'desc') 分组排序查询，获取每组指定排名的记录，如每组前3名
  *
  * ============================================
- * 5. 窗口函数系列 - MySQL 8.4+ 窗口函数支持
+ * 5. 窗口函数系列 - MySQL 8.0+ 窗口函数支持
  * ============================================
  * 排名函数
  * @method $this rowNumber(string|array|null $partitionBy = null, string $orderBy = '', string $direction = 'asc', string $alias = 'row_num') 为每行分配唯一连续序号，常用于分页、排名
@@ -126,7 +126,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method \Illuminate\Contracts\Pagination\LengthAwarePaginator partitionPaginate(int $perPage = 15, ?int $page = null, ?string $partitionKey = null, array $options = []) 分区表分页，针对MySQL分区表优化
  *
  * ============================================
- * 7. JSON高级操作系列 - MySQL 8.4+ JSON函数
+ * 7. JSON高级操作系列 - MySQL 8.0+ JSON函数
  * ============================================
  * JSON路径查询
  * @method $this jsonPath(string $column, string $path, string $alias, mixed $default = null) 使用JSON Path提取嵌套JSON值
@@ -157,7 +157,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this jsonRowAgg(array $columns, string $alias = 'json_rows') 将行聚合成JSON对象数组
  *
  * ============================================
- * 8. 正则表达式系列 - MySQL 8.4+ REGEXP函数
+ * 8. 正则表达式系列 - MySQL 8.0+ REGEXP函数
  * ============================================
  * 正则匹配
  * @method $this whereRegexp(string $column, string $pattern, string $mode = 'c', string $boolean = 'and') 正则表达式匹配筛选，mode支持c(区分大小写)/i(不区分)/m(多行)/n(点匹配换行)
@@ -282,13 +282,13 @@ class MacrosBuilder extends Eloquent\Builder
         // 4. 递归查询系列 - 树形结构数据处理
         WithRecursiveMacro::register();
 
-        // 5. MySQL 8.4+ 窗口函数系列 - 排名、偏移、聚合窗口函数
+        // 5. MySQL 8.0+ 窗口函数系列 - 排名、偏移、聚合窗口函数
         WindowFunctionsMacro::register();
 
         // 6. 超大表分页优化系列 - 深度分页性能优化
         FastPaginationMacro::register();
 
-        // 7. JSON 高级操作系列 - MySQL 8.4+ JSON 函数
+        // 7. JSON 高级操作系列 - MySQL 8.0+ JSON 函数
         AdvancedJsonMacro::register();
 
         // 8. 正则表达式系列 - 强大的文本匹配功能

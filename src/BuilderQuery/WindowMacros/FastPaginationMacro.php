@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * 超大表快速分页查询宏
  *
- * 针对 MySQL 8.4+ 优化的分页解决方案，解决传统 OFFSET 分页在超大表上的性能问题
+ * 针对 MySQL 8.0+ 优化的分页解决方案，解决传统 OFFSET 分页在超大表上的性能问题
  *
  * 核心策略：
  * 1. 延迟关联法：先查询ID，再关联详情（避免全表扫描）
@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class FastPaginationMacro
 {
@@ -444,14 +444,14 @@ class FastPaginationMacro
     /**
      * 注册分区表分页
      *
-     * 针对 MySQL 8.4+ 分区表的优化分页
+     * 针对 MySQL 8.0+ 分区表的优化分页
      */
     protected static function registerPartitionPaginate(): void
     {
         /**
          * 分区表分页 - 针对分区表的并行扫描优化
          *
-         * MySQL 8.4+ 支持分区表的并行查询优化
+         * MySQL 8.0+ 支持分区表的并行查询优化
          * 此宏利用分区剪枝和并行扫描提升性能
          *
          * @param int $perPage 每页数量
@@ -690,7 +690,8 @@ class FastPaginationMacro
         $direction = strtoupper($direction);
 
         // 构建列列表
-        $columnList = $columns === ['*']
+        $isSelectAll = $columns === ['*'] || empty($columns) || (count($columns) === 1 && reset($columns) === '*');
+        $columnList = $isSelectAll
             ? '*'
             : implode(', ', array_map(fn ($col) => "`{$col}`", $columns));
 

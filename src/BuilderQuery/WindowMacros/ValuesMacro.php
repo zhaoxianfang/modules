@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * MySQL 8.4+ VALUES 行构造函数和批量操作宏
+ * MySQL 8.0+ VALUES 行构造函数和批量操作宏
  *
  * 提供 VALUES ROW 语法支持：
  * - valuesQuery: 使用 VALUES 构建内存表
@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class ValuesMacro
 {

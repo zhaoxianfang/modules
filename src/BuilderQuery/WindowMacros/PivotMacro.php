@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * MySQL 8.4+ 行列转换（PIVOT/UNPIVOT）宏
+ * MySQL 8.0+ 行列转换（PIVOT/UNPIVOT）宏
  *
  * 提供数据透视表功能：
  * - pivot: 行转列（将某列的唯一值转换为列）
@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class PivotMacro
 {
@@ -90,9 +90,16 @@ class PivotMacro
                 }
             }
 
-            // 构建查询
+            // 构建查询：复制原始查询的 WHERE 条件
+            $baseQuery = $this->clone();
             $query = $this->getModel()->newQuery()
                 ->selectRaw(implode(', ', $selectColumns), $bindings);
+
+            // 复制原始 WHERE 条件到新查询
+            if (!empty($baseQuery->getQuery()->wheres)) {
+                $query->getQuery()->wheres = $baseQuery->getQuery()->wheres;
+                $query->addBinding($baseQuery->getQuery()->bindings['where'] ?? [], 'where');
+            }
 
             // 添加分组
             foreach ($groupColumns as $col) {
@@ -265,9 +272,19 @@ class PivotMacro
             // 添加总计列
             $selectColumns[] = "{$function}(`{$aggregateColumn}`) AS `total`";
 
-            return $model->newQuery()
+            // 复制原始 WHERE 条件
+            $baseQuery = $this->clone();
+            $query = $model->newQuery()
                 ->selectRaw(implode(', ', $selectColumns), $bindings)
                 ->groupByRaw(implode(', ', $groupByColumns));
+
+            // 复制原始 WHERE 条件到新查询
+            if (!empty($baseQuery->getQuery()->wheres)) {
+                $query->getQuery()->wheres = $baseQuery->getQuery()->wheres;
+                $query->addBinding($baseQuery->getQuery()->bindings['where'] ?? [], 'where');
+            }
+
+            return $query;
         });
     }
 }

@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * MySQL 8.4+ LATERAL JOIN 宏
+ * MySQL 8.0.14+ LATERAL JOIN 宏
  *
  * LATERAL 允许子查询引用主查询中的列，实现类似相关子查询但更高效的功能
  * MySQL 8.0.14+ 开始支持 LATERAL derived tables

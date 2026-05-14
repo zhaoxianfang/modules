@@ -6,17 +6,17 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * MySQL 8.4+ 数据抽样查询宏
+ * MySQL 8.0+ 数据抽样查询宏
  *
  * 提供高效的数据抽样功能：
- * - sample: TABLESAMPLE 语法（MySQL 8.4 增强）
- * - randomSample: 基于随机数的抽样
+ * - sample: 基于百分比的表级抽样
+ * - randomSample: 基于随机数的精确抽样
  * - stratifiedSample: 分层抽样
  * - systematicSample: 系统抽样（等距抽样）
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class TableSampleMacro
 {
@@ -42,7 +42,7 @@ class TableSampleMacro
          * TABLESAMPLE - 表级抽样
          *
          * 从表中按指定百分比或行数随机抽取样本
-         * MySQL 8.4+ 对 InnoDB 表的抽样有进一步优化
+         * MySQL 8.0+ 对 InnoDB 表的抽样有进一步优化
          *
          * @param float $percentage 抽样百分比 (0-100)
          * @param string $method 抽样方法: 'random'|'system'

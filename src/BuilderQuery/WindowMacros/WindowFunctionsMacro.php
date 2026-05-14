@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
- * MySQL 8.4+ 窗口函数宏集合
+ * MySQL 8.0+ 窗口函数宏集合
  *
  * 提供丰富的窗口函数支持，包括：
  * - 排名函数: rowNumber, rank, denseRank, percentRank
@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 1.0.0
- * @requires MySQL 8.4+
+ * @requires MySQL 8.0+
  */
 class WindowFunctionsMacro
 {

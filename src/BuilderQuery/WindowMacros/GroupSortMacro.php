@@ -48,10 +48,14 @@ class GroupSortMacro
                 ->mergeBindings($baseQuery->getQuery());
 
             // 添加 row_rank 条件
+            // 负数表示倒数排名：需计算 max_rank，并过滤 row_rank = max_rank + ranks + 1
             if (is_array($ranks) && count($ranks) === 2) {
                 $rankedSubQuery->whereBetween('row_rank', [$ranks[0], $ranks[1]]);
-            } elseif (is_int($ranks)) {
-                $rankedSubQuery->where('row_rank', abs($ranks));
+            } elseif (is_int($ranks) && $ranks > 0) {
+                $rankedSubQuery->where('row_rank', $ranks);
+            } elseif (is_int($ranks) && $ranks < 0) {
+                // 负数表示倒数排名：通过子查询计算每组最大排名
+                $rankedSubQuery->whereColumn('row_rank', DB::raw("(SELECT MAX(inner_r.row_rank) FROM ({$subSql}) AS inner_r WHERE inner_r.`{$groupBy}` = ranked.`{$groupBy}`) + {$ranks} + 1"));
             }
 
             // 查询主表数据

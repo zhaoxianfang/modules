@@ -33,9 +33,9 @@ class BaseController extends Controller
             // 在路由调用方法之前，先调用初始化方法initialize
             // 给控制器新增 initialize 生命周期方法，可用于初始化
             // 甚至可以代替 构造函数，实现依赖注入
-            before_calling_methods($this, 'initialize');
+            after_class_calling($this, 'initialize');
             // 添加第二个前置方法
-            before_calling_methods($this, 'before');
+            after_class_calling($this, 'before');
 
             return $next($request);
         });
