@@ -22,12 +22,19 @@ class BaseController extends Controller
      */
     protected string|null|Gate|AuthGate $gate = null;
 
-    public function __construct(protected Request $request)
-    {
-        // 此处未加载完中间件, 所以无法使用auth('admin')->check() 等操作
+    /**
+     * Request 实例（在中间件闭包中赋值，确保已通过 auth 等中间件处理）
+     */
+    protected Request $request;
 
-        // 添加一个最后执行的中间件，此时其他中间件已经加载完毕
+    public function __construct()
+    {
+        // 添加一个最后执行的中间件，此时其他中间件（包括 auth）已经加载完毕
         $this->middleware(function ($request, $next) {
+            // 在中间件管道中赋值 $this->request，此时 auth 中间件已执行
+            // 确保 $this->request->user() 能获取到已认证用户信息
+            $this->request = $request;
+
             // 中间件基本加载完毕
             $this->initHandle($request);
             // 在路由调用方法之前，先调用初始化方法initialize
