@@ -19,6 +19,23 @@ php artisan vendor:publish --tag=modules-config
 
 配置文件会发布到：`config/modules.php`
 
+
+### 「非常重要」模块发现：在项目 composer.json 中新增自动加载
+```
+"autoload": {
+    "psr-4": {
+        "App\\": "app/",
+        "Modules\\": "Modules/", <-- 增加本行即可
+    }
+},
+```
+
+重新加载composer
+
+```
+composer dump-autoload
+```
+
 ### 2. 创建第一个模块
 
 ```bash
