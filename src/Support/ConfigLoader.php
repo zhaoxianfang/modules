@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\File;
@@ -195,10 +197,8 @@ class ConfigLoader
     /**
      * 获取模块所有配置文件
      *
-     * PHP 8.2+ 优化：使用 array_map
-     *
      * @param string $moduleName 模块名称
-     * @return array
+     * @return array<int, string>
      */
     public static function getConfigFiles(string $moduleName): array
     {
@@ -212,9 +212,15 @@ class ConfigLoader
             return [];
         }
 
+        $files = File::glob($configDir . DIRECTORY_SEPARATOR . '*.php');
+
+        if (! is_array($files)) {
+            return [];
+        }
+
         return array_map(
-            fn($file) => pathinfo($file, PATHINFO_FILENAME),
-            File::glob($configDir . DIRECTORY_SEPARATOR . '*.php')
+            fn(string $file): string => pathinfo($file, PATHINFO_FILENAME),
+            $files
         );
     }
 

@@ -142,64 +142,42 @@ ModuleAutoDiscovery::discoverModule([
 
 ### 1. 服务提供者（Providers）
 
+服务提供者有**两种注册方式**：
+
+#### 方式 A：配置文件声明（推荐额外 Provider）
+
+在模块配置文件中通过 `providers` 键声明：
+
+```php
+// Config/blog.php
+return [
+    'providers' => [
+        \Modules\Blog\Providers\EventServiceProvider::class,
+        \Modules\Blog\Providers\RouteServiceProvider::class,
+    ],
+];
+```
+
+#### 方式 B：自动扫描（推荐主 Provider）
+
 **目录结构**
 ```
 Modules/Blog/
 └── Providers/
-    └── BlogServiceProvider.php
+    ├── BlogServiceProvider.php   ← 自动发现（命名约定）
+    ├── EventServiceProvider.php  ← 通过 config providers 注册
+    └── RouteServiceProvider.php  ← 通过 config providers 注册
 ```
 
-**文件示例**
-```php
-<?php
-
-namespace Modules\Blog\Providers;
-
-use Illuminate\Support\ServiceProvider;
-
-class BlogServiceProvider extends ServiceProvider
-{
-    /**
-     * 注册服务
-     */
-    public function register(): void
-    {
-        // 绑定服务到容器
-        $this->app->singleton(BlogService::class);
-    }
-
-    /**
-     * 启动服务
-     */
-    public function boot(): void
-    {
-        // 发布资源
-        $this->publishes([
-            __DIR__ . '/../Resources/views' => resource_path('views/vendor/blog'),
-        ], 'views');
-
-        // 注册路由
-        $this->loadRoutesFrom(__DIR__ . '/../Routes/web.php');
-
-        // 注册视图
-        $this->loadViewsFrom(__DIR__ . '/../Resources/views', 'blog');
-
-        // 注册迁移
-        $this->loadMigrationsFrom(__DIR__ . '/../Database/Migrations');
-    }
-}
-```
-
-**自动发现行为**
-- 扫描 `Providers/` 目录
-- 自动注册所有继承 `Illuminate\Support\ServiceProvider` 的类
-- 执行服务提供者的 `register()` 和 `boot()` 方法
-- 在所有其他组件加载之前执行，确保服务可用
+**自动发现行为** (v5.0 增强)：
+1. 先注册配置文件 `providers` 键中声明的额外服务提供者
+2. 再注册配置文件 `laravel_aliases` 键中声明的门面别名
+3. 然后扫描 `Providers/` 目录，自动注册继承 `Illuminate\Support\ServiceProvider` 的类
+4. 执行服务提供者的 `register()` 和 `boot()` 方法
 
 **注意**
 - 模块主服务提供者命名约定：`{ModuleName}ServiceProvider`
-- 例如：Blog 模块的主服务提供者为 `BlogServiceProvider`
-- 所有注册的服务可以在其他组件中使用依赖注入访问
+- `providers` 键用于声明非标准命名的或第三方服务提供者
 
 ---
 
@@ -1045,6 +1023,35 @@ A: 在模块配置文件中设置 `enabled => false`：
 // Modules/Blog/Config/blog.php
 return [
     'enabled' => false,
+    // ... 其他配置
+];
+```
+
+### Q: 如何注册额外的服务提供者？
+
+A: 在模块配置文件中使用 `providers` 键：
+
+```php
+// Modules/Blog/Config/blog.php
+return [
+    'enabled' => true,
+    'providers' => [
+        \Modules\Blog\Providers\EventServiceProvider::class,
+    ],
+];
+```
+
+### Q: 如何注册额外的 Laravel 门面别名？
+
+A: 在模块配置文件中使用 `laravel_aliases` 键：
+
+```php
+// Modules/Blog/Config/blog.php
+return [
+    'enabled' => true,
+    'laravel_aliases' => [
+        'BlogHelper' => \Modules\Blog\Facades\BlogHelper::class,
+    ],
 ];
 ```
 

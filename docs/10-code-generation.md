@@ -689,13 +689,36 @@ CREATE TABLE `users` (
 - 自动递增字段
 
 ### 生成的模型结构
+
+生成的模型文件完整结构如下：
+
+```php
+<?php
+
+namespace Modules\Blog\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+/**
+ * Blog 模块 - Post 模型
+ *
+ * 自动生成的 Eloquent 模型，包含数据库字段映射。
+ */
+class Post extends Model
+{
+    // 支持软删除
+    // use SoftDeletes;
+
+    /**
+     * 可批量赋值的属性
      *
      * @var array
      */
     protected $fillable = [
         'title',
         'content',
-        // ...
+        // 自动从数据库表结构生成
     ];
 
     /**
@@ -708,7 +731,7 @@ CREATE TABLE `users` (
     ];
 
     /**
-     * 属性转换
+     * 属性类型转换
      *
      * @var array
      */
@@ -718,7 +741,7 @@ CREATE TABLE `users` (
     ];
 
     /**
-     * 模型关联
+     * 模型关联（需要手动取消注释）
      */
     // public function user()
     // {

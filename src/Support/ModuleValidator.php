@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Support;
 
 use zxf\Modules\Contracts\ModuleInterface;
@@ -68,21 +70,31 @@ class ModuleValidator
     }
 
     /**
-     * 验证模块配置
+     * 验证模块配置文件
+     *
+     * 检查 Config/{lower_name}.php 或 Config/config.php 是否存在
+     * 并验证必要的配置项
      *
      * @param ModuleInterface $module
      * @return array
      */
     public static function validateConfig(ModuleInterface $module): array
     {
-        // 配置文件命名规则：小写模块名.php
+        // 尝试找到配置文件
+        $configPath = $module->getConfigPath();
         $file = $module->getLowerName() . '.php';
-        $configFile = $module->getConfigPath() . DIRECTORY_SEPARATOR . $file;
+        $configFile = $configPath . DIRECTORY_SEPARATOR . $file;
+
+        // 回退到 config.php
+        if (! file_exists($configFile)) {
+            $file = 'config.php';
+            $configFile = $configPath . DIRECTORY_SEPARATOR . $file;
+        }
 
         if (! file_exists($configFile)) {
             return [
                 'valid' => false,
-                'error' => '配置文件不存在:' . $file,
+                'error' => '模块配置文件不存在，请创建 Config/' . $module->getLowerName() . '.php 或 Config/config.php',
             ];
         }
 
@@ -91,21 +103,21 @@ class ModuleValidator
         if (! is_array($config)) {
             return [
                 'valid' => false,
-                'error' => '配置文件必须返回一个数组:' . $file,
+                'error' => '配置文件必须返回一个数组: ' . $file,
             ];
         }
 
         $error = '';
 
-        if (! isset($config['enable'])) {
-            $error = '配置文件缺少 enable 键';
-        } elseif (! is_bool($config['enable'])) {
-            $error = 'enable 键必须是布尔值';
+        if (! isset($config['enabled'])) {
+            $error = '配置文件缺少 enabled 键';
+        } elseif (! is_bool($config['enabled'])) {
+            $error = 'enabled 键必须是布尔值';
         }
 
         return [
-            'valid' => empty($errors),
-            'error' => $error .':'. $file,
+            'valid' => empty($error),
+            'error' => $error ? $error . ': ' . $file : '',
         ];
     }
 
@@ -136,10 +148,10 @@ class ModuleValidator
                 continue;
             }
 
-            // 检查路由文件语法
-            $content = file_get_contents($routePath);
-            if (! @eval('?>' . $content)) {
-                $errors[] = "路由文件 {$routeFile}.php 语法错误";
+            // 检查路由文件是否可读（避免 eval 安全风险）
+            $content = @file_get_contents($routePath);
+            if ($content === false) {
+                $errors[] = "路由文件 {$routeFile}.php 无法读取";
             }
         }
 

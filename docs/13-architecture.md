@@ -19,11 +19,12 @@ zxf/modules 是一个基于 PHP 8.2+ 和 Laravel 11+ 的现代化、智能化的
 
 **核心特性：**
 
+- ✅ **配置驱动**：模块配置 PHP 文件管理元数据（v5.0 起不再使用 composer.json）
 - ✅ **智能自动发现**：无需手动注册，自动发现配置、路由、迁移等
-- ✅ **灵活配置驱动**：通过 config/modules.php 控制所有行为
-- ✅ **模块启用/禁用**：通过配置文件控制，禁用时完全不加载
+- ✅ **模块启用/禁用**：通过配置文件 `enabled` 键控制，禁用时完全不加载
+- ✅ **优先级控制**：`priority` 键控制模块加载顺序
 - ✅ **高性能**：优化的加载流程，支持缓存
-- ✅ **Laravel 11+ 原生**：采用最新架构和代码风格
+- ✅ **Laravel 11+ / 12+ / 13+ 原生**：采用最新架构和代码风格
 
 ### 技术栈
 
@@ -83,7 +84,8 @@ Repository::scan()
 
 **扫描路径**（来自 config）:
 ```php
-'modules.scan.paths' => [
+// config/modules.php
+'scan_paths' => [
     base_path('Modules'),
     base_path('CustomModules'),
 ],
@@ -108,9 +110,9 @@ Repository::scan()
 ```
 
 **启用状态读取优先级**:
-1. 模块配置文件 `Config/{module}.php` 中的 `enabled` 键
-2. 如果配置不存在，默认启用
-3. 如果配置值为 `false`，禁用模块
+1. 构造函数传入的 `enabled` 选项（最高优先级，代码显式控制）
+2. 模块配置文件 `Config/{lower_name}.php` 中的 `enabled` 键
+3. 默认启用（`true`）
 
 #### 2.2 自动发现流程
 
@@ -315,9 +317,9 @@ Routes/ 目录扫描
   ↓
 发现所有 .php 文件
   ↓
-为每个文件创建路由组:
-  - 应用中间件组（从 config）
-  - 设置控制器命名空间
+为每个文件自动应用：
+  - 中间件组（从 config/modules.php 的 middleware_groups）
+  - URL 前缀和路由名称前缀（根据 config 自动添加）
   - 加载路由文件内容
 ```
 
@@ -325,34 +327,34 @@ Routes/ 目录扫描
 
 ```php
 'middleware_groups' => [
-    'web' => ['web'],           // web.php 路由
-    'api' => ['api'],          // api.php 路由
-    'admin' => ['web', 'admin'], // admin.php 路由
+    'web'   => ['web'],           // Routes/web.php 自动应用 web 中间件组
+    'api'   => ['api'],           // Routes/api.php 自动应用 api 中间件组
+    'admin' => ['web'],           // Routes/admin.php 自动应用 web 中间件组
 ],
 ```
 
-**控制器命名空间映射**:
+**路由前缀和命名自动配置** (config/modules.php):
 
 ```php
-'route_controller_namespaces' => [
-    'web' => 'Web',      // Routes/web.php → Http\Controllers\Web
-    'api' => 'Api',      // Routes/api.php → Http\Controllers\Api
-    'admin' => 'Admin',  // Routes/admin.php → Http\Controllers\Admin
+'routes' => [
+    'prefix'      => true,   // true: /blog/posts, false: /posts
+    'name_prefix' => true,   // true: blog.posts.index, false: posts.index
 ],
 ```
+
+> **v5.0**：不再使用 `route_controller_namespaces` 配置项。控制器命名空间由模块自身的目录结构决定，路由文件直接引用完整类名。
 
 #### 2.2 路由文件内容
 
-路由文件内部已包含路由组声明：
+路由文件中直接定义路由，前缀和名称前缀由系统自动添加：
 
 ```php
-// Routes/web.php
-Route::middleware(['web'])
-    ->prefix('blog')           // 来自 config('modules.routes.prefix')
-    ->name('blog.')          // 来自 config('modules.routes.name_prefix')
-    ->group(function () {
-        // 路由定义
-    });
+// Routes/web.php —— 前缀和中件间由系统自动应用
+Route::get('/posts', [PostController::class, 'index'])->name('posts.index');
+Route::get('/posts/{id}', [PostController::class, 'show'])->name('posts.show');
+
+// 生成的 URL: /blog/posts, /blog/posts/1
+// 生成的路由名: blog.posts.index, blog.posts.show
 ```
 
 ### 3. 视图文件引用
@@ -637,7 +639,9 @@ class BlogServiceProvider extends ServiceProvider
 **自动发现顺序**：
 
 1. **服务提供者** (`discoverProviders`)
-   - 扫描 `Providers/` 目录
+   - 先注册配置文件 `providers` 键中声明的额外服务提供者
+   - 再注册配置文件 `laravel_aliases` 键中声明的门面别名
+   - 然后扫描 `Providers/` 目录
    - 自动注册到 Laravel 服务容器
    - 执行服务提供者的 register() 和 boot() 方法
    - 优先级：最高
@@ -790,12 +794,15 @@ return [
 ### 扫描配置
 
 ```php
-'scan' => [
-    'enabled' => true,
-    'paths' => [
-        base_path('Modules'),
-        // 可以添加多个路径
-    ],
+// config/modules.php
+
+// 主存储路径
+'path' => base_path('Modules'),
+
+// 额外扫描路径（多目录模块管理）
+'scan_paths' => [
+    base_path('vendor/my-organization'),
+    base_path('CustomModules'),
 ],
 ```
 
@@ -806,7 +813,7 @@ return [
     'prefix' => true,              // 是否自动添加路由前缀
     'name_prefix' => true,         // 是否自动添加路由名称前缀
     'default_files' => [          // 默认路由文件
-        'web', 'api', 'admin',
+        'web', 'api',
     ],
 ],
 
@@ -814,12 +821,6 @@ return [
     'web' => ['web'],
     'api' => ['api'],
     'admin' => ['web', 'admin'],
-],
-
-'route_controller_namespaces' => [
-    'web' => 'Web',
-    'api' => 'Api',
-    'admin' => 'Admin',
 ],
 ```
 
@@ -832,44 +833,55 @@ return [
 ],
 ```
 
-### 生成器配置
+### 生成器路径配置
+
+以下配置控制 `module:make` 命令执行时各类文件的生成路径和是否自动生成：
 
 ```php
-'paths.generator' => [
-    // 核心组件
-    'config' => ['enabled' => true, 'path' => 'Config'],
-    'provider' => ['enabled' => true, 'path' => 'Providers'],
-    'route' => ['enabled' => true, 'path' => 'Routes'],
+// config/modules.php → paths → generator
+'paths' => [
+    'migration' => 'Database/Migrations',  // 迁移文件存储路径
 
-    // 控制器
-    'controller' => [
-        'enabled' => true,
-        'path' => 'Http/Controllers',
-        'create_base' => true,
-        'create_web' => true,
-        'create_api' => true,
-        'create_admin' => true,
-        'create_examples' => true,
-    ],
+    'generator' => [
+        // 核心组件 — generate=true 表示 module:make 命令默认生成
+        'config'         => ['path' => 'Config',              'generate' => true],
+        'provider'       => ['path' => 'Providers',           'generate' => true],
+        'route'          => ['path' => 'Routes',              'generate' => true],
 
-    // 业务逻辑
-    'observer' => ['enabled' => false, 'path' => 'Observers'],
-    'policy' => ['enabled' => false, 'path' => 'Policies'],
-    'repository' => ['enabled' => false, 'path' => 'Repositories'],
+        // 控制器 — 支持分层（Web/Api/Admin）
+        'controller'     => ['path' => 'Http/Controllers',    'generate' => true],
+        'controller.web'  => ['path' => 'Http/Controllers/Web',  'generate' => true],
+        'controller.api'  => ['path' => 'Http/Controllers/Api',  'generate' => true],
+        'controller.admin'=> ['path' => 'Http/Controllers/Admin','generate' => false],
 
-    // 路由文件
-    'routes' => [
-        'web' => true,
-        'api' => true,
-        'admin' => false,
-    ],
+        // 模型
+        'model'          => ['path' => 'Models',              'generate' => true],
 
-    // 视图
-    'views' => [
-        'enabled' => true,
-        'path' => 'Resources/views',
-        'create_layouts' => true,
-        'create_example' => true,
+        // 业务逻辑（按需生成）
+        'observer'       => ['path' => 'Observers',           'generate' => false],
+        'policy'         => ['path' => 'Policies',            'generate' => false],
+        'repository'     => ['path' => 'Repositories',        'generate' => false],
+
+        // HTTP 层
+        'request'        => ['path' => 'Http/Requests',       'generate' => false],
+        'resource'       => ['path' => 'Http/Resources',      'generate' => true],
+        'middleware'     => ['path' => 'Http/Middleware',     'generate' => false],
+
+        // 数据库
+        'migration'      => ['path' => 'Database/Migrations', 'generate' => false],
+        'seeder'         => ['path' => 'Database/Seeders',    'generate' => true],
+        'factory'        => ['path' => 'Database/Factories',  'generate' => false],
+
+        // 资源文件
+        'views'          => ['path' => 'Resources/views',     'generate' => true],
+        'lang'           => ['path' => 'Resources/lang',      'generate' => false],
+        'assets'         => ['path' => 'Resources/assets',    'generate' => false],
+
+        // 其他
+        'command'        => ['path' => 'Console/Commands',    'generate' => false],
+        'event'          => ['path' => 'Events',              'generate' => false],
+        'listener'       => ['path' => 'Listeners',           'generate' => false],
+        'test'           => ['path' => 'Tests',               'generate' => false],
     ],
 ],
 ```

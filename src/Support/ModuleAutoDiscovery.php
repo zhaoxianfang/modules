@@ -1,35 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 
 /**
  * 模块自动发现器
  *
- * 提供智能的模块组件自动发现和加载能力
+ * 提供智能的模块组件自动发现和加载能力。
  *
- * 功能特性：
- * - 自动发现配置文件并合并到全局配置
- * - 自动发现并加载路由文件（自动应用中间件组和控制器命名空间）
- * - 自动发现并注册视图命名空间（支持多种视图路径格式）
- * - 自动发现并注册迁移路径
- * - 自动发现并注册 Artisan 命令
- * - 自动发现并注册翻译命名空间（支持 JSON 和 PHP 格式）
- * - 自动发现并注册事件和监听器
- * - 自动发现并注册模型观察者、策略、仓库等
- * - 支持多种路径格式的自动识别
- * - 支持自定义发现规则和配置
- * - 提供详细的发现摘要和调试信息
- *
- * 自动发现顺序（重要）：
- * 1. 配置文件（最先加载，其他组件可能依赖配置）
- * 2. 服务提供者（加载自定义服务绑定）
- * 3. 中间件（过滤器）
- * 4. 路由文件（Web、API、Admin 等）
+ * 自动发现顺序：
+ * 1. 配置文件（最先加载）
+ * 2. 服务提供者
+ * 3. 中间件
+ * 4. 路由文件
  * 5. 视图文件
  * 6. 迁移文件
  * 7. 翻译文件
@@ -38,13 +26,14 @@ use zxf\Modules\Contracts\ModuleInterface;
  * 10. 模型观察者
  * 11. 策略类
  * 12. 仓库类
+ *
+ * @package zxf\Modules
+ * @version 4.0.0
  */
 class ModuleAutoDiscovery
 {
     /**
      * 全局命令缓存
-     *
-     * 存储所有模块已发现的命令类名
      *
      * @var array<string>
      */
@@ -52,23 +41,16 @@ class ModuleAutoDiscovery
 
     /**
      * 模块实例
-     *
-     * @var ModuleInterface
      */
     protected ModuleInterface $module;
 
     /**
      * 应用实例
-     *
-     * @var \Illuminate\Contracts\Foundation\Application
      */
     protected \Illuminate\Contracts\Foundation\Application $app;
 
     /**
      * 发现缓存
-     *
-     * 存储已发现的组件信息，避免重复扫描
-     * 键格式：组件类型.具体标识（如 config.blog, route.web 等）
      *
      * @var array<string, mixed>
      */
@@ -76,28 +58,25 @@ class ModuleAutoDiscovery
 
     /**
      * 是否启用缓存
-     *
-     * 默认启用缓存以提高性能
-     * 在开发环境可设置为 false 以实时检测变化
-     *
-     * @var bool
      */
     protected bool $cacheEnabled = true;
 
     /**
      * 发现日志
      *
-     * 记录发现过程中的详细信息，用于调试
-     * 格式：['时间' => '消息']
-     *
      * @var array<string, string>
      */
     protected array $logs = [];
 
     /**
-     * 创建新实例
+     * 事件钩子
      *
-     * @param ModuleInterface $module 模块实例
+     * @var array<string, array<callable>>
+     */
+    protected static array $hooks = [];
+
+    /**
+     * 创建新实例
      */
     public function __construct(ModuleInterface $module)
     {
@@ -107,207 +86,50 @@ class ModuleAutoDiscovery
     }
 
     /**
-     * 静态方法：从模块信息数组自动发现模块
+     * 注册事件钩子
      *
-     * 这是一个便捷方法，用于从模块信息数组自动发现模块
-     * 主要用于 ServiceProvider 中调用，简化模块对象创建流程
-     *
-     * @param array<string, mixed> $moduleInfo 模块信息数组
-     * @return void
+     * @param string   $event    事件名: before_discover, after_discover, before_load, after_load
+     * @param callable $callback 回调函数
      */
-    public static function discoverModule(array $moduleInfo): void
+    public static function hook(string $event, callable $callback): void
     {
-        // 从数组创建模块对象
-        $module = self::createModuleFromArray($moduleInfo);
-        
-        // 创建自动发现器实例
-        $discovery = new self($module);
-        
-        // 执行所有自动发现任务
-        $discovery->discoverAll();
+        self::$hooks[$event][] = $callback;
     }
 
     /**
-     * 从数组创建模块对象
-     *
-     * 根据模块信息数组创建一个实现 ModuleInterface 的匿名类对象
-     * 
-     * @param array<string, mixed> $moduleInfo 模块信息数组
-     * @return ModuleInterface 模块实例
+     * 触发事件钩子
      */
-    protected static function createModuleFromArray(array $moduleInfo): ModuleInterface
+    protected function triggerHook(string $event, array $context = []): void
     {
-        $name = $moduleInfo['name'];
-        $namespace = $moduleInfo['namespace'];
-        $path = $moduleInfo['path'];
-        
-        return new class($name, $namespace, $path) implements ModuleInterface {
-            protected string $name;
-            protected string $namespace;
-            protected string $path;
-            protected ?array $configCache = null;
+        if (! isset(self::$hooks[$event])) {
+            return;
+        }
 
-            public function __construct(string $name, string $namespace, string $path)
-            {
-                $this->name = $name;
-                $this->namespace = $namespace;
-                $this->path = $path;
+        foreach (self::$hooks[$event] as $callback) {
+            try {
+                $callback($this->module, $context);
+            } catch (\Throwable) {
+                // 钩子执行失败不影响主流程
             }
-
-            public function getName(): string
-            {
-                return $this->name;
-            }
-
-            public function getCamelName(): string
-            {
-                return Str::camel($this->name);
-            }
-
-            public function getLowerCamelName(): string
-            {
-                return lcfirst(Str::camel($this->name));
-            }
-
-            public function getLowerName(): string
-            {
-                return strtolower($this->name);
-            }
-
-            public function getPath(?string $path = null): string
-            {
-                return $this->path . ($path ? '/' . $path : '');
-            }
-
-            public function getNamespace(): string
-            {
-                return $this->namespace;
-            }
-
-            public function isEnabled(): bool
-            {
-                $config = $this->getModuleConfig();
-                return $config['enabled'] ?? true;
-            }
-
-            public function getConfigPath(): string
-            {
-                return $this->getPath('Config');
-            }
-
-            public function getRoutesPath(): string
-            {
-                return $this->getPath('Routes');
-            }
-
-            public function getProvidersPath(): string
-            {
-                return $this->getPath('Providers');
-            }
-
-            public function getCommandsPath(): string
-            {
-                return $this->getPath('Console/Commands');
-            }
-
-            public function getViewsPath(): string
-            {
-                return $this->getPath('Resources/views');
-            }
-
-            public function getMigrationsPath(): string
-            {
-                return $this->getPath('Database/Migrations');
-            }
-
-            public function getControllersPath(): string
-            {
-                return $this->getPath('Http/Controllers');
-            }
-
-            public function config(string $key, $default = null)
-            {
-                return config(strtolower($this->name) . '.' . $key, $default);
-            }
-
-            public function hasRoute(string $route): bool
-            {
-                return file_exists($this->getRoutesPath() . '/' . $route . '.php');
-            }
-
-            public function getServiceProviderClass(): ?string
-            {
-                return $this->namespace . '\\' . $this->name . '\\Providers\\' . $this->name . 'ServiceProvider';
-            }
-
-            public function getRouteFiles(): array
-            {
-                $routesPath = $this->getRoutesPath();
-
-                if (! is_dir($routesPath)) {
-                    return [];
-                }
-
-                return glob($routesPath . '/*.php');
-            }
-
-            public function getModuleConfig(): array
-            {
-                if ($this->configCache !== null) {
-                    return $this->configCache;
-                }
-
-                $configPath = $this->getConfigPath() . '/' . $this->getLowerName() . '.php';
-
-                if (! file_exists($configPath)) {
-                    $this->configCache = [];
-                    return $this->configCache;
-                }
-
-                $this->configCache = require $configPath;
-                return $this->configCache;
-            }
-
-            /**
-             * 获取类命名空间（完整）
-             * 这是一个辅助方法，不属于接口但被 ModuleAutoDiscovery 使用
-             *
-             * @return string
-             */
-            public function getClassNamespace(): string
-            {
-                return $this->namespace . '\\' . $this->name;
-            }
-        };
+        }
     }
+
+    // ========================================================================
+    //  主执行流程
+    // ========================================================================
 
     /**
      * 执行所有自动发现任务
-     *
-     * 按照正确的加载顺序依次发现各个组件，确保依赖关系正确：
-     * 1. 服务提供者（最先加载，注册自定义服务和绑定）
-     * 2. 配置文件（其他组件可能依赖配置）
-     * 3. 中间件（过滤器，用于路由）
-     * 4. 路由文件（Web、API、Admin 等）
-     * 5. 视图文件（资源视图）
-     * 6. 迁移文件（数据库迁移）
-     * 7. 翻译文件（语言包）
-     * 8. Artisan 命令（终端命令）
-     * 9. 事件和监听器（事件系统）
-     * 10. 模型观察者（模型钩子）
-     * 11. 策略类（权限控制）
-     * 12. 仓库类（数据访问层）
-     *
-     * @return void
      */
     public function discoverAll(): void
     {
-        // 检查模块是否启用
         if (! $this->module->isEnabled()) {
             return;
         }
 
-        // 按顺序执行所有发现任务
+        $this->triggerHook('before_discover', ['module' => $this->module->getName()]);
+
+        // 按顺序执行发现
         $this->discoverProviders();
         $this->discoverConfigs();
         $this->discoverMiddlewares();
@@ -321,178 +143,195 @@ class ModuleAutoDiscovery
         $this->discoverPolicies();
         $this->discoverRepositories();
 
-        // 清空缓存（如果需要）
+        $this->triggerHook('after_discover', [
+            'module' => $this->module->getName(),
+            'cache' => $this->cache,
+        ]);
+
         if (! $this->cacheEnabled) {
             $this->cache = [];
         }
     }
 
-    /**
-     * 发现并注册服务提供者
-     *
-     * 扫描 Providers/ 目录，发现所有服务提供者类
-     * 自动注册到 Laravel 的服务容器中
-     *
-     * 服务提供者要求：
-     * - 继承 Illuminate\Support\ServiceProvider
-     * - 实现 register() 和 boot() 方法（可选）
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  服务提供者
+    // ========================================================================
+
     protected function discoverProviders(): void
     {
         if (! $this->shouldDiscover('providers')) {
             return;
         }
 
-        try {
-            $providersPath = $this->module->getProvidersPath();
-
-            if (! is_dir($providersPath)) {
-                return;
+        // 1. 注册配置文件中声明的额外 providers
+        $extraProviders = $this->module->getLaravelProviders();
+        foreach ($extraProviders as $providerClass) {
+            if (is_string($providerClass) && class_exists($providerClass)) {
+                try {
+                    $this->app->register($providerClass);
+                    $this->cache["provider.extra.{$providerClass}"] = true;
+                    $this->log("Registered extra provider: {$providerClass}");
+                } catch (\Throwable $e) {
+                    $this->log("Extra provider registration error: {$e->getMessage()}");
+                }
             }
+        }
 
-            $providerFiles = File::files($providersPath);
+        // 2. 注册配置文件中声明的额外别名
+        $extraAliases = $this->module->getLaravelAliases();
+        if (! empty($extraAliases) && method_exists($this->app, 'alias')) {
+            foreach ($extraAliases as $alias => $class) {
+                if (is_string($alias) && is_string($class) && class_exists($class)) {
+                    try {
+                        $this->app->alias($class, $alias);
+                        $this->cache["alias.{$alias}"] = $class;
+                        $this->log("Registered alias: {$alias} => {$class}");
+                    } catch (\Throwable) {
+                        // 手动绑定到容器
+                        try {
+                            $this->app->singleton($alias, fn () => $this->app->make($class));
+                            $this->cache["alias.{$alias}"] = $class;
+                        } catch (\Throwable) {
+                            // 静默失败
+                        }
+                    }
+                }
+            }
+        }
 
-            foreach ($providerFiles as $providerFile) {
-                if ($providerFile->getExtension() !== 'php') {
+        // 3. 自动扫描 Providers/ 目录下的 ServiceProvider 类
+        $providersPath = $this->module->getProvidersPath();
+
+        if (! is_dir($providersPath)) {
+            return;
+        }
+
+        try {
+            $files = File::files($providersPath);
+
+            foreach ($files as $file) {
+                if ($file->getExtension() !== 'php') {
                     continue;
                 }
 
-                $className = $providerFile->getBasename('.php');
+                $className = $file->getBasename('.php');
                 $providerClass = $this->module->getClassNamespace() . '\\Providers\\' . $className;
 
                 if (! class_exists($providerClass)) {
-                    $this->log("服务提供者类不存在: {$providerClass}");
                     continue;
                 }
 
-                try {
-                    // 验证是否继承自 ServiceProvider
-                    $reflection = new \ReflectionClass($providerClass);
+                $reflection = new \ReflectionClass($providerClass);
 
-                    if ($reflection->isSubclassOf(\Illuminate\Support\ServiceProvider::class)) {
-                        // 注册服务提供者到 Laravel
-                        $this->app->register($providerClass);
-                        $this->cache["provider.{$className}"] = $providerClass;
-                        $this->log("成功注册服务提供者: {$providerClass}");
-                    } else {
-                        $this->log("服务提供者未继承 ServiceProvider: {$providerClass}");
-                    }
-                } catch (\ReflectionException $e) {
-                    $this->log("反射错误: {$providerClass}, 错误: {$e->getMessage()}");
-                } catch (\Throwable $e) {
-                    $this->log("注册服务提供者失败: {$providerClass}, 错误: {$e->getMessage()}");
+                if ($reflection->isSubclassOf(\Illuminate\Support\ServiceProvider::class) && ! $reflection->isAbstract()) {
+                    $this->app->register($providerClass);
+                    $this->cache["provider.{$className}"] = $providerClass;
+                    $this->log("Registered provider: {$providerClass}");
                 }
             }
         } catch (\Throwable $e) {
-            $this->log("扫描服务提供者目录失败, 错误: {$e->getMessage()}");
+            $this->log("Provider discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 发现并合并配置文件
-     *
-     * 扫描 Config/ 目录，发现所有 .php 配置文件
-     * 自动合并到全局配置，键名格式为：模块名.配置文件名（全小写）
-     *
-     * 支持的配置文件模式：
-     * - config.php -> config('blog.key')
-     * - settings.php -> config('blog.settings.key')
-     * - custom.php -> config('blog.custom.key')
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  配置文件
+    // ========================================================================
+
     protected function discoverConfigs(): void
     {
         if (! $this->shouldDiscover('config')) {
             return;
         }
 
+        $configPath = $this->module->getConfigPath();
+
+        if (! is_dir($configPath)) {
+            return;
+        }
+
         try {
-            $configPath = $this->module->getConfigPath();
+            $files = File::files($configPath);
+            $moduleLower = $this->module->getLowerName();
 
-            if (! is_dir($configPath)) {
-                return;
-            }
-
-            // 扫描所有配置文件
-            $configFiles = File::files($configPath);
-
-            foreach ($configFiles as $configFile) {
-                if ($configFile->getExtension() !== 'php') {
+            foreach ($files as $file) {
+                if ($file->getExtension() !== 'php') {
                     continue;
                 }
 
-                $filename = $configFile->getBasename('.php');
+                $filename = $file->getBasename('.php');
 
-                // 配置键名：模块名.配置文件名（全小写）
-                // 如果配置文件名与模块名相同，直接用模块名
-                $moduleLowerName = $this->module->getLowerName();
-
-                if (in_array(strtolower($filename),[$moduleLowerName,'config'])) {
-                    // 如果配置文件目录下的文件名 为 模块小写或者 config , 都视为当前模块的默认配置文件
-                    // 例如： Blog/Config 配置文件夹下 有 config.php 或者 blog.php(Blog模块的小写形式)，
-                    // 都视为是Blog 模块的默认配置文件 blog.php
-                    $configKey = $moduleLowerName;
+                if (in_array(strtolower($filename), [$moduleLower, 'config'], true)) {
+                    $configKey = $moduleLower;
                 } else {
-                    // 例如： Blog/Config 配置文件夹下 有 test.php 配置文件，则 视为 blog.test 配置文件
-                    $configKey = $moduleLowerName . '.' . strtolower($filename);
+                    $configKey = $moduleLower . '.' . strtolower($filename);
                 }
 
-                // 加载并合并配置
-                try {
-                    $configValue = require $configFile->getPathname();
+                $configValue = require $file->getPathname();
 
-                    if (! is_array($configValue)) {
-                        $this->log("配置文件格式错误: {$filename}, 必须返回数组");
-                        continue;
-                    }
-
-                    // 合并到全局配置
-                    // config([$configKey => $configValue]); 例如 blog.php 配置的值会被同文件夹下config.php 配置覆盖
-
-                    // 把blog.php 和 config.php 两个配置文件的值合并到一个 blog 配置;
-                    // 存在相同配置键值时，后加载的配置会覆盖先加载的配置
-                    config([$configKey => array_merge(config($configKey, []), $configValue)]);
-
-                    // 记录缓存
-                    $this->cache["config.{$configKey}"] = true;
-                    $this->log("成功加载配置: {$configKey}");
-                } catch (\Throwable $e) {
-                    $this->log("加载配置文件失败: {$filename}, 错误: {$e->getMessage()}");
+                if (! is_array($configValue)) {
+                    continue;
                 }
+
+                // 合并配置：后加载的覆盖先加载的
+                config([$configKey => array_merge(config($configKey, []), $configValue)]);
+                $this->cache["config.{$configKey}"] = true;
+                $this->log("Loaded config: {$configKey}");
             }
         } catch (\Throwable $e) {
-            $this->log("扫描配置目录失败, 错误: {$e->getMessage()}");
+            $this->log("Config discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 发现并加载路由文件
-     *
-     * 扫描 Routes/ 目录，发现所有 .php 路由文件
-     * 自动根据文件名应用对应的中间件组和控制器命名空间
-     *
-     * 默认路由文件：
-     * - web.php: 应用 web 中间件组，使用 Web 控制器命名空间
-     * - api.php: 应用 api 中间件组，使用 Api 控制器命名空间
-     * - admin.php: 应用 admin 中间件组，使用 Admin 控制器命名空间
-     * - custom.php: 不自动应用中间件（需要在文件中手动添加）
-     *
-     * 中间件组映射：
-     * 可通过 config('modules.middleware_groups') 自定义
-     *
-     * 控制器命名空间自动识别规则：
-     * - web.php -> Web 命名空间（检查 Http/Controllers/Web 目录是否存在）
-     * - api.php -> Api 命名空间（检查 Http/Controllers/Api 目录是否存在）
-     * - admin.php -> Admin 命名空间（检查 Http/Controllers/Admin 目录是否存在）
-     * - other.php -> Other 命名空间（首字母大写的文件名）
-     *
-     * 如果对应的控制器子目录不存在，则不应用特定命名空间
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  中间件
+    // ========================================================================
+
+    protected function discoverMiddlewares(): void
+    {
+        if (! $this->shouldDiscover('middlewares')) {
+            return;
+        }
+
+        $possiblePaths = [
+            $this->module->getPath('Http/Middleware'),
+            $this->module->getPath('Http/Filters'),
+        ];
+
+        foreach ($possiblePaths as $middlewarePath) {
+            if (! is_dir($middlewarePath)) {
+                continue;
+            }
+
+            try {
+                $files = File::files($middlewarePath);
+
+                foreach ($files as $file) {
+                    if ($file->getExtension() !== 'php') {
+                        continue;
+                    }
+
+                    $className = $file->getBasename('.php');
+                    $middlewareClass = $this->module->getClassNamespace() . '\\Http\\Middleware\\' . $className;
+
+                    if (! class_exists($middlewareClass)) {
+                        $middlewareClass = $this->module->getClassNamespace() . '\\Http\\Filters\\' . $className;
+                    }
+
+                    if (class_exists($middlewareClass)) {
+                        $this->cache["middleware.{$className}"] = $middlewareClass;
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->log("Middleware discovery error: {$e->getMessage()}");
+            }
+        }
+    }
+
+    // ========================================================================
+    //  路由文件
+    // ========================================================================
+
     protected function discoverRoutes(): void
     {
         if (! $this->shouldDiscover('routes')) {
@@ -502,132 +341,67 @@ class ModuleAutoDiscovery
         $routesPath = $this->module->getRoutesPath();
 
         if (! is_dir($routesPath)) {
-            $this->log("路由目录不存在: {$routesPath}");
             return;
         }
 
-        // 从全局配置获取中间件组映射
         $middlewareGroups = config('modules.middleware_groups', [
             'web' => ['web'],
             'api' => ['api'],
-            'admin' => ['web', 'admin'],
         ]);
 
-        // 扫描所有路由文件
-        $routeFiles = File::files($routesPath);
+        try {
+            $files = File::files($routesPath);
 
-        foreach ($routeFiles as $routeFile) {
-            if ($routeFile->getExtension() !== 'php') {
-                continue;
-            }
+            foreach ($files as $routeFile) {
+                if ($routeFile->getExtension() !== 'php') {
+                    continue;
+                }
 
-            $filename = $routeFile->getBasename('.php');
+                $filename = $routeFile->getBasename('.php');
 
-            // 跳过 .gitignore 等隐藏文件
-            if (str_starts_with($filename, '.')) {
-                continue;
-            }
+                if (str_starts_with($filename, '.')) {
+                    continue;
+                }
 
-            // 获取对应的中间件组
-            $middleware = $middlewareGroups[$filename] ?? [];
+                $middleware = $middlewareGroups[$filename] ?? [];
+                $controllerNamespace = $this->autoDetectControllerNamespace($filename);
+                $fullNamespace = $this->module->getClassNamespace() . '\\Http\\Controllers' . $controllerNamespace;
 
-            // 内部自动识别控制器命名空间
-            $controllerNamespace = $this->autoDetectControllerNamespace($filename);
+                $router = app('router');
+                $routeGroup = $router;
 
-            // 构建完整控制器命名空间
-            $fullNamespace = $this->module->getClassNamespace() . '\\Http\\Controllers' . $controllerNamespace;
+                if (! empty($middleware)) {
+                    $routeGroup = $routeGroup->middleware($middleware);
+                }
 
-            // 使用 Laravel 的路由系统加载文件
-            $router = app('router');
+                if (! empty($controllerNamespace)) {
+                    $routeGroup = $routeGroup->namespace($fullNamespace);
+                }
 
-            // 创建路由组
-            $routeGroup = $router;
-
-            if (! empty($middleware)) {
-                $routeGroup = $routeGroup->middleware($middleware);
-            }
-
-            // 只有当检测到控制器命名空间时才设置
-            if (! empty($controllerNamespace)) {
-                $routeGroup = $routeGroup->namespace($fullNamespace);
-            }
-
-            // 加载路由文件
-            try {
                 $routeGroup->group(function () use ($routeFile) {
                     require $routeFile->getPathname();
                 });
 
-                $this->log("成功加载路由文件: {$filename}, 命名空间: {$fullNamespace}");
+                $this->log("Loaded route: {$filename}");
                 $this->cache["route.{$filename}"] = true;
-            } catch (\Throwable $e) {
-                $this->log("加载路由文件失败: {$filename}, 错误: {$e->getMessage()}");
             }
+        } catch (\Throwable $e) {
+            $this->log("Route discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 自动检测控制器命名空间
-     *
-     * 根据路由文件名自动检测对应的控制器命名空间
-     * 检查对应的控制器子目录是否存在
-     *
-     * @param string $routeFilename 路由文件名（不含扩展名）
-     * @return string 控制器命名空间（如 \\Web 或 ''）
-     */
-    protected function autoDetectControllerNamespace(string $routeFilename): string
-    {
-        // 标准化路由文件名
-        $standardNames = ['web', 'api', 'admin'];
+    // ========================================================================
+    //  视图
+    // ========================================================================
 
-        if (in_array(strtolower($routeFilename), $standardNames)) {
-            // 标准路由文件名，检查对应的控制器子目录
-            $subNamespace = ucfirst($routeFilename);
-            $controllerPath = $this->module->getPath('Http/Controllers/' . $subNamespace);
-
-            if (is_dir($controllerPath)) {
-                return '\\' . $subNamespace;
-            }
-
-            // 如果子目录不存在，返回空字符串（不应用特定命名空间）
-            return '';
-        }
-
-        // 非标准路由文件名，使用首字母大写的文件名
-        $subNamespace = ucfirst($routeFilename);
-        $controllerPath = $this->module->getPath('Http/Controllers/' . $subNamespace);
-
-        if (is_dir($controllerPath)) {
-            return '\\' . $subNamespace;
-        }
-
-        return '';
-    }
-
-    /**
-     * 发现并注册视图命名空间
-     *
-     * 扫描 Resources/views/ 目录并注册视图命名空间
-     * 视图命名空间格式根据 config('modules.views.namespace_format') 配置
-     *
-     * 支持的命名空间格式：
-     * - lower: blog (小写，默认）
-     * - studly: Blog (首字母大写）
-     * - camel: blogModule (驼峰命名）
-     *
-     * 使用方式：view('blog::view.name')
-     *
-     * @return void
-     */
     protected function discoverViews(): void
     {
         if (! $this->shouldDiscover('views')) {
             return;
         }
 
-        // Laravel 11+ 支持多种视图路径
         $possiblePaths = [
-            $this->module->getPath('Resources/views'),
+            $this->module->getViewsPath(),
             $this->module->getPath('resources/views'),
             $this->module->getPath('views'),
         ];
@@ -635,742 +409,370 @@ class ModuleAutoDiscovery
         $viewsPath = $this->findFirstExistingPath($possiblePaths);
 
         if (! $viewsPath) {
-            $this->log("视图目录不存在，尝试创建: Resources/views");
-            // 尝试创建视图目录
-            $defaultViewsPath = $this->module->getPath('Resources/views');
-            if (! is_dir($defaultViewsPath)) {
-                File::makeDirectory($defaultViewsPath, 0755, true);
-                $this->log("已创建视图目录: {$defaultViewsPath}");
-            }
-            $viewsPath = $defaultViewsPath;
+            return;
         }
 
-        // 获取命名空间格式
         $namespaceFormat = config('modules.views.namespace_format', 'lower');
 
-        // 构建视图命名空间
-        $viewNamespace = match($namespaceFormat) {
-            'lower' => strtolower($this->module->getName()),
+        $viewNamespace = match ($namespaceFormat) {
+            'lower' => $this->module->getLowerName(),
             'studly' => $this->module->getName(),
-            'camel' => lcfirst($this->module->getName()),
-            default => strtolower($this->module->getName()),
+            'camel' => $this->module->getCamelName(),
+            default => $this->module->getLowerName(),
         };
 
-        // 注册视图命名空间
         try {
             app('view')->addNamespace($viewNamespace, $viewsPath);
-            $this->log("成功注册视图命名空间: {$viewNamespace} -> {$viewsPath}");
             $this->cache['view'] = true;
+            $this->log("Registered view namespace: {$viewNamespace}");
         } catch (\Throwable $e) {
-            $this->log("注册视图命名空间失败: {$e->getMessage()}");
+            $this->log("View discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 发现并注册迁移路径
-     *
-     * 扫描 Database/Migrations/ 目录并注册迁移路径
-     * 迁移会自动包含在 Laravel 的迁移系统中
-     *
-     * 运行：php artisan migrate
-     * 回滚：php artisan migrate:rollback
-     * 刷新：php artisan migrate:refresh
-     * 重置：php artisan migrate:reset
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  迁移
+    // ========================================================================
+
     protected function discoverMigrations(): void
     {
         if (! $this->shouldDiscover('migrations')) {
             return;
         }
 
+        $possiblePaths = [
+            $this->module->getMigrationsPath(),
+            $this->module->getPath('database/migrations'),
+        ];
+
+        $migrationsPath = $this->findFirstExistingPath($possiblePaths);
+
+        if (! $migrationsPath) {
+            return;
+        }
+
         try {
-            // Laravel 11+ 支持多种迁移路径
-            $possiblePaths = [
-                $this->module->getPath('Database/Migrations'),
-                $this->module->getPath('database/migrations'),
-            ];
-
-            $migrationsPath = $this->findFirstExistingPath($possiblePaths);
-
-            if (! $migrationsPath) {
-                return;
-            }
-
-            // 注册迁移路径
             $migrator = app('migrator');
-
-            // 获取当前已注册的路径
             $existingPaths = $migrator->paths();
 
-            // 检查是否已注册
-            if (in_array($migrationsPath, $existingPaths)) {
-                return;
+            if (! in_array($migrationsPath, $existingPaths, true)) {
+                $migrator->path($migrationsPath);
             }
 
-            // 注册新路径
-            $migrator->path($migrationsPath);
-
-            // 记录缓存
             $this->cache['migration'] = true;
-            $this->log("成功注册迁移路径: {$migrationsPath}");
-        } catch (\Throwable $e) {
-            $this->log("注册迁移路径失败, 错误: {$e->getMessage()}");
+        } catch (\Throwable) {
+            // 静默失败
         }
     }
 
-    /**
-     * 发现并注册翻译命名空间
-     *
-     * 扫描 Resources/lang/ 或 Lang/ 目录并注册翻译命名空间
-     * Laravel 11+ 支持多种语言目录结构
-     *
-     * 支持的语言文件格式：
-     * - JSON: zh-CN.json, en.json
-     * - PHP: zh-CN/message.php, en/message.php
-     * - 嵌套: zh-CN/common.php, zh-CN/validation.php
-     *
-     * 使用方式：__('blog::key') 或 __('blog::common.welcome')
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  翻译
+    // ========================================================================
+
     protected function discoverTranslations(): void
     {
         if (! $this->shouldDiscover('translations')) {
             return;
         }
 
+        $possiblePaths = [
+            $this->module->getLangPath(),
+            $this->module->getPath('Lang'),
+            $this->module->getPath('resources/lang'),
+        ];
+
+        $langPath = $this->findFirstExistingPath($possiblePaths);
+
+        if (! $langPath) {
+            return;
+        }
+
         try {
-            // Laravel 11+ 支持多种翻译路径
-            $possiblePaths = [
-                $this->module->getPath('Resources/lang'),
-                $this->module->getPath('Lang'),
-                $this->module->getPath('resources/lang'),
-            ];
-
-            $langPath = $this->findFirstExistingPath($possiblePaths);
-
-            if (! $langPath) {
-                return;
-            }
-
-            // 注册翻译命名空间
             $translator = app('translator');
 
-            // 检查 translator 是否有 addNamespace 方法
             if (! method_exists($translator, 'addNamespace')) {
                 return;
             }
 
-            // 检查 loader 是否有 addNamespace 方法
             $loader = $translator->getLoader();
             if (! method_exists($loader, 'addNamespace')) {
                 return;
             }
 
-            $namespace = $this->module->getLowerName();
-
-            $translator->addNamespace(
-                $namespace,
-                $langPath
-            );
-
-            // 记录缓存
+            $translator->addNamespace($this->module->getLowerName(), $langPath);
             $this->cache['translation'] = true;
         } catch (\Throwable) {
-            // 静默失败，避免影响模块加载
+            // 静默失败
         }
     }
 
+    // ========================================================================
+    //  Artisan 命令
+    // ========================================================================
+
     /**
-     * 发现并注册 Artisan 命令
-     *
-     * 扫描 Console/Commands/ 目录，发现所有 Artisan 命令类
-     * 使用 Laravel 11+ 的命令发现机制
-     *
-     * 命令类要求：
-     * - 继承 Illuminate\Console\Command
-     * - 定义 $signature 和 $description 属性
-     * - 实现 handle() 方法
-     *
-     * @return void
+     * 扫描 Artisan 命令
      */
     public function discoverCommands(): void
     {
-        // 只在命令模式下注册命令
         if (! $this->app->runningInConsole()) {
-            $this->log('当前不是命令模式，跳过命令注册');
             return;
         }
 
         if (! $this->shouldDiscover('commands')) {
-            $this->log("命令发现已禁用");
             return;
         }
 
-        $this->log("开始扫描模块 [{$this->module->getName()}] 的命令");
-
-        // Laravel 11+ 支持多种命令路径
         $possiblePaths = [
-            ['path' => $this->module->getPath('Console/Commands'), 'namespace' => '\\Console\\Commands'],
-            ['path' => $this->module->getPath('Commands'), 'namespace' => '\\Commands'],
+            ['path' => $this->module->getCommandsPath(), 'ns' => '\\Console\\Commands'],
+            ['path' => $this->module->getPath('Commands'), 'ns' => '\\Commands'],
         ];
 
         $foundCommands = [];
 
         foreach ($possiblePaths as $pathInfo) {
             $commandsPath = $pathInfo['path'];
-            $namespace = $pathInfo['namespace'];
 
             if (! is_dir($commandsPath)) {
-                $this->log("命令目录不存在: {$commandsPath}");
                 continue;
             }
 
-            $this->log("扫描命令目录: {$commandsPath}");
-
-            // 扫描所有命令文件
             try {
-                $commandFiles = File::files($commandsPath);
-                $this->log("在目录 [{$commandsPath}] 中找到 " . count($commandFiles) . " 个文件");
+                $files = File::files($commandsPath);
 
-                foreach ($commandFiles as $commandFile) {
-                    if ($commandFile->getExtension() !== 'php') {
+                foreach ($files as $file) {
+                    if ($file->getExtension() !== 'php') {
                         continue;
                     }
 
-                    $className = $commandFile->getBasename('.php');
+                    $className = $file->getBasename('.php');
+                    $commandClass = $this->module->getClassNamespace() . $pathInfo['ns'] . '\\' . $className;
 
-                    // 构建完整类名
-                    $commandClass = $this->module->getClassNamespace() . $namespace . '\\' . $className;
-
-                    $this->log("检查命令类: {$commandClass}");
-
-                    // 验证命令类是否有效
                     if (! class_exists($commandClass)) {
-                        $this->log("命令类不存在: {$commandClass}");
                         continue;
                     }
 
-                    try {
-                        $reflection = new \ReflectionClass($commandClass);
+                    $reflection = new \ReflectionClass($commandClass);
 
-                        // 检查是否继承自 Command 并且不是抽象类
-                        if ($reflection->isSubclassOf(\Illuminate\Console\Command::class) && ! $reflection->isAbstract()) {
-                            $foundCommands[] = $commandClass;
-                            $this->log("✓ 发现有效命令: {$commandClass}");
-                        } else {
-                            $this->log("✗ 无效命令类: {$commandClass} (不是 Command 的子类或是抽象类)");
-                        }
-                    } catch (\ReflectionException $e) {
-                        $this->log("✗ 反射错误: {$commandClass}, 错误: {$e->getMessage()}");
+                    if ($reflection->isSubclassOf(\Illuminate\Console\Command::class) && ! $reflection->isAbstract()) {
+                        $foundCommands[] = $commandClass;
                     }
                 }
             } catch (\Throwable $e) {
-                $this->log("✗ 扫描命令目录失败: {$commandsPath}, 错误: {$e->getMessage()}");
+                $this->log("Command scan error: {$e->getMessage()}");
             }
         }
 
-        $this->log("命令扫描完成，共找到 " . count($foundCommands) . " 个有效命令");
-
-        // 将发现的命令添加到全局缓存，供服务提供者注册使用
+        // 去重并添加到全局缓存
         foreach ($foundCommands as $commandClass) {
             if (! in_array($commandClass, self::$globalCommands, true)) {
                 self::$globalCommands[] = $commandClass;
-                $this->log("添加命令到全局缓存: {$commandClass}");
             }
         }
 
-        // 注册命令到 Laravel
+        // 注册命令到 Artisan（通过 Kernel，而非 Application）
         if (! empty($foundCommands)) {
             try {
-                // 使用 Laravel 推荐的方式注册命令
-                // 将命令添加到应用的 commands 数组中，让 Laravel 自动处理注册
-                $this->app->addCommands($foundCommands);
-                
+                $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
                 foreach ($foundCommands as $commandClass) {
-                    $this->log("成功注册命令: {$commandClass}");
+                    $kernel->registerCommand($this->app->make($commandClass));
                 }
-            } catch (\Throwable $e) {
-                $this->log("注册命令失败, 错误: {$e->getMessage()}");
-                // 降级方案：直接通过 Artisan 门面注册
+            } catch (\Throwable) {
+                // 降级方案：通过 Artisan facade
                 try {
-                    $artisan = $this->app['artisan'];
-                    foreach ($foundCommands as $commandClass) {
-                        try {
-                            $command = $this->app->make($commandClass);
-                            $artisan->add($command);
-                            $this->log("通过降级方案注册命令: {$commandClass}");
-                        } catch (\Throwable $innerE) {
-                            $this->log("降级方案注册命令失败: {$commandClass}, 错误: {$innerE->getMessage()}");
-                        }
-                    }
-                } catch (\Throwable $fallbackE) {
-                    $this->log("降级方案也失败, 错误: {$fallbackE->getMessage()}");
+                    \Illuminate\Support\Facades\Artisan::addCommands($foundCommands);
+                } catch (\Throwable $e) {
+                    $this->log("Command registration failed: {$e->getMessage()}");
                 }
             }
         }
 
-        // 记录缓存
         $this->cache['commands'] = $foundCommands;
     }
 
-    /**
-     * 命令注册的降级方案
-     *
-     * 当主要的 addCommands 方法失败时使用此方案
-     * 通过 Artisan Console Application 直接注册命令
-     *
-     * @param array $commandClasses 命令类名数组
-     * @return void
-     */
-    protected function registerCommandsFallback(array $commandClasses): void
-    {
-        try {
-            // 获取 Artisan Console Application 实例
-            $artisan = $this->app['artisan'];
-            
-            foreach ($commandClasses as $commandClass) {
-                try {
-                    // 实例化命令对象
-                    $command = $this->app->make($commandClass);
-                    
-                    // 将命令添加到 Artisan
-                    $artisan->add($command);
-                    
-                    $this->log("通过降级方案注册命令: {$commandClass}");
-                } catch (\Throwable $e) {
-                    $this->log("降级方案注册命令失败: {$commandClass}, 错误: {$e->getMessage()}");
-                }
-            }
-            
-            $this->log("使用降级方案成功注册 " . count($commandClasses) . " 个命令");
-        } catch (\Throwable $e) {
-            $this->log("降级方案失败，错误: {$e->getMessage()}");
-        }
-    }
+    // ========================================================================
+    //  事件
+    // ========================================================================
 
-    /**
-     * 发现并注册事件和监听器
-     *
-     * 扫描 Events/ 和 Listeners/ 目录
-     * Laravel 11+ 会自动发现这些类，但这里可以进行验证
-     *
-     * @return void
-     */
     protected function discoverEvents(): void
     {
         if (! $this->shouldDiscover('events')) {
             return;
         }
 
-        try {
-            // Laravel 11+ 会自动发现 Events 和 Listeners 目录中的类
-            // 这里主要进行验证和记录
+        $eventsPath = $this->module->getPath('Events');
 
-            $eventsPath = $this->module->getPath('Events');
-
-            $eventClasses = [];
-
-            // 扫描事件类
-            if (is_dir($eventsPath)) {
-                $eventFiles = File::files($eventsPath);
-                foreach ($eventFiles as $eventFile) {
-                    if ($eventFile->getExtension() !== 'php') {
-                        continue;
-                    }
-
-                    $className = $eventFile->getBasename('.php');
-                    $eventClass = $this->module->getClassNamespace() . '\\Events\\' . $className;
-
-                    if (class_exists($eventClass)) {
-                        $eventClasses[] = $eventClass;
-                        $this->log("发现事件类: {$eventClass}");
-                    }
-                }
-            }
-
-            // 记录缓存
-            $this->cache['events'] = $eventClasses;
-        } catch (\Throwable $e) {
-            $this->log("扫描事件类失败, 错误: {$e->getMessage()}");
-        }
-    }
-
-    /**
-     * 发现并注册中间件（过滤器）
-     *
-     * 扫描 Http/Middleware/ 目录，发现所有中间件类
-     * 自动注册到 Laravel 的路由器中
-     *
-     * 中间件要求：
-     * - 继承 Illuminate\Http\Middleware 或实现 HandleMiddleware 接口
-     * - 定义 handle() 方法处理请求
-     *
-     * @return void
-     */
-    protected function discoverMiddlewares(): void
-    {
-        if (! $this->shouldDiscover('middlewares')) {
+        if (! is_dir($eventsPath)) {
             return;
         }
 
         try {
-            // 支持多种中间件路径
-            $possiblePaths = [
-                $this->module->getPath('Http/Middleware'),
-                $this->module->getPath('Http/Filters'),
-            ];
+            $files = File::files($eventsPath);
+            $events = [];
 
-            foreach ($possiblePaths as $middlewarePath) {
-                if (! is_dir($middlewarePath)) {
+            foreach ($files as $file) {
+                if ($file->getExtension() !== 'php') {
                     continue;
                 }
 
-                try {
-                    $middlewareFiles = File::files($middlewarePath);
-                    foreach ($middlewareFiles as $middlewareFile) {
-                        if ($middlewareFile->getExtension() !== 'php') {
-                            continue;
-                        }
+                $className = $file->getBasename('.php');
+                $eventClass = $this->module->getClassNamespace() . '\\Events\\' . $className;
 
-                        $className = $middlewareFile->getBasename('.php');
-
-                        // 尝试 Http/Middleware 命名空间
-                        $middlewareClass = $this->module->getClassNamespace() . '\\Http\\Middleware\\' . $className;
-
-                        // 如果不存在，尝试 Http/Filters 命名空间
-                        if (! class_exists($middlewareClass)) {
-                            $middlewareClass = $this->module->getClassNamespace() . '\\Http\\Filters\\' . $className;
-                        }
-
-                        if (class_exists($middlewareClass)) {
-                            // Laravel 会自动加载中间件类，这里主要用于记录
-                            $this->cache["middleware.{$className}"] = $middlewareClass;
-                            $this->log("发现中间件: {$middlewareClass}");
-                        }
-                    }
-                } catch (\Throwable $e) {
-                    $this->log("扫描中间件目录失败: {$middlewarePath}, 错误: {$e->getMessage()}");
+                if (class_exists($eventClass)) {
+                    $events[] = $eventClass;
                 }
             }
+
+            $this->cache['events'] = $events;
         } catch (\Throwable $e) {
-            $this->log("发现中间件失败, 错误: {$e->getMessage()}");
+            $this->log("Event discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 发现并注册模型观察者
-     *
-     * 扫描 Observers/ 目录，发现所有观察者类
-     * 自动注册到对应的模型中
-     *
-     * 观察者要求：
-     * - 观察者类名格式：{ModelName}Observer
-     * - 实现对应的模型监听方法（如 created, updated, deleted 等）
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  模型观察者
+    // ========================================================================
+
     protected function discoverObservers(): void
     {
         if (! $this->shouldDiscover('observers')) {
             return;
         }
 
+        $observersPath = $this->module->getPath('Observers');
+
+        if (! is_dir($observersPath)) {
+            return;
+        }
+
         try {
-            $observersPath = $this->module->getPath('Observers');
+            $files = File::files($observersPath);
 
-            if (! is_dir($observersPath)) {
-                return;
-            }
-
-            $observerFiles = File::files($observersPath);
-            $observers = [];
-
-            foreach ($observerFiles as $observerFile) {
-                if ($observerFile->getExtension() !== 'php') {
+            foreach ($files as $file) {
+                if ($file->getExtension() !== 'php') {
                     continue;
                 }
 
-                $className = $observerFile->getBasename('.php');
+                $className = $file->getBasename('.php');
                 $observerClass = $this->module->getClassNamespace() . '\\Observers\\' . $className;
 
-                if (class_exists($observerClass)) {
-                    $observers[$className] = $observerClass;
-                    $this->log("发现观察者: {$observerClass}");
+                if (! class_exists($observerClass)) {
+                    continue;
                 }
-            }
 
-            // 注册观察者到模型
-            // 观察者命名约定：BlogObserver 对应 Blog 模型
-            foreach ($observers as $observerName => $observerClass) {
-                $modelName = str_replace('Observer', '', $observerName);
+                $modelName = str_replace('Observer', '', $className);
                 $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
 
                 if (class_exists($modelClass)) {
-                    try {
-                        $modelClass::observe($observerClass);
-                        $this->cache["observer.{$modelName}"] = $observerClass;
-                        $this->log("注册观察者: {$observerClass} -> {$modelClass}");
-                    } catch (\Throwable $e) {
-                        $this->log("注册观察者失败: {$observerClass} -> {$modelClass}, 错误: {$e->getMessage()}");
-                    }
+                    $modelClass::observe($observerClass);
+                    $this->cache["observer.{$modelName}"] = $observerClass;
                 }
             }
         } catch (\Throwable $e) {
-            $this->log("发现观察者失败, 错误: {$e->getMessage()}");
+            $this->log("Observer discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 发现并注册策略类
-     *
-     * 扫描 Policies/ 目录，发现所有策略类
-     * 自动注册到 Laravel 的策略系统中
-     *
-     * 策略要求：
-     * - 策略类名格式：{ModelName}Policy
-     * - 实现对应的权限验证方法（如 view, create, update, delete 等）
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  策略类
+    // ========================================================================
+
     protected function discoverPolicies(): void
     {
         if (! $this->shouldDiscover('policies')) {
             return;
         }
 
+        $policiesPath = $this->module->getPath('Policies');
+
+        if (! is_dir($policiesPath)) {
+            return;
+        }
+
         try {
-            $policiesPath = $this->module->getPath('Policies');
+            $files = File::files($policiesPath);
 
-            if (! is_dir($policiesPath)) {
-                return;
-            }
-
-            $policyFiles = File::files($policiesPath);
-            $policies = [];
-
-            foreach ($policyFiles as $policyFile) {
-                if ($policyFile->getExtension() !== 'php') {
+            foreach ($files as $file) {
+                if ($file->getExtension() !== 'php') {
                     continue;
                 }
 
-                $className = $policyFile->getBasename('.php');
+                $className = $file->getBasename('.php');
                 $policyClass = $this->module->getClassNamespace() . '\\Policies\\' . $className;
 
-                if (class_exists($policyClass)) {
-                    $policies[$className] = $policyClass;
-                    $this->log("发现策略: {$policyClass}");
+                if (! class_exists($policyClass)) {
+                    continue;
                 }
-            }
 
-            // 注册策略到 Gate
-            foreach ($policies as $policyName => $policyClass) {
-                $modelName = str_replace('Policy', '', $policyName);
+                $modelName = str_replace('Policy', '', $className);
                 $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
 
                 if (class_exists($modelClass)) {
-                    try {
-                        Gate::policy($modelClass, $policyClass);
-                        $this->cache["policy.{$modelName}"] = $policyClass;
-                        $this->log("注册策略: {$policyClass} -> {$modelClass}");
-                    } catch (\Throwable $e) {
-                        $this->log("注册策略失败: {$policyClass} -> {$modelClass}, 错误: {$e->getMessage()}");
-                    }
+                    Gate::policy($modelClass, $policyClass);
+                    $this->cache["policy.{$modelName}"] = $policyClass;
                 }
             }
         } catch (\Throwable $e) {
-            $this->log("发现策略失败, 错误: {$e->getMessage()}");
+            $this->log("Policy discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 发现并注册仓库类
-     *
-     * 扫描 Repositories/ 目录，发现所有仓库类
-     * 仓库类可用于封装数据访问逻辑
-     *
-     * 仓库要求：
-     * - 继承基类（如果有）或实现接口（如果有）
-     * - 提供数据查询和操作方法
-     *
-     * 注意：仓库类不会自动注册到服务容器
-     * 开发者需要在 ServiceProvider 的 register() 方法中手动注册
-     *
-     * @return void
-     */
+    // ========================================================================
+    //  仓库类
+    // ========================================================================
+
     protected function discoverRepositories(): void
     {
         if (! $this->shouldDiscover('repositories')) {
             return;
         }
 
+        $reposPath = $this->module->getPath('Repositories');
+
+        if (! is_dir($reposPath)) {
+            return;
+        }
+
         try {
-            $repositoriesPath = $this->module->getPath('Repositories');
+            $files = File::files($reposPath);
+            $repos = [];
 
-            if (! is_dir($repositoriesPath)) {
-                return;
-            }
-
-            $repositoryFiles = File::files($repositoriesPath);
-            $repositories = [];
-
-            foreach ($repositoryFiles as $repositoryFile) {
-                if ($repositoryFile->getExtension() !== 'php') {
+            foreach ($files as $file) {
+                if ($file->getExtension() !== 'php') {
                     continue;
                 }
 
-                $className = $repositoryFile->getBasename('.php');
-                $repositoryClass = $this->module->getClassNamespace() . '\\Repositories\\' . $className;
+                $className = $file->getBasename('.php');
+                $repoClass = $this->module->getClassNamespace() . '\\Repositories\\' . $className;
 
-                if (class_exists($repositoryClass)) {
-                    $repositories[$className] = $repositoryClass;
-                    $this->log("发现仓库: {$repositoryClass}");
+                if (class_exists($repoClass)) {
+                    $repos[$className] = $repoClass;
                 }
             }
 
-            // 仓库类不会自动注册，只在缓存中记录
-            $this->cache['repositories'] = $repositories;
+            $this->cache['repositories'] = $repos;
         } catch (\Throwable $e) {
-            $this->log("发现仓库失败, 错误: {$e->getMessage()}");
+            $this->log("Repository discovery error: {$e->getMessage()}");
         }
     }
 
-    /**
-     * 记录日志
-     *
-     * 记录发现过程中的信息
-     * 用于调试和问题追踪
-     *
-     * @param string $message 日志消息
-     * @return void
-     */
-    /**
-     * 记录日志信息
-     *
-     * 记录自动发现过程中的详细日志，用于调试和问题追踪
-     * 日志格式：时间戳 => 消息内容
-     *
-     * @param string $message 日志消息
-     * @return void
-     */
-    protected function log(string $message): void
-    {
-        $timestamp = date('Y-m-d H:i:s');
-        $this->logs[$timestamp] = $message;
-    }
+    // ========================================================================
+    //  辅助方法
+    // ========================================================================
 
-    /**
-     * 判断是否应该发现指定类型的组件
-     *
-     * 根据配置文件中的发现设置判断是否执行发现
-     * 配置路径：config('modules.discovery.{type}')
-     *
-     * @param string $type 发现类型（如：config、routes、views、commands、events等）
-     * @return bool 是否应该发现该类型组件
-     */
     protected function shouldDiscover(string $type): bool
     {
         return config("modules.discovery.{$type}", true);
     }
 
-    /**
-     * 获取发现缓存
-     *
-     * 返回所有已发现的组件缓存数据
-     * 缓存键格式：组件类型.具体标识（如 config.blog、route.web 等）
-     *
-     * @return array<string, mixed> 缓存数据
-     */
-    public function getCache(): array
+    protected function autoDetectControllerNamespace(string $routeFilename): string
     {
-        return $this->cache;
+        $subNamespace = ucfirst($routeFilename);
+        $controllerPath = $this->module->getPath('Http/Controllers/' . $subNamespace);
+
+        return is_dir($controllerPath) ? '\\' . $subNamespace : '';
     }
 
-    /**
-     * 清空发现缓存
-     *
-     * 清空所有已发现的组件缓存
-     * 通常在模块更新或重新加载时调用
-     *
-     * @return void
-     */
-    public function clearCache(): void
-    {
-        $this->cache = [];
-    }
-
-    /**
-     * 获取发现日志
-     *
-     * 返回发现过程中的所有日志记录
-     * 用于调试和问题追踪，查看模块加载的详细过程
-     *
-     * @return array<string, string> 日志记录（时间戳 => 消息）
-     */
-    public function getLogs(): array
-    {
-        return $this->logs;
-    }
-
-    /**
-     * 获取全局命令缓存
-     *
-     * 返回所有模块已发现的命令类名
-     *
-     * @return array<string> 命令类名数组
-     */
-    public static function getGlobalCommands(): array
-    {
-        return self::$globalCommands;
-    }
-
-    /**
-     * 清空全局命令缓存
-     *
-     * @return void
-     */
-    public static function clearGlobalCommands(): void
-    {
-        self::$globalCommands = [];
-    }
-
-    /**
-     * 获取模块的发现摘要
-     *
-     * 返回模块已发现的所有组件的摘要信息
-     * 可用于调试和日志记录
-     *
-     * @return array<string, mixed> 发现摘要
-     */
-    public function getDiscoverySummary(): array
-    {
-        return [
-            'module' => $this->module->getName(),
-            'enabled' => $this->module->isEnabled(),
-            'providers_count' => count(array_filter($this->cache, fn ($k) => str_starts_with($k, 'provider.'), ARRAY_FILTER_USE_KEY)),
-            'configs' => array_keys(array_filter($this->cache, fn ($k) => str_starts_with($k, 'config.'), ARRAY_FILTER_USE_KEY)),
-            'routes' => array_keys(array_filter($this->cache, fn ($k) => str_starts_with($k, 'route.'), ARRAY_FILTER_USE_KEY)),
-            'middlewares' => array_keys(array_filter($this->cache, fn ($k) => str_starts_with($k, 'middleware.'), ARRAY_FILTER_USE_KEY)),
-            'views' => isset($this->cache['view']) ? 'registered' : 'not found',
-            'migrations' => isset($this->cache['migration']) ? 'registered' : 'not found',
-            'translations' => isset($this->cache['translation']) ? 'registered' : 'not found',
-            'commands_count' => is_array($this->cache['commands'] ?? null) ? count($this->cache['commands']) : 0,
-            'events_count' => is_array($this->cache['events'] ?? null) ? count($this->cache['events']) : 0,
-            'observers_count' => count(array_filter($this->cache, fn ($k) => str_starts_with($k, 'observer.'), ARRAY_FILTER_USE_KEY)),
-            'policies_count' => count(array_filter($this->cache, fn ($k) => str_starts_with($k, 'policy.'), ARRAY_FILTER_USE_KEY)),
-            'repositories_count' => is_array($this->cache['repositories'] ?? null) ? count($this->cache['repositories']) : 0,
-            'logs_count' => count($this->logs),
-        ];
-    }
-
-    /**
-     * 查找第一个存在的路径
-     *
-     * @param array $possiblePaths 可能的路径数组
-     * @return string|null 第一个存在的路径，如果都不存在则返回 null
-     */
     protected function findFirstExistingPath(array $possiblePaths): ?string
     {
         foreach ($possiblePaths as $path) {
@@ -1378,6 +780,60 @@ class ModuleAutoDiscovery
                 return $path;
             }
         }
+
         return null;
+    }
+
+    protected function log(string $message): void
+    {
+        $this->logs[date('Y-m-d H:i:s')] = $message;
+    }
+
+    // ========================================================================
+    //  公开方法
+    // ========================================================================
+
+    public function getCache(): array
+    {
+        return $this->cache;
+    }
+
+    public function clearCache(): void
+    {
+        $this->cache = [];
+    }
+
+    public function getLogs(): array
+    {
+        return $this->logs;
+    }
+
+    public static function getGlobalCommands(): array
+    {
+        return self::$globalCommands;
+    }
+
+    public static function clearGlobalCommands(): void
+    {
+        self::$globalCommands = [];
+    }
+
+    public function getDiscoverySummary(): array
+    {
+        return [
+            'module' => $this->module->getName(),
+            'enabled' => $this->module->isEnabled(),
+            'providers' => count(array_filter($this->cache, fn($k) => str_starts_with($k, 'provider.'), ARRAY_FILTER_USE_KEY)),
+            'configs' => array_keys(array_filter($this->cache, fn($k) => str_starts_with($k, 'config.'), ARRAY_FILTER_USE_KEY)),
+            'routes' => array_keys(array_filter($this->cache, fn($k) => str_starts_with($k, 'route.'), ARRAY_FILTER_USE_KEY)),
+            'views' => isset($this->cache['view']),
+            'migrations' => isset($this->cache['migration']),
+            'translations' => isset($this->cache['translation']),
+            'commands' => is_array($this->cache['commands'] ?? null) ? count($this->cache['commands']) : 0,
+            'events' => is_array($this->cache['events'] ?? null) ? count($this->cache['events']) : 0,
+            'observers' => count(array_filter($this->cache, fn($k) => str_starts_with($k, 'observer.'), ARRAY_FILTER_USE_KEY)),
+            'policies' => count(array_filter($this->cache, fn($k) => str_starts_with($k, 'policy.'), ARRAY_FILTER_USE_KEY)),
+            'repositories' => is_array($this->cache['repositories'] ?? null) ? count($this->cache['repositories']) : 0,
+        ];
     }
 }

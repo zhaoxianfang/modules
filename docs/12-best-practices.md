@@ -69,9 +69,14 @@ Policy3
 #### 配置分层
 
 ```php
-// Config/config.php - 模块基础配置
+// Config/blog.php - 模块主配置（元数据入口）
 return [
-    'enable' => true,
+    'enabled' => true,
+    'priority' => 1000,
+    'aliases' => [],
+    'options' => [
+        'posts_per_page' => 15,
+    ],
 ];
 
 // Config/settings.php - 应用设置
@@ -90,10 +95,10 @@ return [
 
 ```php
 // ✅ 推荐：始终提供默认值
-$perPage = module_config('settings.per_page', 10);
+$perPage = module_config('options.posts_per_page', 10);
 
 // ❌ 不推荐：不提供默认值
-$perPage = module_config('settings.per_page');  // 可能返回 null
+$perPage = module_config('options.posts_per_page');  // 可能返回 null
 ```
 
 ### 4. 路由设计
@@ -429,4 +434,4 @@ $value = module_config('settings.key', 'default');
 
 - [Helper 函数](05-helper-functions.md) - Helper 函数的最佳实践
 - [路由指南](07-routes.md) - 路由设计最佳实践
-- [性能优化](13-performance.md) - 性能优化技巧
+- [架构文档](13-architecture.md) - 系统架构与性能优化

@@ -38,7 +38,7 @@ return [
     */
     'enabled' => true,  // 设置为 false 可禁用此模块
 
-    ...
+    // ... 其他配置项如 priority、aliases、providers、options 等
 ];
 ```
 
@@ -105,7 +105,7 @@ php artisan module:make Blog --full
 Modules/
 └── Blog/
     ├── Config/
-    │   └── blog.php
+    │   └── blog.php          # 模块主配置文件（元数据入口）
     ├── Database/
     │   ├── Migrations/
     │   └── Seeders/
@@ -134,7 +134,9 @@ Modules/
 ```
 
 **注意事项：**
-- 配置文件命名为 `blog.php`（小写模块名），可通过 `config('blog.enable')` 访问
+- 配置文件命名为 `blog.php`（小写模块名），可通过 `config('blog.enabled')` 访问启用状态
+- 所有模块元数据（enabled、priority、aliases、providers 等）均在配置文件中管理
+- 不再需要每个模块维护 `composer.json` 文件
 - 服务提供者位于 `Providers/BlogServiceProvider.php`
 - 控制器使用命名空间 `Modules\Blog\Http\Controllers\Web`（Web控制器）、`Modules\Blog\Http\Controllers\Api`（API控制器）等
 

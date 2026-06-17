@@ -1,8 +1,19 @@
 # 配置详解
 
-模块系统的所有配置都在 `config/modules.php` 文件中。本指南将详细介绍每个配置选项。
+本扩展包有两层配置体系：
 
-## 完整配置示例
+| 层级 | 文件位置 | 作用 |
+|------|----------|------|
+| **全局配置** | `config/modules.php` | 控制模块系统的整体行为（命名空间、路径、自动发现等） |
+| **模块配置** | `Modules/{Module}/Config/{lower_name}.php` | 控制单个模块的元数据和自定义设置（启用、优先级、别名等） |
+
+> **v5.0 重要变更**：模块不再使用 `composer.json` 管理元数据，所有模块级配置均在 `Config/` 目录下的 PHP 配置文件中定义。
+
+---
+
+## 一、全局配置 (`config/modules.php`)
+
+### 完整配置示例
 
 ```php
 <?php
@@ -22,17 +33,27 @@ return [
     |--------------------------------------------------------------------------
     | 模块存储路径
     |--------------------------------------------------------------------------
-    | 定义模块存储的基础路径
-    | 所有命令在生成文件时都会基于此路径
+    | 定义模块存储的基础路径。所有命令在生成文件时都会基于此路径。
     |
     */
     'path' => base_path('Modules'),
 
     /*
     |--------------------------------------------------------------------------
+    | 额外扫描路径
+    |--------------------------------------------------------------------------
+    | 除了主路径（path）外，定义额外的模块扫描路径
+    | 适用于多团队协作、第三方模块、微服务架构等场景
+    |
+    */
+    'scan_paths' => [
+        // base_path('vendor/my-organization'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | 模块资源发布路径
     |--------------------------------------------------------------------------
-    | 定义模块静态资源发布到的公共路径
     |
     */
     'assets' => public_path('modules'),
@@ -41,74 +62,35 @@ return [
     |--------------------------------------------------------------------------
     | 文件生成路径配置
     |--------------------------------------------------------------------------
-    | 定义模块内部各组件的相对路径
-    | 可通过修改这些配置自定义模块结构
-    | 所有路径相对于模块根目录
+    | 定义模块内部各组件的相对路径。可通过修改这些配置自定义模块结构。
     |
     */
     'paths' => [
-        /*
-        |--------------------------------------------------------------------------
-        | 迁移文件路径
-        |--------------------------------------------------------------------------
-        | 定义模块迁移文件在模块内的存储路径
-        |
-        */
         'migration' => 'Database/Migrations',
 
-        /*
-        |--------------------------------------------------------------------------
-        | 代码生成器路径配置
-        |--------------------------------------------------------------------------
-        | 定义各类代码生成的目标路径: 根据 generate 决定是否创建文件或目录
-        |
-        */
         'generator' => [
-            // 服务提供者
             'provider' => ['path' => 'Providers', 'generate' => true],
-            // 配置文件
             'config' => ['path' => 'Config', 'generate' => true],
-            // 路由文件
             'route' => ['path' => 'Routes', 'generate' => true],
-            // 控制器
             'controller' => ['path' => 'Http/Controllers', 'generate' => true],
-            // Web控制器子目录
             'controller.web' => ['path' => 'Http/Controllers/Web', 'generate' => true],
-            // API控制器子目录
             'controller.api' => ['path' => 'Http/Controllers/Api', 'generate' => true],
-            // Admin控制器子目录
             'controller.admin' => ['path' => 'Http/Controllers/Admin', 'generate' => false],
-            // 模型
             'model' => ['path' => 'Models', 'generate' => true],
-            // 模型观察者
             'observer' => ['path' => 'Observers', 'generate' => false],
-            // 策略类
             'policy' => ['path' => 'Policies', 'generate' => false],
-            // 仓库类
             'repository' => ['path' => 'Repositories', 'generate' => false],
-            // 表单验证请求
             'request' => ['path' => 'Http/Requests', 'generate' => false],
-            // API 资源转换器
             'resource' => ['path' => 'Http/Resources', 'generate' => true],
-            // 中间件
             'middleware' => ['path' => 'Http/Middleware', 'generate' => false],
-            // 控制台命令
             'command' => ['path' => 'Console/Commands', 'generate' => false],
-            // 事件
             'event' => ['path' => 'Events', 'generate' => false],
-            // 事件监听器
             'listener' => ['path' => 'Listeners', 'generate' => false],
-            // 数据库迁移[注：示例迁移]
             'migration' => ['path' => 'Database/Migrations', 'generate' => false],
-            // 数据填充器
             'seeder' => ['path' => 'Database/Seeders', 'generate' => true],
-            // 视图文件
             'views' => ['path' => 'Resources/views', 'generate' => true],
-            // 语言文件
             'lang' => ['path' => 'Resources/lang', 'generate' => false],
-            // 测试文件
             'test' => ['path' => 'Tests', 'generate' => false],
-            // 资源文件
             'assets' => ['path' => 'Resources/assets', 'generate' => false],
         ],
     ],
@@ -117,41 +99,23 @@ return [
     |--------------------------------------------------------------------------
     | 路由中间件组
     |--------------------------------------------------------------------------
-    | 定义不同路由文件自动加载的中间件组
-    | 键为路由文件名（不含扩展名），值为中间件组名称数组
-    |
-    | 示例:
-    | - 'web' => ['web'] 表示 web.php 路由将自动应用 web 中间件组
-    | - 'api' => ['api'] 表示 api.php 路由将自动应用 api 中间件组
-    | - 'mobile' => ['mobile'] 表示 mobile.php 路由将自动应用 mobile 中间件组
-    |
-    | 支持任意自定义路由类型，不再限制于 web/api/admin
-    | 可以根据项目需求添加更多路由类型和对应的中间件组
+    | 定义不同路由文件自动加载的中间件组。支持任意自定义路由类型。
     |
     */
     'middleware_groups' => [
         'web' => ['web'],
         'api' => ['api'],
-        // 'admin' => ['web', 'admin'], // 需要自定义实现 admin 中间件
         'admin' => ['web'],
-        // 可以添加更多自定义路由类型
-        // 'mobile' => ['mobile'],
-        // 'miniapp' => ['auth:miniapp'],
     ],
 
     /*
     |--------------------------------------------------------------------------
     | 路由配置
     |--------------------------------------------------------------------------
-    | 路由加载相关配置
-    |
     */
     'routes' => [
-        // 是否自动添加模块前缀到路由
         'prefix' => true,
-        // 是否自动添加模块名称到路由名称
         'name_prefix' => true,
-        // 默认路由文件列表 eg: ['web', 'api', admin],
         'default_files' => ['web', 'api'],
     ],
 
@@ -159,29 +123,19 @@ return [
     |--------------------------------------------------------------------------
     | 视图配置
     |--------------------------------------------------------------------------
-    | 视图加载和命名空间配置
-    |
     */
     'views' => [
-        // 是否自动注册视图命名空间
         'enabled' => true,
-        // 视图命名空间格式: 模块小写名称
-        // 例如: blog 模块的视图使用 blog::view.name
-        'namespace_format' => 'lower',
-        // 可选值: 'lower' (blog), 'studly' (Blog), 'camel' (blogModule)
+        'namespace_format' => 'lower', // lower | studly | camel
     ],
 
     /*
     |--------------------------------------------------------------------------
     | 翻译文件配置
     |--------------------------------------------------------------------------
-    | 语言文件加载配置
-    |
     */
     'translations' => [
-        // 是否自动注册翻译命名空间
         'enabled' => true,
-        // 翻译文件路径
         'path' => 'Resources/lang',
     ],
 
@@ -189,9 +143,6 @@ return [
     |--------------------------------------------------------------------------
     | 自动发现配置
     |--------------------------------------------------------------------------
-    | 定义需要自动发现的模块组件
-    | 设置为 false 可禁用特定组件的自动加载
-    |
     */
     'discovery' => [
         'routes' => true,
@@ -208,15 +159,10 @@ return [
     |--------------------------------------------------------------------------
     | 模块缓存配置
     |--------------------------------------------------------------------------
-    | 模块信息缓存相关配置
-    |
     */
     'cache' => [
-        // 是否启用模块缓存
         'enabled' => false,
-        // 缓存键名
         'key' => 'modules',
-        // 缓存时间（秒），0 表示永久
         'ttl' => 0,
     ],
 
@@ -224,13 +170,9 @@ return [
     |--------------------------------------------------------------------------
     | 模块注册配置
     |--------------------------------------------------------------------------
-    | 定义模块服务提供者的自动注册方式
-    |
     */
     'register' => [
-        // 是否自动注册模块服务提供者
         'providers' => true,
-        // 服务提供者文件名模式
         'provider_pattern' => '{Module}ServiceProvider',
     ],
 
@@ -238,13 +180,9 @@ return [
     |--------------------------------------------------------------------------
     | 模块命令配置
     |--------------------------------------------------------------------------
-    | 定义模块命令的自动注册方式
-    |
     */
     'commands' => [
-        // 是否自动注册命令
         'enabled' => true,
-        // 命令文件路径
         'path' => 'Console/Commands',
     ],
 
@@ -252,13 +190,9 @@ return [
     |--------------------------------------------------------------------------
     | 模块迁移配置
     |--------------------------------------------------------------------------
-    | 模块迁移相关配置
-    |
     */
     'migrations' => [
-        // 迁移文件前缀
         'prefix' => '',
-        // 迁移表前缀
         'table_prefix' => '',
     ],
 
@@ -266,13 +200,9 @@ return [
     |--------------------------------------------------------------------------
     | 模块仓库配置
     |--------------------------------------------------------------------------
-    | 模块仓库行为配置
-    |
     */
     'repository' => [
-        // 缓存模块列表
         'cache' => false,
-        // 缓存时间（秒）
         'cache_ttl' => 3600,
     ],
 ];
@@ -324,378 +254,269 @@ App\Modules\Blog\Http\Controllers\Web\PostController
 'path' => base_path('app/Modules'),
 ```
 
-### scan.paths
+### scan_paths
 
 **类型**：`array`  
-**默认值**：`[base_path('Modules')]`  
-**说明**：定义需要扫描的模块目录（支持多个路径）
+**默认值**：`[]`  
+**说明**：定义额外的模块扫描路径（主路径通过 `path` 配置）
 
 ```php
-'scan' => [
-    'paths' => [
-        base_path('Modules'),
-        base_path('CustomModules'),
-        base_path('packages/Modules'),
-    ],
+'scan_paths' => [
+    base_path('vendor/my-organization'),
+    base_path('CustomModules'),
 ],
 ```
 
-**影响**：
-- 模块系统会扫描所有指定的目录
-- 支持在不同位置存放模块
-- 方便模块包管理
-
 **使用场景**：
-```php
-// 开发时：主模块 + 自定义模块
-'paths' => [
-    base_path('Modules'),        // 主应用模块
-    base_path('CustomModules'),  // 自定义模块
-];
+- 多目录模块管理（主应用模块 + 第三方模块 + 自定义模块）
+- 模块包独立存储
+- 多团队协作
 
-// 生产时：主模块 + 第三方模块
-'paths' => [
-    base_path('Modules'),           // 主应用模块
-    base_path('vendor-modules'),    // 第三方模块
-];
-```
-
-### assets
-
-**类型**：`string`  
-**默认值**：`public_path('modules')`  
-**说明**：定义模块静态资源的发布路径
-
-```php
-'assets' => public_path('modules'),
-```
-
-**影响**：
-- `module_asset()` 函数的资源 URL 生成
-- 资源发布的目标目录
-
-**示例**：
-```php
-// 自定义资源路径
-'assets' => public_path('assets/modules'),
-
-// 使用 helper 函数生成资源 URL
-$url = module_asset('css/style.css');
-// 返回: /assets/modules/blog/css/style.css
-```
+**注意**：主模块路径通过 `path` 配置，`scan_paths` 仅定义额外路径。所有路径下的模块会合并到同一个仓库中。
 
 ### middleware_groups
 
 **类型**：`array`  
-**默认值**：见下  
 **说明**：为不同类型的路由定义中间件组
 
 ```php
 'middleware_groups' => [
     'web' => ['web'],
     'api' => ['api'],
-    'admin' => ['web', 'admin', 'auth'],
+    'admin' => ['web', 'admin'],
 ],
 ```
+- 键名对应 `Routes/` 下的路由文件名（不含 `.php` 扩展名）
+- 支持任意自定义路由类型
 
-**影响**：
-- 路由文件加载时应用的中间件
-- 不同类型路由的安全级别
-- 路由的认证和授权
+---
 
-**示例**：
-```php
-'middleware_groups' => [
-    'web' => ['web', 'csrf'],
-    'api' => ['api', 'throttle:60,1'],
-    'admin' => ['web', 'admin', 'auth', 'verified'],
-],
+## 二、模块配置文件 (`Config/{lower_name}.php`)
+
+> **v5.0 起**：每个模块通过 `Config/` 目录下的 PHP 文件管理自身元数据和配置，**不再需要每个模块维护 `composer.json` 文件**。
+
+### 配置文件定位规则
+
+模块系统按以下优先级查找配置文件：
+
+1. **`Config/{lower_name}.php`**（推荐，自动加载为模块主配置）
+2. **`Config/config.php`**（回退方案，向后兼容）
+
+以 `Blog` 模块为例，系统会依次查找：
+```
+Modules/Blog/Config/blog.php   ← 优先
+Modules/Blog/Config/config.php ← 回退
 ```
 
-### route_controller_namespaces
+### 内置元数据键
 
-**类型**：`array`  
-**默认值**：见下  
-**说明**：定义路由到控制器的命名空间映射
+配置文件支持以下内置键，系统会自动读取并应用：
 
-```php
-'route_controller_namespaces' => [
-    'web' => 'Http\Controllers\Web',
-    'api' => 'Http\Controllers\Api',
-    'admin' => 'Http\Controllers\Admin',
-],
-```
+| 键 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `enabled` | `bool` | `true` | 是否启用该模块 |
+| `priority` | `int` | `1000` | 加载优先级，数字越小越先加载 |
+| `name` | `string` | 模块名 | 模块显示名称 |
+| `version` | `string` | `1.0.0` | 版本号 |
+| `description` | `string` | 空 | 模块描述 |
+| `author` | `string` | 空 | 作者信息 |
+| `aliases` | `array` | `[]` | 模块名称别名（可通过别名查找模块） |
+| `providers` | `array` | `[]` | 额外需要注册的 Laravel 服务提供者类名列表 |
+| `laravel_aliases` | `array` | `[]` | 额外需要注册的 Laravel 门面别名 |
+| `options` | `array` | `[]` | 模块自定义配置项 |
 
-**影响**：
-- 路由文件加载时的控制器命名空间
-- 路由到控制器的自动映射
-
-**示例**：
-```php
-// 自定义控制器命名空间
-'route_controller_namespaces' => [
-    'web' => 'Http\Controllers\Web',
-    'api' => 'Http\Controllers\Api',
-    'admin' => 'Http\Controllers\Admin',
-    'mobile' => 'Http\Controllers\Mobile',
-],
-```
-
-### routes
-
-**类型**：`array`  
-**默认值**：见下  
-**说明**：定义路由的前缀和命名空间格式
-
-```php
-'routes' => [
-    'prefix' => true,          // 是否自动添加路由前缀
-    'name_prefix' => true,    // 是否自动添加路由名称前缀
-],
-```
-
-**影响**：
-- 路由 URL 的格式
-- 路由名称的格式
-
-**示例**：
-```php
-// 完全自定义路由格式
-'routes' => [
-    'prefix' => true,          // 启用前缀: /blog/posts
-    'name_prefix' => true,    // 启用名称前缀: blog.posts.index
-],
-```
-
-### views.namespace_format
-
-**类型**：`string`  
-**默认值**：`'lower'`  
-**可选值**：`'lower' | 'studly' | 'camel'`  
-**说明**：定义视图命名空间的格式
-
-```php
-'views' => [
-    'namespace_format' => 'lower',  // lower, studly, camel
-],
-```
-
-**影响**：
-- 视图命名空间的格式
-- `module_view()` 函数的使用
-
-**示例**：
-```php
-// lower (默认)
-'namespace_format' => 'lower',
-// 视图: blog::post.index
-
-// studly
-'namespace_format' => 'studly',
-// 视图: Blog::post.index
-
-// camel
-'namespace_format' => 'camel',
-// 视图: blogModule::post.index
-```
-
-### discovery
-
-**类型**：`array`  
-**默认值**：见下  
-**说明**：控制模块组件的自动发现
-
-```php
-'discovery' => [
-    'providers' => true,   // 自动发现服务提供者
-    'routes' => true,      // 自动发现路由文件
-    'commands' => true,    // 自动发现命令
-    'migrations' => true, // 自动发现迁移文件
-    'views' => true,       // 自动发现视图
-    'translations' => true,// 自动发现翻译文件
-],
-```
-
-**影响**：
-- 模块组件的自动加载
-- 性能优化（禁用不需要的自动发现）
-
-**示例**：
-```php
-// 性能优化：只启用需要的自动发现
-'discovery' => [
-    'providers' => true,   // 必需
-    'routes' => true,      // 必需
-    'commands' => false,   // 禁用，手动注册
-    'migrations' => true,  // 必需
-    'views' => true,       // 必需
-    'translations' => false,// 禁用，不使用
-],
-```
-
-### cache
-
-**类型**：`array`  
-**默认值**：见下  
-**说明**：控制模块缓存行为
-
-```php
-'cache' => [
-    'enabled' => env('MODULES_CACHE_ENABLED', false),
-    'ttl' => 3600,  // 缓存时间（秒）
-],
-```
-
-**影响**：
-- 模块信息的缓存
-- 性能提升
-
-**示例**：
-```php
-// 生产环境启用缓存
-'cache' => [
-    'enabled' => env('MODULES_CACHE_ENABLED', env('APP_ENV') === 'production'),
-    'ttl' => 3600,
-],
-```
-
-### stubs
-
-**类型**：`array`  
-**默认值**：见下  
-**说明**：定义代码生成模板的位置
-
-```php
-'stubs' => [
-    'enabled' => false,
-    'path' => base_path('stubs/modules'),
-],
-```
-
-**影响**：
-- 代码生成命令使用的模板
-- 自定义代码生成逻辑
-
-**示例**：
-```php
-// 启用自定义模板
-'stubs' => [
-    'enabled' => true,
-    'path' => base_path('resources/stubs/modules'),
-],
-```
-
-## 模块配置文件
-
-### config.php
-
-每个模块的 `Config/config.php` 文件控制模块的启用状态：
+### 完整配置文件示例
 
 ```php
 <?php
+// Modules/Blog/Config/blog.php
+
+/**
+ * Blog 模块配置文件
+ *
+ * 此文件是模块的入口配置，所有模块元数据和核心设置均在此定义。
+ * 不需要额外的 composer.json 或其他 JSON 文件来管理模块。
+ */
 
 return [
     /*
     |--------------------------------------------------------------------------
     | 模块启用状态
     |--------------------------------------------------------------------------
-    |
-    | 控制模块是否启用
-    | 设置为 false 可禁用模块，禁用后模块将不会加载
-    |
+    | 是否启用该模块。设为 false 可禁用模块的所有功能。
     */
-    'enable' => true,
+    'enabled' => true,
 
     /*
     |--------------------------------------------------------------------------
-    | 模块配置
+    | 模块加载优先级
     |--------------------------------------------------------------------------
-    |
-    | 模块的自定义配置项
-    |
+    | 数字越小，模块越先加载。相同优先级按模块名称字母序排列。
     */
-    'config' => [
-        'option' => 'value',
+    'priority' => 1000,
+
+    /*
+    |--------------------------------------------------------------------------
+    | 模块显示名称
+    |--------------------------------------------------------------------------
+    */
+    'name' => 'Blog',
+
+    /*
+    |--------------------------------------------------------------------------
+    | 模块版本
+    |--------------------------------------------------------------------------
+    */
+    'version' => '1.0.0',
+
+    /*
+    |--------------------------------------------------------------------------
+    | 模块描述
+    |--------------------------------------------------------------------------
+    */
+    'description' => '博客管理模块',
+
+    /*
+    |--------------------------------------------------------------------------
+    | 模块作者
+    |--------------------------------------------------------------------------
+    */
+    'author' => 'Your Name',
+
+    /*
+    |--------------------------------------------------------------------------
+    | 模块别名
+    |--------------------------------------------------------------------------
+    | 模块名称的别名列表，可通过别名查找模块。
+    | 例如：设置 ['blogs', 'blog-manager'] 后，
+    | module('blogs') 和 module('blog-manager') 都能找到该模块。
+    */
+    'aliases' => [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 额外 Laravel 服务提供者
+    |--------------------------------------------------------------------------
+    | 模块内需要额外注册的 Laravel 服务提供者类名列表。
+    | 注意：主服务提供者（Providers/{Module}ServiceProvider.php）会被自动发现，
+    | 此处仅列出第三方或次要的服务提供者。
+    */
+    'providers' => [
+        // \Modules\Blog\Providers\EventServiceProvider::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 额外 Laravel 门面别名
+    |--------------------------------------------------------------------------
+    | 格式：'别名' => '完整类名'
+    */
+    'laravel_aliases' => [
+        // 'BlogHelper' => \Modules\Blog\Facades\BlogHelper::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | 模块自定义配置
+    |--------------------------------------------------------------------------
+    | 使用以下方式访问：
+    | - module_config('options.posts_per_page', 15)
+    | - module('Blog')->config('options.posts_per_page', 15)
+    */
+    'options' => [
+        'posts_per_page' => 15,
+        'enable_comments' => true,
+        'cache_ttl' => 3600,
     ],
 ];
 ```
 
+### enabled 优先级规则
+
+模块启用状态按以下优先级判定（高到低）：
+
+1. 构造函数的 `enabled` 选项（最高优先级，代码显式传入）
+2. 配置文件的 `enabled` 键
+3. 默认启用（`true`）
+
+```php
+// 示例：构造函数禁用（即使配置文件 enabled=true）
+$module = new Module('Blog', '/path', 'Modules', ['enabled' => false]);
+$module->isEnabled(); // false
+```
+
 ### 自定义配置文件
 
-可以在 `Config` 目录下创建任意数量的自定义配置文件：
+除了主配置文件，你可以在 `Config/` 目录下创建任意数量的自定义配置文件：
 
 ```php
 // Config/settings.php
-<?php
-
 return [
     'per_page' => 20,
     'enable_comments' => true,
-    'enable_likes' => true,
 ];
-```
 
-```php
 // Config/api.php
-<?php
-
 return [
     'timeout' => 30,
     'retries' => 3,
 ];
 ```
 
-## 配置读取
+---
+
+## 三、配置读取方式
 
 ### 方式 1：使用 module_config()（推荐）
 
 ```php
 // 读取当前模块的配置
-$perPage = module_config('settings.per_page', 10);
-$enableComments = module_config('settings.enable_comments', false);
-```
+$perPage = module_config('options.posts_per_page', 15);
 
-### 方式 2：使用 module_config() 指定模块
-
-```php
 // 读取指定模块的配置
-$perPage = module_config('settings.per_page', 10, 'Blog');
+$perPage = module_config('options.posts_per_page', 10, 'Blog');
 ```
 
-### 方式 3：使用 Laravel config() 函数
+### 方式 2：使用 Laravel config() 函数
 
 ```php
-// 读取配置（需要知道完整的配置键）
-$perPage = config('blog.settings.per_page', 10);
+// 配置发布后可通过 config() 访问
+$perPage = config('blog.options.posts_per_page', 10);
 ```
 
-### 方式 4：使用模块实例
+### 方式 3：使用模块实例
 
 ```php
-// 获取模块实例并读取配置
 $module = module('Blog');
-$perPage = $module->config('settings.per_page', 10);
+$enabled = $module->isEnabled();
+$priority = $module->getPriority();
+$perPage = $module->config('options.posts_per_page', 15);
 ```
 
-## 配置最佳实践
-
-### 1. 配置分层
+### 方式 4：使用 module_get_config()
 
 ```php
-// Config/config.php - 模块基础配置
-return [
-    'enable' => true,
-];
+// 获取整个配置数组
+$config = module_get_config('Blog');
+$config = module_get_config('settings'); // 当前模块
+```
 
-// Config/settings.php - 应用设置
-return [
-    'per_page' => 20,
-];
+---
 
-// Config/features.php - 功能开关
+## 四、配置最佳实践
+
+### 1. 模块配置集中管理
+
+```php
+// Config/blog.php - 模块唯一入口配置
 return [
-    'comments' => true,
-    'likes' => true,
+    'enabled' => true,
+    'priority' => 1000,
+    'description' => '博客管理模块',
+    'options' => [
+        'posts_per_page' => 15,
+        'enable_comments' => true,
+    ],
 ];
 ```
 
@@ -703,40 +524,97 @@ return [
 
 ```php
 // ✅ 推荐
-$perPage = module_config('settings.per_page', 10);
+$perPage = module_config('options.posts_per_page', 10);
 
 // ❌ 不推荐
-$perPage = module_config('settings.per_page');
+$perPage = module_config('options.posts_per_page');
 ```
 
-### 3. 使用嵌套配置
+### 3. 使用环境变量
 
 ```php
-// Config/api.php
+// Config/blog.php
 return [
-    'timeout' => 30,
-    'cache' => [
-        'enabled' => true,
-        'ttl' => 3600,
+    'enabled' => env('BLOG_ENABLED', true),
+    'options' => [
+        'debug' => env('BLOG_DEBUG', false),
+        'api_key' => env('BLOG_API_KEY'),
     ],
 ];
-
-// 读取嵌套配置
-$cacheEnabled = module_config('api.cache.enabled', false);
 ```
 
-### 4. 环境变量
+### 4. 利用 priority 控制加载顺序
 
 ```php
-// Config/settings.php
+// Config/blog.php - 优先加载
 return [
-    'debug' => env('BLOG_DEBUG', false),
-    'api_key' => env('BLOG_API_KEY'),
+    'priority' => 100,  // 最先加载
+];
+
+// Config/shop.php - 依赖 Blog 模块
+return [
+    'priority' => 200,  // 在 Blog 之后加载
 ];
 ```
+
+### 5. 使用别名简化访问
+
+```php
+// Config/blog.php
+return [
+    'aliases' => ['blogs', 'blog-manager'],
+];
+
+// 在代码中
+module('blogs')->isEnabled();  // ≡ module('Blog')->isEnabled()
+```
+
+---
+
+## 五、v5.0 迁移指南
+
+### 从旧版升级
+
+如果你之前使用 `composer.json` 管理模块元数据，请按以下步骤迁移：
+
+**旧方式（composer.json）**：
+```json
+{
+    "extra": {
+        "modules": {
+            "priority": 100,
+            "aliases": ["blog-manager"]
+        },
+        "laravel": {
+            "providers": ["Modules\\Blog\\Providers\\EventProvider"],
+            "aliases": {"BlogHelper": "Modules\\Blog\\Facades\\BlogHelper"}
+        }
+    }
+}
+```
+
+**新方式（Config/blog.php）**：
+```php
+return [
+    'enabled' => true,
+    'priority' => 100,
+    'aliases' => ['blog-manager'],
+    'providers' => ['Modules\\Blog\\Providers\\EventProvider'],
+    'laravel_aliases' => ['BlogHelper' => 'Modules\\Blog\\Facades\\BlogHelper'],
+    'options' => [
+        // 自定义配置
+    ],
+];
+```
+
+### 兼容性说明
+
+- `getComposerData()` 方法仍存在但始终返回 `null`（标记为 `@deprecated`）
+- `enable` 键已更名为 `enabled`（旧键不再支持）
+- `config` 配置键已更名为 `options`（语义更清晰）
 
 ## 相关文档
 
 - [Helper 函数](05-helper-functions.md) - 了解配置读取的更多方法
-- [智能模块检测](06-intelligent-detection.md) - 学习自动检测当前模块
+- [模块结构](03-module-structure.md) - 模块目录结构说明
 - [最佳实践](12-best-practices.md) - 配置的最佳实践

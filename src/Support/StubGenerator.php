@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\File;
@@ -99,9 +101,9 @@ class StubGenerator
     /**
      * 创建新实例
      *
-     * @param string $moduleName 模块名称
+     * @param string      $moduleName 模块名称或 ModuleInterface 实例
      * @param string|null $modulePath 模块路径（可选，默认从配置读取）
-     * @param string|null $namespace 模块命名空间（可选，默认从配置读取）
+     * @param string|null $namespace  模块命名空间（可选，默认从配置读取）
      */
     public function __construct(
         string $moduleName,
@@ -111,7 +113,12 @@ class StubGenerator
         $this->moduleName = Str::studly($moduleName);
         $this->modulePath = $modulePath ?? config('modules.path', base_path('Modules')) . '/' . $this->moduleName;
         $this->namespace = $namespace ?? config('modules.namespace', 'Modules');
-        $this->stubPath = __DIR__ . '/../Commands/stubs';
+
+        // 支持自定义 stub 路径
+        $customStubPath = config('modules.stubs.path', resource_path('stubs/modules'));
+        $defaultStubPath = __DIR__ . '/../Commands/stubs';
+
+        $this->stubPath = is_dir($customStubPath) ? $customStubPath : $defaultStubPath;
 
         // 初始化默认替换变量
         $this->setReplacements();

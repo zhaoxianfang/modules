@@ -126,17 +126,25 @@ route('admin.blog.index') // Admin 路由
 
 ## 🔧 配置说明
 
-模块配置文件位于：`config/modules.php`
+模块配置文件位于各模块的 `Config/` 目录中：
+- 主配置文件：`Modules/<模块名>/Config/<小写模块名>.php` 或 `Config/config.php`
 
-主要配置项：
-- `namespace`: 模块命名空间（默认：Modules）
-- `path`: 模块存储路径（默认：base_path('Modules')）
-- `assets`: 资源发布路径（默认：public_path('modules')）
-- `middleware_groups`: 路由中间件组配置
-- `discovery`: 自动发现配置
-- `cache`: 模块缓存配置
+模块配置文件中包含以下内置键：
 
-详细配置说明请参考：[配置详解](../vendor/zxf/modules/docs/04-configuration.md)
+| 键 | 类型 | 说明 |
+|---|---|---|
+| `enabled` | bool | 是否启用该模块 |
+| `priority` | int | 加载优先级（数字越小越先加载，默认 1000） |
+| `name` | string | 显示名称 |
+| `version` | string | 版本号 |
+| `description` | string | 模块描述 |
+| `author` | string | 作者 |
+| `aliases` | array | 模块名称别名 |
+| `providers` | array | 额外需要注册的 Laravel 服务提供者 |
+| `laravel_aliases` | array | 额外需要注册的 Laravel 门面别名 |
+| `options` | array | 自定义配置项 |
+
+> 不再需要每个模块维护 composer.json 或其他 JSON 文件。
 
 
 ## 📚 模块结构示例
@@ -145,8 +153,8 @@ route('admin.blog.index') // Admin 路由
 
 ```
 Modules/Blog/
-├── Config/                    # 配置文件
-│   └── blog.php
+├── Config/                    # 配置文件（替代 composer.json 管理模块元数据）
+│   └── config.php
 ├── Console/Commands/          # 控制台命令
 │   └── BlogCommand.php
 ├── Database/                 # 数据库相关
@@ -223,8 +231,8 @@ Modules/Blog/
 
 ## 📝 版本信息
 
-- **当前版本**：1.0
-- **Laravel 版本要求**：11.0+
+- **当前版本**：5.0
+- **Laravel 版本要求**：11.0+ / 12.0+ / 13.0+
 - **PHP 版本要求**：8.2+
 
 ## 💬 获取帮助

@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules;
 
 use Composer\InstalledVersions;
-use Illuminate\Foundation\Console\AboutCommand;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\ServiceProvider;
 use zxf\Modules\BuilderQuery\MacrosBuilder;
 use zxf\Modules\Contracts\RepositoryInterface;
@@ -12,95 +14,84 @@ use zxf\Modules\Support\ModuleLoader;
 /**
  * 模块系统服务提供者
  *
- * 为 Laravel 11+ / 12+ / 13+ 优化的模块化系统服务提供者
- * 已移除 Laravel 11 中废弃的 $defer 属性，采用更现代的延迟加载机制
+ * 为 Laravel 11+ / 12+ / 13+ 优化的模块化系统服务提供者。
+ *
+ * 设计原则：
+ * - 最小化 Laravel 框架依赖，使用 illuminate/contracts 而非完整框架
+ * - 延迟加载非必要服务
+ * - 自动发现和注册模块组件
+ * - 支持 Laravel 13 的 Agentic Development 特性
  *
  * @package zxf\Modules
- * @version 3.0.0
- * @since Laravel 11+
+ * @version 4.0.0
  */
 class ModulesServiceProvider extends ServiceProvider
 {
     /**
-     * 注册任何应用程序服务
-     *
-     * Laravel 11+ 已移除 $defer 属性，通过 provides() 方法实现延迟加载
+     * 注册服务
      */
     public function register(): void
     {
         $this->registerRepository();
         $this->registerModuleLoader();
-        $this->mergeConfig();
+        $this->mergeModuleConfig();
 
-        // 注册 whereHasIn 的几个查询方式来替换 whereHas 查询全表扫描的问题
-        MacrosBuilder::register($this);
-    }
-
-    /**
-     * 引导任何应用程序服务。
-     */
-    public function boot(): void
-    {
-        $this->publishConfig();
-        $this->registerCommands();
-        
-        // 先加载模块以发现所有命令
-        $this->loadModules();
-
-        // 注册视图命名空间
-        $this->registerViewNamespace();
-        
-        // 在加载模块后，注册模块中的命令
-        $this->registerModuleCommands();
-
-        // 把 zxf/modules 添加到 about 命令中
-        AboutCommand::add('Extend', [
-            'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules'),
-        ]);
-    }
-
-    /**
-     * 注册视图命名空间
-     *
-     * 注册 'modules' 命名空间，使得可以使用 modules:: 前缀访问扩展包的视图
-     *
-     * @return void
-     */
-    private function registerViewNamespace(): void
-    {
-        try {
-            $viewPath = __DIR__ . '/../resources/views';
-
-            // 验证视图目录是否存在
-            if (!is_dir($viewPath)) {
-                return;
-            }
-
-            // 使用 loadViewsFrom 注册命名空间
-            $this->loadViewsFrom($viewPath, 'modules');
-
-            // 如果应用视图目录中存在自定义视图，则优先使用
-            $customViewPath = resource_path('views/vendor/modules');
-            if (is_dir($customViewPath)) {
-                // 确保视图工厂已绑定
-                if ($this->app->bound('view')) {
-                    $this->app->make('view')->prependNamespace('modules', $customViewPath);
-                }
-            }
-        } catch (\Throwable $e) {
-            // 记录错误但不中断应用启动
+        // 注册 Eloquent Builder 查询宏（whereHasIn 等）
+        if ($this->app->bound('db')) {
+            MacrosBuilder::register($this);
         }
     }
 
     /**
-     * 注册模块仓库
+     * 引导服务
      *
-     * @return void
+     * 注意：由于模块的加载必须在服务提供者注册后立刻执行
+     * （路由、视图、翻译等都需要在请求处理前完成），
+     * 因此本提供者不支持延迟加载，boot() 会立即执行。
+     */
+    public function boot(): void
+    {
+        // 发布配置
+        $this->publishConfig();
+
+        // 注册本包的 Artisan 命令
+        $this->registerPackageCommands();
+
+        // 加载所有模块（必须在 boot 阶段完成，不可延迟）
+        $this->loadModules();
+
+        // 注册模块视图命名空间
+        $this->registerViewNamespace();
+
+        // 注册模块中的命令
+        $this->registerModuleCommands();
+
+        // 注册 about 命令信息
+        $this->registerAboutInfo();
+    }
+
+    /**
+     * 注册模块仓库
      */
     protected function registerRepository(): void
     {
-        $this->app->singleton(RepositoryInterface::class, function ($app) {
-            return new Repository($app['files']);
+        $this->app->singleton(RepositoryInterface::class, function (Application $app) {
+            // 收集所有扫描路径
+            $paths = [config('modules.path', base_path('Modules'))];
+
+            $extraPaths = config('modules.scan_paths', []);
+            if (is_array($extraPaths)) {
+                $paths = array_merge($paths, $extraPaths);
+            }
+
+            // 过滤无效路径
+            $paths = array_filter($paths, fn($p) => is_string($p) && $p !== '');
+
+            return new Repository(
+                $app['files'],
+                $paths,
+                config('modules.namespace', 'Modules')
+            );
         });
 
         $this->app->alias(RepositoryInterface::class, 'modules');
@@ -108,12 +99,10 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 注册模块加载器
-     *
-     * @return void
      */
     protected function registerModuleLoader(): void
     {
-        $this->app->singleton(ModuleLoader::class, function ($app) {
+        $this->app->singleton(ModuleLoader::class, function (Application $app) {
             return new ModuleLoader(
                 $app->make(RepositoryInterface::class),
                 $app
@@ -122,84 +111,83 @@ class ModulesServiceProvider extends ServiceProvider
     }
 
     /**
-     * 合并配置
-     *
-     * @return void
+     * 合并模块配置
      */
-    protected function mergeConfig(): void
+    protected function mergeModuleConfig(): void
     {
-        $this->mergeConfigFrom(
-            __DIR__ . '/../config/modules.php',
-            'modules'
-        );
+        $configPath = __DIR__ . '/../config/modules.php';
+
+        if (file_exists($configPath)) {
+            $this->mergeConfigFrom($configPath, 'modules');
+        }
     }
 
     /**
      * 发布配置文件
-     *
-     * @return void
      */
     protected function publishConfig(): void
     {
         $this->publishes([
             __DIR__ . '/../config/modules.php' => config_path('modules.php'),
         ], 'modules-config');
+
+        // 发布 stub 文件
+        $this->publishes([
+            __DIR__ . '/Commands/stubs' => resource_path('stubs/modules'),
+        ], 'modules-stubs');
     }
 
     /**
-     * 注册命令
-     *
-     * @return void
+     * 注册扩展包自身命令
      */
-    protected function registerCommands(): void
+    protected function registerPackageCommands(): void
     {
-        if ($this->app->runningInConsole()) {
-            $this->commands([
-                Commands\ModuleMakeCommand::class,
-                Commands\ModuleListCommand::class,
-                Commands\ModuleDeleteCommand::class,
-                Commands\ModuleInfoCommand::class,
-                Commands\ModuleValidateCommand::class,
-                Commands\ModuleDebugCommandsCommand::class,
-                Commands\ControllerMakeCommand::class,
-                Commands\ModelMakeCommand::class,
-                Commands\MigrationMakeCommand::class,
-                Commands\RequestMakeCommand::class,
-                Commands\SeederMakeCommand::class,
-                Commands\ProviderMakeCommand::class,
-                Commands\CommandMakeCommand::class,
-                Commands\EventMakeCommand::class,
-                Commands\ListenerMakeCommand::class,
-                Commands\MiddlewareMakeCommand::class,
-                Commands\RouteMakeCommand::class,
-                Commands\ConfigMakeCommand::class,
-                Commands\MigrateCommand::class,
-                Commands\MigrateResetCommand::class,
-                Commands\MigrateRefreshCommand::class,
-                Commands\MigrateStatusCommand::class,
-                Commands\ModuleCheckLangCommand::class,
-            ]);
+        if (! $this->app->runningInConsole()) {
+            return;
         }
+
+        $commands = [
+            Commands\ModuleMakeCommand::class,
+            Commands\ModuleListCommand::class,
+            Commands\ModuleDeleteCommand::class,
+            Commands\ModuleInfoCommand::class,
+            Commands\ModuleValidateCommand::class,
+            Commands\ModuleDebugCommandsCommand::class,
+            Commands\ModuleCheckLangCommand::class,
+            Commands\ModulePublishCommand::class,
+            Commands\ControllerMakeCommand::class,
+            Commands\ModelMakeCommand::class,
+            Commands\MigrationMakeCommand::class,
+            Commands\RequestMakeCommand::class,
+            Commands\SeederMakeCommand::class,
+            Commands\ProviderMakeCommand::class,
+            Commands\CommandMakeCommand::class,
+            Commands\EventMakeCommand::class,
+            Commands\ListenerMakeCommand::class,
+            Commands\MiddlewareMakeCommand::class,
+            Commands\RouteMakeCommand::class,
+            Commands\ConfigMakeCommand::class,
+            Commands\MigrateCommand::class,
+            Commands\MigrateResetCommand::class,
+            Commands\MigrateRefreshCommand::class,
+            Commands\MigrateStatusCommand::class,
+        ];
+
+        $this->commands($commands);
     }
 
     /**
      * 加载所有模块
-     *
-     * @return void
      */
     protected function loadModules(): void
     {
+        /** @var ModuleLoader $loader */
         $loader = $this->app->make(ModuleLoader::class);
         $loader->loadAll();
     }
 
     /**
-     * 注册模块中的命令
-     *
-     * 在模块加载后，收集所有模块的命令并注册到 Artisan
-     * 使用 Laravel 的命令注册机制确保命令可以正确执行
-     *
-     * @return void
+     * 注册模块中的 Artisan 命令
      */
     protected function registerModuleCommands(): void
     {
@@ -207,22 +195,62 @@ class ModulesServiceProvider extends ServiceProvider
             return;
         }
 
-        // 从全局缓存获取所有已发现的命令
         $moduleCommands = \zxf\Modules\Support\ModuleAutoDiscovery::getGlobalCommands();
 
-        // 使用 Laravel 的 commands() 方法注册所有模块命令
         if (! empty($moduleCommands)) {
             $this->commands($moduleCommands);
         }
     }
 
     /**
-     * 获取服务提供者
+     * 注册视图命名空间
+     */
+    protected function registerViewNamespace(): void
+    {
+        $viewPath = __DIR__ . '/../resources/views';
+
+        if (! is_dir($viewPath)) {
+            return;
+        }
+
+        if (! $this->app->bound('view')) {
+            return;
+        }
+
+        $this->loadViewsFrom($viewPath, 'modules');
+
+        // 允许用户自定义覆盖视图
+        $customViewPath = resource_path('views/vendor/modules');
+        if (is_dir($customViewPath)) {
+            $this->app['view']->prependNamespace('modules', $customViewPath);
+        }
+    }
+
+    /**
+     * 注册 about 命令信息
+     */
+    protected function registerAboutInfo(): void
+    {
+        if (! class_exists('Illuminate\Foundation\Console\AboutCommand')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Foundation\Console\AboutCommand::add('Extend', [
+                'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules') ?? 'unknown',
+            ]);
+        } catch (\Throwable) {
+            // 静默失败
+        }
+    }
+
+    /**
+     * 获取服务提供者提供的服务
      *
-     * 定义延迟加载的服务，Laravel 11+ 使用此方法替代 $defer 属性
-     * 只有当这些服务被实际需要时，服务提供者才会被加载
+     * 注意：本提供者因 boot() 阶段需要加载模块路由/视图/翻译等，
+     * 不可使用 Laravel 延迟加载机制。provides() 仅作文档用途。
      *
-     * @return array<string>
+     * @return array<int, string>
      */
     public function provides(): array
     {

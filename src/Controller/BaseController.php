@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Controller;
 
 use Illuminate\Http\Request;

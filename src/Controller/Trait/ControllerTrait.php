@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Controller\Trait;
 
 use Illuminate\Http\JsonResponse;

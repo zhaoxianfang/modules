@@ -1,24 +1,34 @@
 {
   "name": "zxf/modules",
-  "description": "一个适用于Laravel 11+ / 12+ / 13+ 版本的现代化、多模块化扩展",
+  "description": "一个适用于Laravel 11+ / 12+ / 13+ 版本的现代化、多模块化扩展，最小化框架依赖",
   "license": "MIT",
-  "keywords": ["laravel", "module", "modular", "package", "modules", "zxf"],
-    "require": {
-      "php": ">=8.2",
-      "laravel/framework": "^11.0 || ^12.0 || ^13.0"
-    },
+  "keywords": ["laravel", "module", "modular", "package", "modules", "zxf", "multi-module"],
+  "require": {
+    "php": ">=8.2",
+    "illuminate/support": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/filesystem": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/console": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/routing": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/database": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/view": "^11.0 || ^12.0 || ^13.0",
+    "illuminate/translation": "^11.0 || ^12.0 || ^13.0"
+  },
+  "suggest": {
+    "laravel/framework": "For full Laravel integration (^11.0 || ^12.0 || ^13.0)",
+    "wikimedia/composer-merge-plugin": "For automatic module composer.json merging"
+  },
   "require-dev": {
     "phpunit/phpunit": "^10.0 || ^11.0 || ^12.0",
     "orchestra/testbench": "^9.0 || ^10.0 || ^11.0"
   },
-    "autoload": {
-        "psr-4": {
-            "zxf\\Modules\\": "src/"
-        },
-        "files": [
-            "src/helper.php"
-        ]
+  "autoload": {
+    "psr-4": {
+      "zxf\\Modules\\": "src/"
     },
+    "files": [
+      "src/helper.php"
+    ]
+  },
   "autoload-dev": {
     "psr-4": {
       "zxf\\Modules\\Tests\\": "tests/"

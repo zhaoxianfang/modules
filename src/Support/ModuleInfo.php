@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Support;
 
 use zxf\Modules\Contracts\ModuleInterface;
@@ -19,6 +21,8 @@ class ModuleInfo
      */
     public static function getInfo(ModuleInterface $module): array
     {
+        $config = $module->getModuleConfig();
+
         return [
             'name' => $module->getName(),
             'lower_name' => $module->getLowerName(),
@@ -27,6 +31,11 @@ class ModuleInfo
             'path' => $module->getPath(),
             'namespace' => $module->getNamespace(),
             'enabled' => $module->isEnabled(),
+            'priority' => $module->getPriority(),
+            'description' => $module->getDescription(),
+            'author' => $module->getAuthor(),
+            'version' => $module->getVersion(),
+            'aliases' => $module->getAliases(),
             'has_config' => self::hasConfig($module),
             'has_routes' => ! empty($module->getRouteFiles()),
             'has_views' => is_dir($module->getViewsPath()),
@@ -34,6 +43,8 @@ class ModuleInfo
             'has_seeders' => self::hasSeeders($module),
             'has_commands' => self::hasCommands($module),
             'service_provider' => $module->getServiceProviderClass(),
+            'config_providers' => $module->getLaravelProviders(),
+            'config_aliases' => $module->getLaravelAliases(),
             'route_files' => $module->getRouteFiles(),
             'files_count' => self::countFiles($module),
             'size' => self::getSize($module),

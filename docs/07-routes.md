@@ -55,14 +55,15 @@ php artisan module:make-controller Blog PostController --type=mobile
 ],
 ```
 
-### 路由控制器命名空间映射
+### 控制器命名空间
+
+> **v5.0**：不再使用 `route_controller_namespaces` 配置项。控制器命名空间由模块自身的目录结构决定，路由文件中直接引用完整类名或使用 `use` 导入。
 
 ```php
-'route_controller_namespaces' => [
-    'web' => 'Http\Controllers\Web',
-    'api' => 'Http\Controllers\Api',
-    'admin' => 'Http\Controllers\Admin',
-],
+// Routes/web.php 中直接引用
+use Modules\Blog\Http\Controllers\Web\PostController;
+
+Route::get('/posts', [PostController::class, 'index']);
 ```
 
 ### 路由前缀和名称前缀配置 ⭐ 重要
@@ -323,14 +324,21 @@ Route::prefix('blog/admin')
 生成模块路由 URL：
 
 ```php
-// 指定模块
-$url = module_route('Blog', 'posts.index');
+/**
+ * @param string      $route  路由名称
+ * @param array       $params 路由参数
+ * @param string|null $module 模块名称
+ */
+function module_route(string $route = '', array $params = [], ?string $module = null): string
+```
 
-// 带参数
-$url = module_route('Blog', 'posts.show', ['id' => 1]);
-
-// 使用当前模块
+```php
+// 当前模块路由（自动检测）
 $url = module_route('posts.index');
+$url = module_route('posts.show', ['id' => 1]);
+
+// 指定模块
+$url = module_route('products.index', [], 'Shop');
 ```
 
 ### module_route_path()
@@ -338,17 +346,28 @@ $url = module_route('posts.index');
 获取模块路由名称前缀：
 
 ```php
-$prefix = module_route_path('Blog', 'posts.index');
-// 'blog.posts.index'
+/**
+ * @param string      $route  路由名称
+ * @param string|null $module 模块名称
+ */
+function module_route_path(string $route = '', ?string $module = null): string
 ```
 
-### current_module()
+```php
+$prefix = module_route_path('posts.index');    // 'blog.posts.index'
+$prefix = module_route_path('products.index', 'Shop'); // 'shop.products.index'
+```
 
-通过 URL 路径分析获取当前请求所在的模块：
+### 通过 URL 获取当前模块
+
+使用 `module_name()` 的路由检测模式获取当前请求所在的模块：
 
 ```php
-// 访问 /blog/posts 时
-$moduleName = current_module(); // 'Blog'
+// 访问 /blog/posts 时（路由检测模式）
+$moduleName = module_name(false, true); // 'Blog'
+
+// 注意：module_name() 默认使用路由检测模式
+$moduleName = module_name(); // 等价于 module_name(false, true)
 ```
 
 ## 自定义路由文件

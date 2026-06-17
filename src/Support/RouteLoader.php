@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\Route;
@@ -80,15 +82,17 @@ class RouteLoader
                     });
                 } catch (\Throwable $e) {
                     // 单个路由文件加载失败不影响其他路由
-                    logger()->warning("加载路由文件失败: {$module->getName()}/{$routeFile}", [
-                        'error' => $e->getMessage(),
-                    ]);
-                } catch (\Throwable) {
-                    // 单个路由文件加载失败不影响其他路由
+                    if (function_exists('logger')) {
+                        logger()->warning("加载路由文件失败: {$module->getName()}/{$routeFile}", [
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
                 }
             }
         } catch (\Throwable) {
-            logger()->error("加载模块路由失败: {$module->getName()}");
+            if (function_exists('logger')) {
+                logger()->error("加载模块路由失败: {$module->getName()}");
+            }
         }
     }
 

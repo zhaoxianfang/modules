@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
@@ -184,9 +186,7 @@ class ModuleMakeCommand extends Command
         // === 配置文件 ===
         $generatorConfig['config']['generate'] && $this->stubMapping[] = [
             'stub' => 'config.stub',
-            // 'destination' => $generatorConfig['config']['path'] . '/' . $lowerName . '.php', // 使用模块小写名
-            // 使用固定的 config.php 名称，会自动解析到 $lowerName . '.php' 配置中，可以和 $lowerName . '.php' 兼容共存
-            'destination' => $generatorConfig['config']['path'] . '/config.php',
+            'destination' => $generatorConfig['config']['path'] . '/' . $lowerName . '.php',
             'replacements' => [
                 '{{NAME}}' => $moduleName,
                 '{{LOWER_NAME}}' => $lowerName,
