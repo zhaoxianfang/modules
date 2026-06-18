@@ -6,9 +6,11 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use zxf\Modules\Facades\Module;
+use zxf\Modules\Support\MigrationPathHelper;
 
 class MigrateResetCommand extends Command
 {
+    use MigrationPathHelper;
     /**
      * 命令签名
      *
@@ -118,14 +120,4 @@ class MigrateResetCommand extends Command
         }
     }
 
-    /**
-     * 获取相对路径
-     *
-     * @param string $absolutePath
-     * @return string
-     */
-    protected function getRelativePath(string $absolutePath): string
-    {
-        return str_replace(base_path() . DIRECTORY_SEPARATOR, '', $absolutePath);
-    }
 }

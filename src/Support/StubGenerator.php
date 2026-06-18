@@ -426,8 +426,13 @@ class StubGenerator
             $this->replacementStats[$variable]['found']++;
         }
 
-        // 执行替换
-        foreach ($this->replacements as $search => $replace) {
+        // 执行替换（按变量名长度降序排序，防止短变量名干扰长变量名替换）
+        // 例如：{{MODULE_NAMESPACE}} 必须在 {{NAMESPACE}} 之前替换，
+        // 否则 {{NAMESPACE}} 会先替换 {{MODULE_NAMESPACE}} 中的部分内容
+        $replacements = $this->replacements;
+        uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
+
+        foreach ($replacements as $search => $replace) {
             $count = 0;
             $content = str_replace($search, $replace, $content, $count);
 
@@ -545,6 +550,8 @@ class StubGenerator
         $content = File::get($stubPath);
 
         if ($replacements) {
+            // 按变量名长度降序排序，防止短变量名干扰长变量名替换
+            uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
             foreach ($replacements as $search => $replace) {
                 $content = str_replace($search, $replace, $content);
             }

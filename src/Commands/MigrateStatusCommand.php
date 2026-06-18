@@ -368,18 +368,4 @@ class MigrateStatusCommand extends Command
         }
     }
 
-    /**
-     * 获取迁移批次
-     *
-     * @param string $migration
-     * @return string
-     */
-    protected function getMigrationBatch(string $migration): string
-    {
-        $record = DB::table('migrations')
-            ->where('migration', $migration)
-            ->first();
-
-        return $record ? (string) $record->batch : '-';
-    }
 }

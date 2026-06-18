@@ -660,7 +660,8 @@ class ModuleAutoDiscovery
                     continue;
                 }
 
-                $modelName = str_replace('Observer', '', $className);
+                // 使用正则只替换后缀，防止类名中间的 "Observer" 被误替换（如 ObserverObserver）
+                $modelName = preg_replace('/Observer$/', '', $className);
                 $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
 
                 if (class_exists($modelClass)) {
@@ -704,7 +705,8 @@ class ModuleAutoDiscovery
                     continue;
                 }
 
-                $modelName = str_replace('Policy', '', $className);
+                // 使用正则只替换后缀，防止类名中间的 "Policy" 被误替换
+                $modelName = preg_replace('/Policy$/', '', $className);
                 $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
 
                 if (class_exists($modelClass)) {

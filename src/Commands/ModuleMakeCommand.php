@@ -584,7 +584,8 @@ class ModuleMakeCommand extends Command
                     // 获取当前替换变量的副本（避免污染 generator 的状态）
                     $replacements = array_merge($generator->getReplacements(), $mapping['replacements'] ?? []);
 
-                    // 执行变量替换（使用临时副本，避免相互干扰）
+                    // 执行变量替换（按变量名长度降序排序，防止 {{NAME}} 干扰 {{MODULE_NAMESPACE}} 等长变量）
+                    uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
                     foreach ($replacements as $search => $replace) {
                         $content = str_replace($search, $replace, $content);
                     }

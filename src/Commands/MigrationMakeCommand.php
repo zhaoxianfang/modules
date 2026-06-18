@@ -273,8 +273,10 @@ class MigrationMakeCommand extends Command
         $stubPath = $this->getStubPath($migrationInfo['stub_type']);
         $stub = File::get($stubPath);
 
-        // 执行变量替换
-        foreach ($stubGenerator->getReplacements() as $search => $replace) {
+        // 执行变量替换（按变量名长度降序排序，防止短变量名干扰长变量名替换）
+        $replacements = $stubGenerator->getReplacements();
+        uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
+        foreach ($replacements as $search => $replace) {
             $stub = str_replace($search, $replace, $stub);
         }
 

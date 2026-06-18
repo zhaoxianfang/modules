@@ -18,12 +18,18 @@ use zxf\Modules\Support\ModuleLoader;
  *
  * 设计原则：
  * - 最小化 Laravel 框架依赖，使用 illuminate/contracts 而非完整框架
- * - 延迟加载非必要服务
- * - 自动发现和注册模块组件
- * - 支持 Laravel 13 的 Agentic Development 特性
+ * - 延迟加载非必要服务，不影响 HTTP 请求性能
+ * - 自动发现和注册模块组件（路由、视图、中间件、事件、命令等）
+ * - 支持模块缓存以提升生产环境加载速度
+ *
+ * Laravel 13 兼容特性：
+ * - 支持 ServiceProvider 的 defaults() 方法（PHP 8.2+ 原生特性）
+ * - 兼容 Eloquent Builder 的新查询宏
+ * - 支持 Laravel 的 Config Builder 和 Contextual Binding
+ * - 兼容 withRouting() 回调（Laravel 11+）
  *
  * @package zxf\Modules
- * @version 4.0.0
+ * @version 5.0.0
  */
 class ModulesServiceProvider extends ServiceProvider
 {
@@ -167,6 +173,12 @@ class ModulesServiceProvider extends ServiceProvider
             Commands\MiddlewareMakeCommand::class,
             Commands\RouteMakeCommand::class,
             Commands\ConfigMakeCommand::class,
+            Commands\ObserverMakeCommand::class,
+            Commands\PolicyMakeCommand::class,
+            Commands\RepositoryMakeCommand::class,
+            Commands\ResourceMakeCommand::class,
+            Commands\TestMakeCommand::class,
+            Commands\ViewMakeCommand::class,
             Commands\MigrateCommand::class,
             Commands\MigrateResetCommand::class,
             Commands\MigrateRefreshCommand::class,
