@@ -581,10 +581,10 @@ class ModelMakeCommand extends Command
         $lines[] = '     *';
         $lines[] = '     * 支持的转换类型：';
         $lines[] = '     * array, boolean, collection, date, datetime,';
-        $lines[] = '     * decimal:&lt;precision&gt;, double, float, hashed,';
+        $lines[] = '     * decimal:<precision>, double, float, hashed,';
         $lines[] = '     * integer, object, real, string, timestamp';
         $lines[] = '     *';
-        $lines[] = '     * @return array&lt;string, string&gt;';
+        $lines[] = '     * @return array<string, string>';
         $lines[] = '     */';
         $lines[] = '    protected function casts(): array';
         $lines[] = '    {';
@@ -621,7 +621,7 @@ class ModelMakeCommand extends Command
         $lines[] = '     * 注意：这些默认值仅影响 PHP 层面的 new 实例，';
         $lines[] = '     * 数据库的 DEFAULT 值由迁移文件控制。';
         $lines[] = '     *';
-        $lines[] = '     * @var array&lt;string, mixed&gt;';
+        $lines[] = '     * @var array<string, mixed>';
         $lines[] = '     */';
         $lines[] = '    protected $attributes = [';
         foreach ($attributes as $key => $value) {
