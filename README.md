@@ -87,17 +87,41 @@ php artisan module:migrate
 # 运行指定模块的迁移
 php artisan module:migrate Blog
 
+# 运行迁移并填充数据
+php artisan module:migrate Blog --seed
+php artisan module:migrate Blog --seeder=PostSeeder
+
 # 查看迁移状态
 php artisan module:migrate-status
 
+# 查看指定模块的迁移状态
+php artisan module:migrate-status Blog
+
 # 回滚迁移
-php artisan module:migrate:reset Blog
+php artisan module:migrate-reset Blog
+php artisan module:migrate-rollback Blog --step=2
 
 # 刷新迁移（回滚并重新运行）
-php artisan module:migrate:refresh Blog
+php artisan module:migrate-refresh Blog
+
+# 清空并重建（删除所有表后重新迁移）
+php artisan module:migrate-fresh Blog --seed
 ```
 
-### 8. 运行模块命令
+### 8. 运行模块数据填充
+
+```bash
+# 运行指定模块的所有数据填充
+php artisan module:seed Blog
+
+# 运行指定模块的特定 Seeder
+php artisan module:seed Blog --class=PostSeeder
+
+# 运行所有模块的数据填充
+php artisan module:seed
+```
+
+### 9. 运行模块命令
 
 ```bash
 # 运行模块的默认命令
@@ -113,7 +137,7 @@ php artisan blog:test
 php artisan module:debug-commands --module=Blog
 ```
 
-### 9. 删除模块
+### 10. 删除模块
 
 ```bash
 # 删除模块（会提示确认）
@@ -597,15 +621,28 @@ php artisan module:debug-commands --module=Blog
 # 运行迁移
 php artisan module:migrate
 php artisan module:migrate Blog
+php artisan module:migrate Blog --seed
+php artisan module:migrate Blog --seeder=PostSeeder
 
 # 查看迁移状态
 php artisan module:migrate-status
+php artisan module:migrate-status Blog --pending
 
-# 回滚迁移
-php artisan module:migrate:reset Blog
+# 回滚迁移（最近一批）
+php artisan module:migrate-reset Blog
+php artisan module:migrate-rollback Blog --step=3
 
-# 刷新迁移
-php artisan module:migrate:refresh Blog
+# 刷新迁移（回滚 + 重新运行）
+php artisan module:migrate-refresh Blog
+php artisan module:migrate-refresh Blog --seed
+
+# 清空并重建（删除所有表后重新迁移）
+php artisan module:migrate-fresh Blog
+php artisan module:migrate-fresh Blog --seed --drop-views
+
+# 运行数据填充
+php artisan module:seed Blog
+php artisan module:seed Blog --class=PostSeeder
 ```
 
 ## 🤝 贡献

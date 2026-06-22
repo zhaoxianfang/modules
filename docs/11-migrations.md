@@ -15,10 +15,12 @@
 | 命令                        | 说明           | 用法                                                                             |
 |---------------------------|--------------|--------------------------------------------------------------------------------|
 | `module:migrate`          | 运行所有或指定模块的迁移 | `php artisan module:migrate [module] [--force] [--path=] [--seed] [--seeder=]` |
-| `module:migrate-reset`    | 回滚最后一次迁移     | `php artisan module:migrate-reset [module] [--force] [--path=]`                |
-| `module:migrate-refresh`  | 回滚并重新运行迁移    | `php artisan module:migrate-refresh [module] [--force] [--seed] [--seeder=]`   |
-| `module:migrate-rollback` | 回滚指定步数的迁移    | `php artisan module:migrate-rollback [module] [--step=] [--force] [--path=]`   |
-| `module:migrate-status`   | 查看迁移状态       | `php artisan module:migrate-status [module] [--path=]`                         |
+| `module:migrate-reset`    | 回滚所有迁移（连续执行）  | `php artisan module:migrate-reset [module] [--force] [--path=]`                |
+| `module:migrate-fresh`    | 清空所有表后重新迁移     | `php artisan module:migrate-fresh [module] [--database=] [--force] [--seed] [--seeder=] [--drop-views] [--drop-types]` |
+| `module:migrate-refresh`  | 回滚并重新运行迁移      | `php artisan module:migrate-refresh [module] [--force] [--seed] [--seeder=]`   |
+| `module:migrate-rollback` | 回滚指定步数的迁移      | `php artisan module:migrate-rollback [module] [--step=] [--database=] [--force] [--path=]` |
+| `module:migrate-status`   | 查看迁移状态        | `php artisan module:migrate-status [module] [--path=] [--pending] [--ran] [--no-stats]` |
+| `module:seed`             | 运行模块数据填充      | `php artisan module:seed [module] [--class=] [--database=] [--force]`          |
 
 ---
 
@@ -509,13 +511,15 @@ php artisan module:migrate Blog
 
 ## 回滚迁移
 
-### 回滚最后一次迁移
+### 回滚所有迁移（重置）
+
+重置迁移会连续执行回滚，直到所有迁移都被回滚。
 
 ```bash
-# 回滚所有模块的最后一次迁移
+# 回滚所有模块的全部迁移
 php artisan module:migrate-reset
 
-# 回滚指定模块的最后一次迁移
+# 回滚指定模块的全部迁移
 php artisan module:migrate-reset Blog
 ```
 
@@ -531,6 +535,45 @@ php artisan module:migrate-reset --force
 # 指定模块并强制回滚
 php artisan module:migrate-reset Blog --force
 ```
+
+### 回滚指定步数
+
+```bash
+# 回滚所有模块的最近 3 个迁移
+php artisan module:migrate-rollback --step=3
+
+# 回滚指定模块的最近 3 个迁移
+php artisan module:migrate-rollback Blog --step=3
+
+# 回滚指定模块的最近 1 个迁移（默认）
+php artisan module:migrate-rollback Blog
+
+# 指定数据库连接
+php artisan module:migrate-rollback Blog --step=2 --database=testing
+```
+
+### 清空并重建
+
+`migrate-fresh` 会删除所有数据表，然后从头运行迁移（相当于 Laravel 原生 `migrate:fresh`）。
+
+```bash
+# 清空并重建指定模块
+php artisan module:migrate-fresh Blog
+
+# 清空并重建 + 数据填充
+php artisan module:migrate-fresh Blog --seed
+
+# 指定填充器
+php artisan module:migrate-fresh Blog --seeder=PostSeeder
+
+# 同时删除视图和自定义类型
+php artisan module:migrate-fresh Blog --drop-views --drop-types
+
+# 清空所有模块
+php artisan module:migrate-fresh
+```
+
+**⚠ 警告**：此操作会删除所有数据，生产环境请谨慎使用。
 
 ---
 
@@ -562,15 +605,49 @@ php artisan module:migrate-refresh --seed
 php artisan module:migrate-refresh Blog --seeder=DatabaseSeeder
 ```
 
-### 回滚多个步骤
+## 数据填充
+
+运行模块的数据填充器（Seeder）。
+
+### 运行指定模块的填充
 
 ```bash
-# 回滚所有模块的最近 3 个迁移
-php artisan module:migrate-rollback --step=3
+# 自动发现并运行模块的所有 Seeder
+php artisan module:seed Blog
 
-# 回滚指定模块的最近 3 个迁移
-php artisan module:migrate-rollback Blog --step=3
+# 运行指定 Seeder
+php artisan module:seed Blog --class=PostSeeder
+
+# 指定数据库连接
+php artisan module:seed Blog --database=testing
 ```
+
+### 运行所有模块的填充
+
+```bash
+php artisan module:seed
+```
+
+### 迁移后填充数据
+
+```bash
+# 迁移 + 填充（使用 --seed）
+php artisan module:migrate Blog --seed
+
+# 迁移 + 指定填充器
+php artisan module:migrate Blog --seeder=PostSeeder
+
+# 清空重建 + 填充
+php artisan module:migrate-fresh Blog --seed
+
+# 重置重跑 + 指定填充器
+php artisan module:migrate-refresh Blog --seeder=PostSeeder
+```
+
+**说明**：
+- `--seed` 自动运行模块内的所有数据填充器
+- `--seeder=<ClassName>` 指定运行特定的填充器（仅需类名，系统自动拼接模块命名空间）
+- 填充器位于 `Modules/<Module>/Database/Seeders/` 目录
 
 ## 迁移状态
 

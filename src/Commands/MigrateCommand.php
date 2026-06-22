@@ -9,22 +9,31 @@ use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\MigrationPathHelper;
 
+/**
+ * 模块迁移命令
+ *
+ * 运行指定模块或全部模块的数据库迁移，支持迁移后自动数据填充。
+ *
+ * 参照 nWidart/laravel-modules 的 MigrateCommand 设计：
+ * - 通过路径过滤运行模块迁移（--path + --realpath）
+ * - --seed 标志触发 module:seed 命令（而非直接调用 db:seed）
+ * - --seeder 指定特定 Seeder 类，内部委托给 module:seed --class=...
+ * - 生产环境强制确认（app()->environment('production') 时提示）
+ *
+ * 使用示例：
+ *   php artisan module:migrate Blog                          # 运行 Blog 模块迁移
+ *   php artisan module:migrate Blog --seed                   # 迁移后运行 Blog 模块 Seeder
+ *   php artisan module:migrate Blog --seeder=PostSeeder      # 迁移后运行指定 Seeder
+ *   php artisan module:migrate                               # 运行所有已启用模块的迁移
+ *
+ * @package zxf\Modules\Commands
+ */
 class MigrateCommand extends Command
 {
     use MigrationPathHelper;
+
     /**
      * 命令签名
-     *
-     * 定义命令的名称、参数和选项
-     *
-     * 参数：
-     * - module: 可选参数，指定要运行的模块名称，不指定则运行所有模块
-     *
-     * 选项：
-     * - --force: 强制运行，在生产环境使用时请谨慎
-     * - --path: 指定自定义的迁移文件路径
-     * - --seed: 运行迁移后自动执行数据填充
-     * - --seeder: 指定特定的数据填充器类
      *
      * @var string
      */
@@ -33,13 +42,10 @@ class MigrateCommand extends Command
                             {--force : 强制运行，不提示确认（生产环境使用时请谨慎）}
                             {--path= : 指定自定义迁移文件路径}
                             {--seed : 迁移完成后自动运行数据填充}
-                            {--seeder= : 指定特定的数据填充器类}';
+                            {--seeder= : 指定特定的数据填充器类（仅类名，不含命名空间）}';
 
     /**
      * 命令描述
-     *
-     * 执行数据库迁移，将迁移文件应用到数据库
-     * 可以运行所有模块或指定模块的迁移
      *
      * @var string
      */
@@ -48,12 +54,7 @@ class MigrateCommand extends Command
     /**
      * 执行命令
      *
-     * 主要逻辑：
-     * 1. 获取命令参数和选项
-     * 2. 根据是否指定模块调用不同的方法
-     * 3. 执行迁移并显示结果
-     *
-     * @return int 命令执行状态码
+     * @return int
      */
     public function handle(): int
     {
@@ -63,17 +64,25 @@ class MigrateCommand extends Command
         $seed = $this->option('seed');
         $seeder = $this->option('seeder');
 
-        $this->info('正在运行模块迁移...');
+        // nWidart 设计：生产环境需要确认
+        if (! $force && app()->environment('production')) {
+            $this->components->warn('⚠ 当前运行在生产环境！');
+            $confirmed = $this->components->confirm('确定要运行迁移吗？');
 
-        if ($moduleName) {
-            $this->migrateModule($moduleName, $force, $customPath, $seed, $seeder);
-        } else {
-            $this->migrateAllModules($force, $customPath, $seed, $seeder);
+            if (! $confirmed) {
+                $this->components->info('操作已取消。');
+
+                return Command::SUCCESS;
+            }
         }
 
-        $this->info('迁移完成！');
+        $this->components->info('正在运行模块迁移...');
 
-        return Command::SUCCESS;
+        if ($moduleName) {
+            return $this->migrateModule($moduleName, $force, $customPath, $seed, $seeder);
+        }
+
+        return $this->migrateAllModules($force, $customPath, $seed, $seeder);
     }
 
     /**
@@ -84,32 +93,37 @@ class MigrateCommand extends Command
      * @param string|null $customPath
      * @param bool $seed
      * @param string|null $seeder
-     * @return void
+     * @return int
      */
-    protected function migrateModule(string $moduleName, bool $force, ?string $customPath = null, bool $seed = false, ?string $seeder = null): void
-    {
+    protected function migrateModule(
+        string $moduleName,
+        bool $force,
+        ?string $customPath = null,
+        bool $seed = false,
+        ?string $seeder = null
+    ): int {
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在。");
+            $this->components->error("模块 [{$moduleName}] 不存在。");
 
-            return;
+            return Command::FAILURE;
         }
 
         if (! $module->isEnabled()) {
-            $this->warn("模块 [{$moduleName}] 未启用，跳过。");
+            $this->components->warn("模块 [{$moduleName}] 未启用，跳过。");
 
-            return;
+            return Command::SUCCESS;
         }
 
-        $this->info("正在运行模块 [{$moduleName}] 的迁移...");
+        $this->components->info("正在运行模块 [{$moduleName}] 的迁移...");
 
         $migrationPath = $customPath ?: $module->getMigrationsPath();
 
         if (! is_dir($migrationPath)) {
-            $this->warn("模块 [{$moduleName}] 没有迁移文件。");
+            $this->components->warn("模块 [{$moduleName}] 没有迁移文件。");
 
-            return;
+            return Command::SUCCESS;
         }
 
         $relativePath = $this->getRelativePath($migrationPath);
@@ -119,19 +133,27 @@ class MigrateCommand extends Command
             '--force' => $force,
         ]);
 
-        // 运行数据填充
+        // 运行数据填充（委托给 module:seed 命令，参照 nWidart 设计）
         if ($seed || $seeder) {
-            $this->info('正在运行数据填充...');
+            $this->newLine();
+            $this->components->info('正在运行数据填充...');
+
+            $seedParams = [
+                'module' => $moduleName,
+            ];
 
             if ($seeder) {
-                $this->call('db:seed', [
-                    '--class' => $seeder,
-                    '--force' => $force,
-                ]);
-            } else {
-                $this->runModuleSeeders($module, $force);
+                $seedParams['--class'] = $seeder;
             }
+
+            if ($force) {
+                $seedParams['--force'] = true;
+            }
+
+            $this->call('module:seed', $seedParams);
         }
+
+        return Command::SUCCESS;
     }
 
     /**
@@ -141,50 +163,48 @@ class MigrateCommand extends Command
      * @param string|null $customPath
      * @param bool $seed
      * @param string|null $seeder
-     * @return void
+     * @return int
      */
-    protected function migrateAllModules(bool $force, ?string $customPath = null, bool $seed = false, ?string $seeder = null): void
-    {
+    protected function migrateAllModules(
+        bool $force,
+        ?string $customPath = null,
+        bool $seed = false,
+        ?string $seeder = null
+    ): int {
         $modules = Module::allEnabled();
 
         if (empty($modules)) {
-            $this->warn('没有已启用的模块。');
+            $this->components->warn('没有已启用的模块。');
 
-            return;
+            return Command::SUCCESS;
         }
+
+        // 全模块模式 + --seeder：警告用户不会传递
+        if ($seeder) {
+            $this->components->warn('⚠ 全模块模式不支持 --seeder 选项，已忽略。');
+            $this->components->warn('  提示: 使用 module:seed <ModuleName> --class=' . $seeder . ' 单独运行指定 Seeder。');
+        }
+
+        $hasFailures = false;
 
         foreach ($modules as $module) {
-            $this->migrateModule($module->getName(), $force, $customPath, $seed, $seeder);
-        }
-    }
+            $result = $this->migrateModule(
+                $module->getName(),
+                $force,
+                $customPath,
+                // 全模块模式：--seed 自动运行每个模块的 Seeder
+                // --seeder 不传递（避免在所有模块运行同一个 Seeder）
+                $seed,
+                null
+            );
 
-    /**
-     * 运行模块的数据填充器
-     *
-     * @param ModuleInterface $module
-     * @param bool $force
-     * @return void
-     */
-    protected function runModuleSeeders(ModuleInterface $module, bool $force): void
-    {
-        $seederPath = $module->getPath('Database/Seeders');
-
-        if (! is_dir($seederPath)) {
-            return;
-        }
-
-        $files = glob($seederPath . DIRECTORY_SEPARATOR . '*.php');
-
-        foreach ($files as $file) {
-            $seederClass = $module->getClassNamespace() . '\\Database\\Seeders\\' . basename($file, '.php');
-
-            if (class_exists($seederClass)) {
-                $this->call('db:seed', [
-                    '--class' => $seederClass,
-                    '--force' => $force,
-                ]);
+            if ($result === Command::FAILURE) {
+                $hasFailures = true;
             }
         }
-    }
 
+        $this->components->info('迁移完成！');
+
+        return $hasFailures ? Command::FAILURE : Command::SUCCESS;
+    }
 }

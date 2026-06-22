@@ -179,9 +179,12 @@ class ModulesServiceProvider extends ServiceProvider
             Commands\ResourceMakeCommand::class,
             Commands\TestMakeCommand::class,
             Commands\ViewMakeCommand::class,
+            Commands\SeedCommand::class,
             Commands\MigrateCommand::class,
             Commands\MigrateResetCommand::class,
             Commands\MigrateRefreshCommand::class,
+            Commands\MigrateFreshCommand::class,
+            Commands\MigrateRollbackCommand::class,
             Commands\MigrateStatusCommand::class,
         ];
 

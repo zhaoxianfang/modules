@@ -29,9 +29,19 @@ interface ModuleInterface
     public function getLowerName(): string;
 
     /**
+     * 获取 StudlyCase 命名（首字母大写）
+     */
+    public function getStudlyName(): string;
+
+    /**
      * 获取蛇形命名
      */
     public function getSnakeName(): string;
+
+    /**
+     * 获取 Slug 命名（连字符分隔）
+     */
+    public function getSlugName(): string;
 
     /**
      * 获取驼峰命名（首字母小写）

@@ -15,9 +15,12 @@
 | 5  | `module:delete`          | 模块管理 | 删除一个模块                 | `php artisan module:delete Shop`                                             |
 | 6  | `module:publish`         | 模块管理 | 发布多模块系统资源              | `php artisan module:publish --config`                                        |
 | 7  | `module:migrate`         | 迁移管理 | 运行所有模块或指定模块的数据库迁移      | `php artisan module:migrate Blog`                                            |
-| 8  | `module:migrate-reset`   | 迁移管理 | 回滚所有模块或指定模块的最后一次数据库迁移  | `php artisan module:migrate-reset Blog`                                      |
-| 9  | `module:migrate-refresh` | 迁移管理 | 重置并重新运行所有模块或指定模块的数据库迁移 | `php artisan module:migrate-refresh Blog`                                    |
-| 10 | `module:migrate-status`  | 迁移管理 | 显示所有模块或指定模块的迁移状态       | `php artisan module:migrate-status Blog`                                     |
+| 8  | `module:migrate-reset`   | 迁移管理 | 回滚所有模块或指定模块的全部迁移      | `php artisan module:migrate-reset Blog`                                      |
+| 9  | `module:migrate-fresh`   | 迁移管理 | 清空所有表后重新运行模块迁移         | `php artisan module:migrate-fresh Blog --seed`                               |
+| 10 | `module:migrate-refresh` | 迁移管理 | 重置并重新运行模块迁移             | `php artisan module:migrate-refresh Blog --seed`                             |
+| 11 | `module:migrate-rollback`| 迁移管理 | 回滚指定步数的模块迁移            | `php artisan module:migrate-rollback Blog --step=2`                          |
+| 12 | `module:migrate-status`  | 迁移管理 | 显示所有模块或指定模块的迁移状态       | `php artisan module:migrate-status Blog --pending`                           |
+| 13 | `module:seed`            | 数据填充 | 运行指定模块或所有模块的数据填充器      | `php artisan module:seed Blog --class=PostSeeder`                            |
 | 11 | `module:make-controller` | 代码生成 | 在指定模块中创建一个控制器          | `php artisan module:make-controller Blog PostController --type=web`          |
 | 12 | `module:make-model`      | 代码生成 | 在指定模块中创建一个模型           | `php artisan module:make-model Blog Post --migration`                        |
 | 13 | `module:make-migration`  | 代码生成 | 在指定模块中创建一个迁移文件         | `php artisan module:make-migration Blog create_posts_table --create=posts`   |
@@ -38,10 +41,11 @@
 | 类别     | 数量     | 命令                                                                                                                                                                                                                                                                                   |
 |--------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 模块管理   | 6      | `module:make`, `module:list`, `module:info`, `module:validate`, `module:delete`, `module:publish`                                                                                                                                                                                    |
-| 迁移管理   | 4      | `module:migrate`, `module:migrate-reset`, `module:migrate-refresh`, `module:migrate-status`                                                                                                                                                                                          |
+| 迁移管理   | 5      | `module:migrate`, `module:migrate-reset`, `module:migrate-fresh`, `module:migrate-refresh`, `module:migrate-rollback`, `module:migrate-status`                                                                                                                                       |
+| 数据填充   | 1      | `module:seed`                                                                                                                                                                                                                                                                       |
 | 代码生成   | 12     | `module:make-controller`, `module:make-model`, `module:make-migration`, `module:make-request`, `module:make-seeder`, `module:make-provider`, `module:make-command`, `module:make-event`, `module:make-listener`, `module:make-middleware`, `module:make-route`, `module:make-config` |
 | 调试检查   | 2      | `module:check-lang`, `module:debug-commands`                                                                                                                                                                                                                                         |
-| **总计** | **24** | **涵盖模块开发全流程**                                                                                                                                                                                                                                                                        |
+| **总计** | **26** | **涵盖模块开发全流程**                                                                                                                                                                                                                                                                        |
 
 ### 常用命令快速参考
 
@@ -57,7 +61,7 @@
 | 创建模型   | `module:make-model`      | `php artisan module:make-model Blog Post --table=posts`                    |
 | 创建迁移   | `module:make-migration`  | `php artisan module:make-migration Blog create_posts_table --create=posts` |
 | 运行迁移   | `module:migrate`         | `php artisan module:migrate Blog`                                          |
-| 查看迁移状态 | `module:migrate-status`  | `php artisan module:migrate-status Blog`                                   |
+| 查看迁移状态 | `module:migrate-status`  | `php artisan module:migrate-status Blog --pending`                         |
 | 创建事件   | `module:make-event`      | `php artisan module:make-event Blog UserRegistered`                        |
 | 创建监听器  | `module:make-listener`   | `php artisan module:make-listener Blog SendEmail --event=UserRegistered`   |
 | 创建命令   | `module:make-command`    | `php artisan module:make-command Blog SyncData`                            |
@@ -402,6 +406,109 @@ php artisan module:migrate-refresh
 
 # 重置并重新运行指定模块的迁移
 php artisan module:migrate-refresh Blog
+
+# 重置并运行数据填充
+php artisan module:migrate-refresh Blog --seed
+
+# 重置并运行指定填充器
+php artisan module:migrate-refresh Blog --seeder=PostSeeder
+```
+
+### module:migrate-fresh
+
+清空所有数据表后重新运行模块迁移（相当于 `migrate:fresh` 的模块版本）。
+
+**签名：**
+```bash
+php artisan module:migrate-fresh [module] [--database=] [--force] [--seed] [--seeder=] [--drop-views] [--drop-types]
+```
+
+**参数：**
+- `module`：模块名称（可选）
+
+**选项：**
+- `--database=`：指定数据库连接
+- `--force`：强制运行，不提示确认
+- `--seed`：清空重建后运行数据填充
+- `--seeder=`：指定特定的数据填充器
+- `--drop-views`：同时删除所有视图（MySQL）
+- `--drop-types`：同时删除所有自定义类型（PostgreSQL）
+
+**示例：**
+```bash
+# 清空并重建指定模块
+php artisan module:migrate-fresh Blog
+
+# 清空重建并运行数据填充
+php artisan module:migrate-fresh Blog --seed
+
+# 清空重建指定数据库连接
+php artisan module:migrate-fresh Blog --database=testing
+
+# 清空所有模块
+php artisan module:migrate-fresh
+```
+
+### module:migrate-rollback
+
+回滚指定模块或全部模块的指定步数的迁移。
+
+**签名：**
+```bash
+php artisan module:migrate-rollback [module] [--database=] [--force] [--step=] [--path=]
+```
+
+**参数：**
+- `module`：模块名称（可选）
+
+**选项：**
+- `--database=`：指定数据库连接
+- `--force`：强制运行，不提示确认
+- `--step=`：回滚的迁移步数（默认为 1）
+- `--path=`：指定自定义迁移文件路径
+
+**示例：**
+```bash
+# 回滚所有模块最近 1 次迁移
+php artisan module:migrate-rollback
+
+# 回滚指定模块最近 3 次迁移
+php artisan module:migrate-rollback Blog --step=3
+
+# 强制回滚指定模块
+php artisan module:migrate-rollback Blog --force
+```
+
+### module:seed
+
+运行指定模块或所有模块的数据填充器。
+
+**签名：**
+```bash
+php artisan module:seed [module] [--class=] [--database=] [--force]
+```
+
+**参数：**
+- `module`：模块名称（可选）
+
+**选项：**
+- `--class=`：指定特定的 Seeder 类名（仅类名，不含命名空间）
+- `--database=`：指定数据库连接
+- `--force`：强制运行，不提示确认
+
+**示例：**
+```bash
+# 运行指定模块的所有 Seeder
+php artisan module:seed Blog
+
+# 运行指定模块的特定 Seeder
+php artisan module:seed Blog --class=PostSeeder
+
+# 运行所有模块的 Seeder
+php artisan module:seed
+
+# 使用指定的数据库连接
+php artisan module:seed Blog --database=testing
 ```
 
 ### module:migrate-status
@@ -891,13 +998,20 @@ Commands 目录:
 | `module:delete`   | 删除模块     |
 | `module:publish`  | 发布模块资源   |
 
-### 迁移管理（4个）
-| 命令                       | 说明     |
-|--------------------------|--------|
-| `module:migrate`         | 运行迁移   |
-| `module:migrate-reset`   | 回滚迁移   |
-| `module:migrate-refresh` | 刷新迁移   |
-| `module:migrate-status`  | 查看迁移状态 |
+### 迁移管理（5个）
+| 命令                        | 说明     |
+|---------------------------|--------|
+| `module:migrate`          | 运行迁移   |
+| `module:migrate-reset`    | 回滚全部迁移 |
+| `module:migrate-fresh`    | 清空并重建  |
+| `module:migrate-refresh`  | 重置并重跑  |
+| `module:migrate-rollback` | 回滚指定步数 |
+| `module:migrate-status`   | 查看迁移状态 |
+
+### 数据填充（1个）
+| 命令             | 说明       |
+|----------------|----------|
+| `module:seed`  | 运行数据填充器 |
 
 ### 代码生成（12个）
 | 命令                       | 说明      |

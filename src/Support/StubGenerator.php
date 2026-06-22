@@ -501,9 +501,12 @@ class StubGenerator
                 'replacements' => array_keys($this->replacements),
             ]);
 
-            // 开发环境下可以显示警告
+            // 开发环境/测试环境下通过错误日志记录（避免污染终端输出）
             if (app()->environment('local', 'testing')) {
-                echo "\n" . $message . "\n";
+                logger()->warning($message, [
+                    'stub' => $stubName,
+                    'module' => $this->moduleName,
+                ]);
             }
         }
     }
