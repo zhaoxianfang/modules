@@ -137,7 +137,13 @@ class ModuleAutoDiscovery
         $this->discoverViews();
         $this->discoverMigrations();
         $this->discoverTranslations();
-        $this->discoverCommands();
+
+        // Artisan 命令仅需在命令行（CLI）环境发现与注册，
+        // 浏览器（HTTP）请求阶段直接跳过，避免扫描与加载命令类文件。
+        if ($this->app->runningInConsole()) {
+            $this->discoverCommands();
+        }
+
         $this->discoverEvents();
         $this->discoverObservers();
         $this->discoverPolicies();

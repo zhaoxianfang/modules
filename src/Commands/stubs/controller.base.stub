@@ -17,6 +17,8 @@ use zxf\Modules\Controller\BaseController;
  *                  例如：$this->gate::authorize('create', User::class);
  *                       $this->gate::forUser(auth('web')->user())->authorize('create', User::class);
  * 4、可以直接使用请求对象 $this->request、$this->request->input('name') 等Request方法;
+ * 5、Laravel 13+ 支持在控制器上使用 #[Middleware('web')] 等 PHP 属性声明中间件，
+ *    配合属性路由（#[Get]/#[Post]）可完全脱离 Routes/ 文件（见 controller.attributes.stub）。
  */
 abstract class {{NAME}}BaseController extends BaseController
 {

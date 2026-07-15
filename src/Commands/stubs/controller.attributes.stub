@@ -1,0 +1,136 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Http\Controllers{{CONTROLLER_SUBNAMESPACE}};
+
+use Illuminate\Http\Request;
+use Illuminate\Routing\Attributes\Get;
+use Illuminate\Routing\Attributes\Post;
+use Illuminate\Routing\Attributes\Middleware;
+use {{NAMESPACE}}\{{NAME}}\Http\Controllers\{{BASE_CLASS}};
+
+/**
+ * {{CLASS}} 控制器（Laravel 13 属性路由风格）
+ *
+ * 使用 PHP 8 属性声明路由与中间件，无需在 Routes/ 文件中重复注册：
+ *   - #[Middleware('web')]        为整个控制器应用 web 中间件组（Session、CSRF 等）
+ *   - #[Get('/')] / #[Post('x')]  声明 HTTP 动词与 URI
+ *
+ * ⚠ 前置条件：需要 Laravel 13+ 并在宿主应用中启用属性路由
+ * （bootstrap/app.php 的 withRouting() 开启 attribute routing）。
+ * 继承基础控制器，可以使用 success() / error() 方法返回 JSON 响应。
+ */
+#[Middleware('web')]
+class {{CLASS}} extends {{BASE_CLASS}}
+{
+    /**
+     * 显示欢迎页面
+     *
+     * @return \Illuminate\View\View 返回视图
+     */
+    #[Get('/')]
+    public function index()
+    {
+        // 返回模块欢迎页面
+        return view('{{LOWER_NAME}}::welcome');
+    }
+
+    /**
+     * 示例：获取资源列表
+     *
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
+     */
+    #[Get('list')]
+    public function list()
+    {
+        // 示例代码：
+        // $items = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::latest()->paginate(15);
+        // return $this->success($items, '获取成功');
+
+        return $this->success([
+            'message' => '请实现您的业务逻辑',
+            'module' => '{{NAME}}',
+            'controller' => '{{CLASS}}',
+        ], '示例响应');
+    }
+
+    /**
+     * 示例：获取单个资源详情
+     *
+     * @param int $id 资源 ID
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
+     */
+    #[Get('show/{id}')]
+    public function show($id)
+    {
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::findOrFail($id);
+        // return $this->success($item, '获取成功');
+
+        return $this->success([
+            'id' => $id,
+            'message' => '请实现您的业务逻辑',
+        ], '示例响应');
+    }
+
+    /**
+     * 示例：创建新资源
+     *
+     * @param \Illuminate\Http\Request $request 请求对象
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
+     */
+    #[Post('store')]
+    public function store(Request $request)
+    {
+        // 验证请求数据
+        $validated = $request->validate([
+            // 添加您的验证规则，例如：
+            // 'name' => 'required|string|max:255',
+            // 'description' => 'nullable|string',
+        ]);
+
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::create($validated);
+        // return $this->success($item, '创建成功', 201);
+
+        return $this->success($validated, '创建成功（示例）', 201);
+    }
+
+    /**
+     * 示例：更新资源
+     *
+     * @param \Illuminate\Http\Request $request 请求对象
+     * @param int $id 资源 ID
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
+     */
+    #[Post('update/{id}')]
+    public function update(Request $request, $id)
+    {
+        // 验证请求数据
+        $validated = $request->validate([
+            // 'name' => 'sometimes|required|string|max:255',
+        ]);
+
+        // 示例代码：
+        // $item = \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::findOrFail($id);
+        // $item->update($validated);
+        // return $this->success($item, '更新成功');
+
+        return $this->success($validated, '更新成功（示例）');
+    }
+
+    /**
+     * 示例：删除资源
+     *
+     * @param int $id 资源 ID
+     * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
+     */
+    #[Post('delete/{id}')]
+    public function destroy($id)
+    {
+        // 示例代码：
+        // \{{NAMESPACE}}\{{NAME}}\Models\{{NAME}}::findOrFail($id)->delete();
+        // return $this->success(null, '删除成功');
+
+        return $this->success(null, '删除成功（示例）');
+    }
+}

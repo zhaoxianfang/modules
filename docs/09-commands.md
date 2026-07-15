@@ -572,7 +572,7 @@ php artisan module:migrate-status --ran
 
 **签名：**
 ```bash
-php artisan module:make-controller <module> <name> [--type=web] [--force] [--plain]
+php artisan module:make-controller <module> <name> [--type=web] [--force] [--plain] [--attributes]
 ```
 
 **参数：**
@@ -580,9 +580,10 @@ php artisan module:make-controller <module> <name> [--type=web] [--force] [--pla
 - `name`：控制器名称（必需）
 
 **选项：**
-- `--type=web|api|admin`：控制器类型，默认为 `web`
+- `--type=web|api|admin|自定义`：控制器类型，默认为 `web`（支持任意自定义类型）
 - `--force`：覆盖已存在的控制器
 - `--plain`：创建空控制器（无 CRUD 方法）
+- `--attributes`：使用 Laravel 13 属性路由/中间件风格生成控制器（见下文）
 
 **示例：**
 ```bash
@@ -597,7 +598,31 @@ php artisan module:make-controller Blog PostController --type=admin
 
 # 创建空控制器
 php artisan module:make-controller Blog BaseController --plain
+
+# 使用 Laravel 13 属性路由风格（#[Get]/#[Post]/#[Middleware]）
+php artisan module:make-controller Blog PostController --attributes
 ```
+
+**Laravel 13 属性路由（--attributes）**
+
+使用 `--attributes` 选项生成的控制器会使用 PHP 8 属性声明路由与中间件，无需在 `Routes/` 文件中注册：
+
+```php
+use Illuminate\Routing\Attributes\Get;
+use Illuminate\Routing\Attributes\Middleware;
+
+#[Middleware('web')]
+class PostController extends Controller
+{
+    #[Get('/')]
+    public function index() { /* ... */ }
+
+    #[Post('store')]
+    public function store(Request $request) { /* ... */ }
+}
+```
+
+⚠️ 前置条件：需要 Laravel 13+ 并在宿主应用中启用属性路由（bootstrap/app.php 的 `withRouting()` 开启 attribute routing）。
 
 ### module:make-model
 

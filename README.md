@@ -327,6 +327,8 @@ User::query()->regexpReplace('phone', '(\d{3})\d{4}(\d{4})', '$1****$2', 0, 'c',
 - **优先级控制**：`priority` 键控制模块加载顺序
 - **动态路由生成**：路由前缀和名称前缀根据配置动态生成
 - **自动发现机制**：自动发现模块的服务提供者、路由、命令、事件等
+- **环境隔离（Laravel 13 优化）**：CLI 命令相关功能与 `src/Commands` 下的类文件仅在「命令行环境」加载，浏览器（HTTP）请求期间完全跳过，降低内存与自动加载开销
+- **Laravel 13 原生特性适配**：兼容 CSRF 新中间件 `PreventRequestForgery`、属性路由/中间件（`#[Get]`/`#[Post]`/`#[Middleware]`），并提供向量相似度查询宏 `whereVectorSimilarTo`
 - **灵活配置**：支持多路由中间件组、控制器命名空间映射
 - **功能完整**：支持路由、视图、配置、迁移、命令、事件等完整功能
 - **信息统计**：提供详细的模块信息和验证功能
@@ -565,6 +567,9 @@ php artisan module:make Blog
 php artisan module:make-controller Blog PostController
 php artisan module:make-controller Blog PostController --web
 php artisan module:make-controller Blog PostController --api
+
+# 使用 Laravel 13 属性路由风格（#[Get]/#[Post]/#[Middleware]）
+php artisan module:make-controller Blog PostController --attributes
 
 # 创建模型
 php artisan module:make-model Blog Post

@@ -27,7 +27,8 @@ class ControllerMakeCommand extends Command
                             {name : 控制器名称}
                             {--type=web : 控制器类型（可自定义，如web、api、admin、mobile等）}
                             {--force : 覆盖已存在的控制器}
-                            {--plain : 创建空控制器（无CRUD方法）}';
+                            {--plain : 创建空控制器（无CRUD方法）}
+                            {--attributes : 使用 Laravel 13 属性路由/中间件风格（#[Get]/#[Post]/#[Middleware]）生成控制器}';
 
     /**
      * 命令描述
@@ -48,6 +49,7 @@ class ControllerMakeCommand extends Command
         $type = strtolower($this->option('type'));
         $force = $this->option('force');
         $plain = $this->option('plain');
+        $useAttributes = $this->option('attributes');
 
         $module = Module::find($moduleName);
 
@@ -87,7 +89,13 @@ class ControllerMakeCommand extends Command
         }
 
         // 选择 stub 文件
-        $stubFile = $plain ? 'controller.plain.stub' : 'controller.stub';
+        if ($plain) {
+            $stubFile = 'controller.plain.stub';
+        } elseif ($useAttributes) {
+            $stubFile = 'controller.attributes.stub';
+        } else {
+            $stubFile = 'controller.stub';
+        }
 
         $result = $stubGenerator->generate(
             $stubFile,

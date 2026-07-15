@@ -399,7 +399,7 @@ Modules/Blog/Resources/lang/
 ### 命令
 
 ```bash
-php artisan module:make-controller <module> <name> [--type=web] [--force]
+php artisan module:make-controller <module> <name> [--type=web] [--force] [--plain] [--attributes]
 ```
 
 ### 参数
@@ -414,6 +414,7 @@ php artisan module:make-controller <module> <name> [--type=web] [--force]
 | `--type=<type>` | 控制器类型（可自定义，如 web、api、admin、mobile 等） | `web` |
 | `--force`       | 覆盖已存在的控制器                            | false |
 | `--plain`       | 创建空控制器（无 CRUD 方法）                    | false |
+| `--attributes`  | 使用 Laravel 13 属性路由/中间件风格（#[Get]/#[Post]/#[Middleware]）生成 | false |
 
 ### 示例
 
@@ -506,6 +507,27 @@ class PostController extends Controller
 | `web`   | `Http/Controllers/`       | `web`       | Web 应用控制器 |
 | `api`   | `Http/Controllers/Api/`   | `api`       | API 控制器   |
 | `admin` | `Http/Controllers/Admin/` | `web,admin` | 后台管理控制器   |
+
+#### Laravel 13 属性路由风格（`--attributes`）
+
+从 Laravel 13 起，可使用 `--attributes` 选项生成基于 PHP 8 属性的控制器，
+直接在类/方法上使用 `#[Middleware('web')]`、`#[Get('/')]`、`#[Post('store')]`
+声明中间件与路由，无需在 `Routes/` 文件中注册：
+
+```php
+use Illuminate\Routing\Attributes\Get;
+use Illuminate\Routing\Attributes\Middleware;
+
+#[Middleware('web')]
+class PostController extends Controller
+{
+    #[Get('/')]
+    public function index() { /* ... */ }
+}
+```
+
+> 需要 Laravel 13+ 并在宿主应用启用属性路由（bootstrap/app.php 的 `withRouting()`
+> 开启 attribute routing）后才会被框架自动扫描注册。
 
 ---
 

@@ -259,6 +259,12 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this valuesJoin(array $rows, string $alias, string $localKey, string $valuesKey, string $joinType = 'inner') 使用VALUES作为JOIN表
  * @method int valuesInsert(array $rows, int $chunkSize = 1000) 使用VALUES ROW语法进行高效批量插入
  * @method int batchUpsert(array $rows, array|string $uniqueBy, ?array $updateColumns = null, int $chunkSize = 1000) 批量插入或更新（INSERT ... ON DUPLICATE KEY UPDATE）
+ *
+ * ============================================
+ * 16. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索
+ * ============================================
+ * @method $this whereVectorSimilarTo(string $column, mixed $value, ?float $minSimilarity = null) 按向量相似度筛选记录（需 Laravel 13+ 与向量数据库支持）
+ * @method $this orderByVectorDistance(string $column, mixed $value, string $direction = 'asc') 按向量距离排序（最近邻检索）
  */
 class MacrosBuilder extends Eloquent\Builder
 {
@@ -313,6 +319,31 @@ class MacrosBuilder extends Eloquent\Builder
 
         // 14. VALUES 构造系列 - 批量插入和 UPSERT
         ValuesMacro::register();
+
+        // 15. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索支持
+        self::registerVectorSearch($provider);
+    }
+
+    /**
+     * 注册 Laravel 13+ 向量相似度搜索宏
+     *
+     * Laravel 13 在查询构造器底层新增了向量检索能力（如 PostgreSQL + pgvector），
+     * 本方法将其桥接到 Eloquent Builder，使模型查询可直接使用。
+     *
+     * 注意：该能力依赖底层数据库驱动与 Laravel 13+ 的查询语法，
+     * 在 Laravel 11/12 或不支持向量的数据库上调用会抛出异常，属预期行为。
+     */
+    public static function registerVectorSearch(ServiceProvider $provider): void
+    {
+        // 按向量相似度筛选（如：就近语义匹配），底层为 Laravel 13 原生实现
+        Eloquent\Builder::macro('whereVectorSimilarTo', function (string $column, $value, ?float $minSimilarity = null) {
+            return $this->getQuery()->whereVectorSimilarTo($column, $value, $minSimilarity);
+        });
+
+        // 按向量距离排序（最近邻检索），底层为 Laravel 13 原生实现
+        Eloquent\Builder::macro('orderByVectorDistance', function (string $column, $value, string $direction = 'asc') {
+            return $this->getQuery()->orderByVectorDistance($column, $value, $direction);
+        });
     }
 
     public static function registerWhereHasInQuery(ServiceProvider $provider)

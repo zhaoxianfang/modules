@@ -308,7 +308,7 @@ return [
     |
     */
     'middleware_groups' => [
-        'web'   => ['web'],       // Web 路由：应用 web 中间件组（Session、CSRF 等）
+        'web'   => ['web'],       // Web 路由：应用 web 中间件组（Session、CSRF 等，Laravel 13 中对应 PreventRequestForgery）
         'api'   => ['api'],       // API 路由：应用 api 中间件组（速率限制等）
         'admin' => ['web'],       // Admin 路由：应用 web 中间件组（可按需添加 auth 等）
     ],

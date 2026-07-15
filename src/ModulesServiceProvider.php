@@ -21,15 +21,16 @@ use zxf\Modules\Support\ModuleLoader;
  * - 延迟加载非必要服务，不影响 HTTP 请求性能
  * - 自动发现和注册模块组件（路由、视图、中间件、事件、命令等）
  * - 支持模块缓存以提升生产环境加载速度
+ * - **环境隔离**：CLI 命令相关功能/文件仅在命令行环境加载，浏览器环境完全跳过
  *
  * Laravel 13 兼容特性：
- * - 支持 ServiceProvider 的 defaults() 方法（PHP 8.2+ 原生特性）
- * - 兼容 Eloquent Builder 的新查询宏
- * - 支持 Laravel 的 Config Builder 和 Contextual Binding
- * - 兼容 withRouting() 回调（Laravel 11+）
+ * - 兼容 Eloquent Builder 的新查询宏（如向量相似度 whereVectorSimilarTo）
+ * - 兼容 withRouting() 回调与属性路由（#[Get]/#[Post]/#[Middleware]）
+ * - CSRF 中间件已使用新增的 PreventRequestForgery 命名约定
+ * - 兼容 withScheduling() 的延迟注册时机与队列路由等 13.x 新特性
  *
  * @package zxf\Modules
- * @version 5.0.0
+ * @version 5.1.0
  */
 class ModulesServiceProvider extends ServiceProvider
 {
@@ -51,25 +52,52 @@ class ModulesServiceProvider extends ServiceProvider
     /**
      * 引导服务
      *
+     * 加载策略严格区分「浏览器（HTTP）环境」与「命令行（CLI）环境」：
+     *
+     *  - HTTP 环境：仅加载处理请求所必需的模块组件
+     *    （路由、视图、翻译、配置、迁移、服务提供者等），
+     *    完全不触碰 Artisan 命令相关逻辑与文件。
+     *
+     *  - CLI 环境：在 HTTP 加载的基础上，额外注册扩展包自身的
+     *    Artisan 命令、模块内自动发现的命令，以及 about 信息。
+     *
+     * 这样可确保 src/Commands 下的命令类在 HTTP 请求期间不会被
+     * 自动加载/实例化，减少内存占用与自动加载开销。
+     *
      * 注意：由于模块的加载必须在服务提供者注册后立刻执行
      * （路由、视图、翻译等都需要在请求处理前完成），
      * 因此本提供者不支持延迟加载，boot() 会立即执行。
      */
     public function boot(): void
     {
-        // 发布配置
+        // 发布配置（HTTP / CLI 均需要）
         $this->publishConfig();
 
+        // 加载所有模块（HTTP / CLI 均需要，且必须在 boot 阶段完成，不可延迟）
+        $this->loadModules();
+
+        // 注册模块视图命名空间（HTTP 必需，CLI 下无害）
+        $this->registerViewNamespace();
+
+        // 仅命令行（CLI）环境才需要加载的 Artisan 命令相关功能与文件。
+        // 浏览器（HTTP）环境下整体跳过，避免加载 src/Commands 下的命令类。
+        if ($this->app->runningInConsole()) {
+            $this->registerCliCommands();
+        }
+    }
+
+    /**
+     * 注册仅命令行环境所需的命令
+     *
+     * 将扩展包命令、模块命令、about 信息等 CLI 专用逻辑集中在此，
+     * 确保浏览器（HTTP）环境不会执行或加载这些命令类文件。
+     */
+    protected function registerCliCommands(): void
+    {
         // 注册本包的 Artisan 命令
         $this->registerPackageCommands();
 
-        // 加载所有模块（必须在 boot 阶段完成，不可延迟）
-        $this->loadModules();
-
-        // 注册模块视图命名空间
-        $this->registerViewNamespace();
-
-        // 注册模块中的命令
+        // 注册模块中自动发现的 Artisan 命令
         $this->registerModuleCommands();
 
         // 注册 about 命令信息
