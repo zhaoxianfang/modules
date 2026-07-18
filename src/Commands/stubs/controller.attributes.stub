@@ -2,6 +2,7 @@
 
 namespace {{NAMESPACE}}\{{NAME}}\Http\Controllers{{CONTROLLER_SUBNAMESPACE}};
 
+use Illuminate\Foundation\Attributes\Authorize;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Attributes\Get;
 use Illuminate\Routing\Attributes\Post;
@@ -75,10 +76,15 @@ class {{CLASS}} extends {{BASE_CLASS}}
     /**
      * 示例：创建新资源
      *
+     * 演示 Laravel 13 新增的 #[Authorize] 授权属性：
+     * 取消下一行注释即可基于策略对当前模型进行 'create' 授权检查
+     * （需确保已通过 module:make-policy 生成对应策略类）。
+     *
      * @param \Illuminate\Http\Request $request 请求对象
      * @return \Illuminate\Http\JsonResponse 返回 JSON 响应
      */
     #[Post('store')]
+    // #[Authorize('create', {{NAME}}::class)]
     public function store(Request $request)
     {
         // 验证请求数据

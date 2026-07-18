@@ -47,6 +47,21 @@ class ModulesServiceProvider extends ServiceProvider
         if ($this->app->bound('db')) {
             MacrosBuilder::register($this);
         }
+
+        // ------------------------------------------------------------------
+        // CLI 环境专用注册（命令行 Artisan 命令、about 信息）
+        //
+        // 包自带的 module:* 命令与 about 信息不依赖任何模块加载结果，
+        // 因此放在 register() 阶段、且仅在命令行（runningInConsole）下注册：
+        //   - 比 boot() 更早完成命令注册，避免依赖 boot 生命周期；
+        //   - 浏览器（HTTP）请求阶段完全跳过，命令类文件不会被加载；
+        //   - 即使 boot() 中模块加载出现非致命异常，module:* 命令依然可用，
+        //     从而规避「There are no commands defined in the 'module' namespace」。
+        // ------------------------------------------------------------------
+        if ($this->app->runningInConsole()) {
+            $this->registerPackageCommands();
+            $this->registerAboutInfo();
+        }
     }
 
     /**
@@ -79,29 +94,13 @@ class ModulesServiceProvider extends ServiceProvider
         // 注册模块视图命名空间（HTTP 必需，CLI 下无害）
         $this->registerViewNamespace();
 
-        // 仅命令行（CLI）环境才需要加载的 Artisan 命令相关功能与文件。
+        // 仅命令行（CLI）环境才需要注册「模块内自动发现的 Artisan 命令」。
+        // 注意：模块命令必须在 loadModules()（模块自动发现）之后注册，
+        // 因此放在 boot() 而非 register()；包自带命令已在 register() 注册。
         // 浏览器（HTTP）环境下整体跳过，避免加载 src/Commands 下的命令类。
         if ($this->app->runningInConsole()) {
-            $this->registerCliCommands();
+            $this->registerModuleCommands();
         }
-    }
-
-    /**
-     * 注册仅命令行环境所需的命令
-     *
-     * 将扩展包命令、模块命令、about 信息等 CLI 专用逻辑集中在此，
-     * 确保浏览器（HTTP）环境不会执行或加载这些命令类文件。
-     */
-    protected function registerCliCommands(): void
-    {
-        // 注册本包的 Artisan 命令
-        $this->registerPackageCommands();
-
-        // 注册模块中自动发现的 Artisan 命令
-        $this->registerModuleCommands();
-
-        // 注册 about 命令信息
-        $this->registerAboutInfo();
     }
 
     /**
@@ -184,6 +183,8 @@ class ModulesServiceProvider extends ServiceProvider
             Commands\ModuleMakeCommand::class,
             Commands\ModuleListCommand::class,
             Commands\ModuleDeleteCommand::class,
+            Commands\ModuleCacheCommand::class,
+            Commands\ModuleClearCommand::class,
             Commands\ModuleInfoCommand::class,
             Commands\ModuleValidateCommand::class,
             Commands\ModuleDebugCommandsCommand::class,
@@ -198,6 +199,7 @@ class ModulesServiceProvider extends ServiceProvider
             Commands\CommandMakeCommand::class,
             Commands\EventMakeCommand::class,
             Commands\ListenerMakeCommand::class,
+            Commands\JobMakeCommand::class,
             Commands\MiddlewareMakeCommand::class,
             Commands\RouteMakeCommand::class,
             Commands\ConfigMakeCommand::class,

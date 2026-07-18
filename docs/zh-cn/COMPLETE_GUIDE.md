@@ -1,6 +1,6 @@
 # 🤖 zxf/modules 多模块扩展包 · 完整中文使用教程
 
-> **版本**: 5.0.0 | **兼容**: Laravel 11+ / 12+ / 13+ | **PHP**: 8.2+  
+> **版本**: 5.0.0 | **兼容**: Laravel 11+ / 12+ / 13+ | **PHP**: 8.3+  
 > **仓库**: https://github.com/zhaoxianfang/modules
 
 ---
@@ -367,6 +367,19 @@ MODULES_CACHE_ENABLED=true
 ```
 
 开启后模块列表将被缓存到文件，避免每次请求扫描目录，显著提升性能。
+
+缓存生效后，若通过部署 / git 拉取等方式**新增或删除**了模块，需手动刷新缓存：
+
+```bash
+# 重新扫描磁盘并写入缓存（生产环境部署后强烈建议执行）
+php artisan module:cache
+
+# 仅清除缓存文件，下次访问时自动重新扫描磁盘
+php artisan module:clear
+```
+
+> `module:delete` 等命令在执行时会自动绕过缓存重新扫描，
+> 因此即使忘记刷新缓存，删除操作也能正确识别磁盘上的模块。
 
 ### 3.5 自动发现配置
 
@@ -791,6 +804,8 @@ after_class_calling($this, 'before', [$request]);
 | `module:delete` | 删除模块 | `php artisan module:delete Blog` |
 | `module:info` | 显示模块详情 | `php artisan module:info Blog` |
 | `module:validate` | 验证模块完整性 | `php artisan module:validate Blog` |
+| `module:cache` | 重新扫描并写入模块缓存 | `php artisan module:cache` |
+| `module:clear` | 清除模块缓存（下次重新扫描磁盘） | `php artisan module:clear` |
 | `module:publish` | 发布模块资源 | `php artisan module:publish Blog` |
 
 ```bash

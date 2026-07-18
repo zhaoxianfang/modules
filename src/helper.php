@@ -15,7 +15,7 @@ declare(strict_types=1);
  *
  * @package   zxf\Modules
  * @version   4.0.0
- * @requires  PHP 8.2+
+ * @requires  PHP 8.3+
  */
 
 use zxf\Modules\Contracts\ModuleInterface;

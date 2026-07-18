@@ -2,7 +2,7 @@
 
 namespace {{NAMESPACE}}\{{NAME}}\Models;
 
-use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -17,9 +17,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $description 描述
  * @property string $status 状态
  * @property int $sort_order 排序
- * @property Carbon|null $created_at 创建时间
- * @property Carbon|null $updated_at 更新时间
- * @property Carbon|null $deleted_at 删除时间
+ * @property \Illuminate\Support\Carbon|null $created_at 创建时间
+ * @property \Illuminate\Support\Carbon|null $updated_at 更新时间
+ * @property \Illuminate\Support\Carbon|null $deleted_at 删除时间
  */
 class {{CLASS}} extends Model
 {
@@ -28,33 +28,12 @@ class {{CLASS}} extends Model
     /**
      * 数据表名称
      *
-     * 如果不指定，Eloquent 会使用模型类的复数形式（自动转换）
+     * 如果不指定，Eloquent 会使用模型类的复数蛇形命名（自动转换）
      * 例如：{{CLASS}} => {{LOWER_NAME}} 表
      *
      * @var string
      */
     protected $table = '{{LOWER_NAME}}';
-
-    /**
-     * 主键字段
-     *
-     * @var string
-     */
-    protected $primaryKey = 'id';
-
-    /**
-     * 主键类型
-     *
-     * @var string
-     */
-    protected $keyType = 'int';
-
-    /**
-     * 是否自动维护时间戳
-     *
-     * @var bool
-     */
-    public $timestamps = true;
 
     /**
      * 可批量赋值的属性
@@ -158,13 +137,18 @@ class {{CLASS}} extends Model
     */
 
     /**
-     * 获取激活状态
+     * 获取激活状态（现代访问器 API）
      *
-     * @return bool 是否激活
+     * 使用 Laravel 9+ 的 Attribute::make 定义访问器，
+     * 如需同时定义修改器可追加 ->set(fn ($v) => ...) 闭包。
+     *
+     * @return \Illuminate\Database\Eloquent\Casts\Attribute<bool>
      */
-    public function getIsActiveAttribute(): bool
+    public function isActive(): Attribute
     {
-        return $this->status === 'active';
+        return Attribute::make(
+            get: fn (): bool => $this->status === 'active',
+        );
     }
 
     /*

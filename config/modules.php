@@ -19,7 +19,7 @@
  *
  * @package   zxf\Modules
  * @version   5.0.0
- * @requires  PHP 8.2+ / Laravel 11+
+ * @requires  PHP 8.3+ / Laravel 11+ / 12+ / 13+
  */
 
 return [

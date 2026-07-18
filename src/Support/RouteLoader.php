@@ -61,20 +61,11 @@ class RouteLoader
                     // 获取中间件组
                     $middleware = $middlewareGroups[$routeFile] ?? [];
 
-                    // 自动检测控制器命名空间
-                    $controllerNamespace = self::autoDetectControllerNamespace($module, $routeFile);
-
-                    // 构建完整控制器命名空间
-                    $fullNamespace = $module->getClassNamespace() . '\\Http\\Controllers' . $controllerNamespace;
-
-                    // 构建路由组：仅设置中间件和控制器命名空间
-                    // 路由文件内部已经包含了 prefix 和 name 的路由组声明
+                    // 构建路由组：仅设置中间件。
+                    // 注意：Laravel 9+ 已移除路由组的隐式控制器命名空间，
+                    // 模块路由文件统一使用完整类名（FQCN）引用控制器
+                    // （如 [Web\BlogController::class, 'index']），因此无需再设置 namespace。
                     $routeBuilder = Route::middleware($middleware);
-
-                    // 设置控制器命名空间（如果检测到了）
-                    if (! empty($controllerNamespace)) {
-                        $routeBuilder->namespace($fullNamespace);
-                    }
 
                     // 加载路由文件
                     $routeBuilder->group(function () use ($routePath) {
@@ -93,71 +84,6 @@ class RouteLoader
             if (function_exists('logger')) {
                 logger()->error("加载模块路由失败: {$module->getName()}");
             }
-        }
-    }
-
-    /**
-     * 自动检测控制器命名空间
-     *
-     * 根据路由文件名自动检测对应的控制器命名空间
-     * 检查对应的控制器子目录是否存在
-     *
-     * @param ModuleInterface $module
-     * @param string $routeFile
-     * @return string 控制器命名空间（如 \Web 或 ''）
-     */
-    protected static function autoDetectControllerNamespace(ModuleInterface $module, string $routeFile): string
-    {
-        try {
-            // 标准化路由文件名
-            $standardNames = ['web', 'api', 'admin'];
-
-            if (in_array(strtolower($routeFile), $standardNames)) {
-                // 标准路由文件名，检查对应的控制器子目录
-                $subNamespace = ucfirst($routeFile);
-                $controllerPath = $module->getPath('Http/Controllers/' . $subNamespace);
-
-                if (is_dir($controllerPath)) {
-                    return '\\' . $subNamespace;
-                }
-
-                // 如果子目录不存在，返回空字符串（不应用特定命名空间）
-                return '';
-            }
-
-            // 非标准路由文件名，使用首字母大写的文件名
-            $subNamespace = ucfirst($routeFile);
-            $controllerPath = $module->getPath('Http/Controllers/' . $subNamespace);
-
-            if (is_dir($controllerPath)) {
-                return '\\' . $subNamespace;
-            }
-
-            return '';
-        } catch (\Throwable) {
-            return '';
-        }
-    }
-
-    /**
-     * 获取控制器完整命名空间
-     *
-     * @param ModuleInterface $module
-     * @param string $type
-     * @return string|null
-     */
-    public static function getControllerNamespace(ModuleInterface $module, string $type): ?string
-    {
-        try {
-            $namespace = self::autoDetectControllerNamespace($module, $type);
-
-            if (empty($namespace)) {
-                return null;
-            }
-
-            return $module->getClassNamespace() . '\\Http\\Controllers' . $namespace;
-        } catch (\Throwable) {
-            return null;
         }
     }
 

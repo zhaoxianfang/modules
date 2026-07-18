@@ -24,6 +24,7 @@ use zxf\Modules\Contracts\RepositoryInterface;
  * @method static int                                   countEnabled()
  * @method static void                                  scan()
  * @method static void                                  rescan()
+ * @method static void                                  ensureScanned()
  * @method static string                                getModulePath(string $name, ?string $path = null)
  * @method static void                                  clearCache()
  *

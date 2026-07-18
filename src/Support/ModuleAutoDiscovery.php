@@ -370,18 +370,14 @@ class ModuleAutoDiscovery
                 }
 
                 $middleware = $middlewareGroups[$filename] ?? [];
-                $controllerNamespace = $this->autoDetectControllerNamespace($filename);
-                $fullNamespace = $this->module->getClassNamespace() . '\\Http\\Controllers' . $controllerNamespace;
 
                 $router = app('router');
                 $routeGroup = $router;
 
+                // Laravel 9+ 已移除路由组的隐式控制器命名空间，
+                // 模块路由文件直接以完整类名（FQCN）引用控制器，无需设置 namespace。
                 if (! empty($middleware)) {
                     $routeGroup = $routeGroup->middleware($middleware);
-                }
-
-                if (! empty($controllerNamespace)) {
-                    $routeGroup = $routeGroup->namespace($fullNamespace);
                 }
 
                 $routeGroup->group(function () use ($routeFile) {
@@ -771,14 +767,6 @@ class ModuleAutoDiscovery
     protected function shouldDiscover(string $type): bool
     {
         return config("modules.discovery.{$type}", true);
-    }
-
-    protected function autoDetectControllerNamespace(string $routeFilename): string
-    {
-        $subNamespace = ucfirst($routeFilename);
-        $controllerPath = $this->module->getPath('Http/Controllers/' . $subNamespace);
-
-        return is_dir($controllerPath) ? '\\' . $subNamespace : '';
     }
 
     protected function findFirstExistingPath(array $possiblePaths): ?string

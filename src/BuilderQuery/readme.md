@@ -825,8 +825,8 @@ BigTable::query()->rowNumber(null, 'id', 'asc')->get(); // 全表排序，性能
 
 ## 兼容性说明
 
-- **PHP**: 8.2+
-- **Laravel**: 11+
+- **PHP**: 8.3+
+- **Laravel**: 11+ / 12+ / 13+
 - **MySQL**: 8.4+
 - **无需缓存扩展**: 所有宏均为纯 SQL 优化
 

@@ -1,0 +1,64 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Jobs;
+
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Queue\Attributes\Backoff;
+use Illuminate\Queue\Attributes\DeleteWhenMissingModels;
+use Illuminate\Queue\Attributes\FailOnTimeout;
+use Illuminate\Queue\Attributes\MaxExceptions;
+use Illuminate\Queue\Attributes\Timeout;
+use Illuminate\Queue\Attributes\Tries;
+
+/**
+ * {{CLASS}} 队列任务
+ *
+ * {{NAME}} 模块的异步任务类。实现 ShouldQueue 后，
+ * 通过 {{CLASS}}::dispatch(...) 即可被推入队列由 worker 异步执行。
+ *
+ * ── Laravel 13 声明式任务配置 ──
+ * Laravel 13 在 Illuminate\Queue\Attributes 命名空间下新增了一组 PHP 属性，
+ * 用以替代传统的 public $tries / public $timeout 等属性，配置更集中、可读。
+ * 这些属性与传统配置（如 retryUntil()、middleware() 方法）完全兼容可混用。
+ *
+ * @see https://laravel.com/docs/13.x/queues#attribute-based-job-configuration
+ */
+#[Tries(3)]
+#[Backoff(5)]
+// #[Timeout(120)]            // 任务允许运行的最大秒数，超时后 worker 进程退出
+// #[FailOnTimeout]           // 超时后直接标记失败，不再占用尝试次数重试
+// #[MaxExceptions(3)]        // 配合 Tries：仅当连续抛出 3 次未处理异常才最终失败
+// #[DeleteWhenMissingModels] // 依赖的 Eloquent 模型被删除时自动删除该任务
+class {{CLASS}} implements ShouldQueue
+{
+    use Queueable;
+
+    /**
+     * 创建任务实例
+     *
+     * 通过构造函数注入需要异步处理的数据（Laravel 会自动序列化/反序列化）。
+     * 例如：
+     * <code>
+     * public function __construct(
+     *     public SomeModel $model,
+     * ) {}
+     * </code>
+     */
+    public function __construct()
+    {
+        //
+    }
+
+    /**
+     * 执行任务
+     *
+     * 在此编写异步处理逻辑，如发送邮件、处理文件、调用第三方 API 等。
+     *
+     * @return void
+     */
+    public function handle(): void
+    {
+        //
+    }
+}

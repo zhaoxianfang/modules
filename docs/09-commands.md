@@ -13,7 +13,9 @@
 | 3  | `module:info`            | 模块管理 | 显示指定模块的详细信息            | `php artisan module:info Blog`                                               |
 | 4  | `module:validate`        | 模块管理 | 验证模块的完整性和正确性           | `php artisan module:validate Blog`                                           |
 | 5  | `module:delete`          | 模块管理 | 删除一个模块                 | `php artisan module:delete Shop`                                             |
-| 6  | `module:publish`         | 模块管理 | 发布多模块系统资源              | `php artisan module:publish --config`                                        |
+| 6  | `module:cache`          | 模块管理 | 重新扫描并写入模块缓存           | `php artisan module:cache`                                                  |
+| 7  | `module:clear`          | 模块管理 | 清除模块缓存                 | `php artisan module:clear`                                                  |
+| 8  | `module:publish`         | 模块管理 | 发布多模块系统资源              | `php artisan module:publish --config`                                        |
 | 7  | `module:migrate`         | 迁移管理 | 运行所有模块或指定模块的数据库迁移      | `php artisan module:migrate Blog`                                            |
 | 8  | `module:migrate-reset`   | 迁移管理 | 回滚所有模块或指定模块的全部迁移      | `php artisan module:migrate-reset Blog`                                      |
 | 9  | `module:migrate-fresh`   | 迁移管理 | 清空所有表后重新运行模块迁移         | `php artisan module:migrate-fresh Blog --seed`                               |
@@ -40,12 +42,12 @@
 
 | 类别     | 数量     | 命令                                                                                                                                                                                                                                                                                   |
 |--------|--------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 模块管理   | 6      | `module:make`, `module:list`, `module:info`, `module:validate`, `module:delete`, `module:publish`                                                                                                                                                                                    |
-| 迁移管理   | 5      | `module:migrate`, `module:migrate-reset`, `module:migrate-fresh`, `module:migrate-refresh`, `module:migrate-rollback`, `module:migrate-status`                                                                                                                                       |
+| 模块管理   | 8      | `module:make`, `module:list`, `module:info`, `module:validate`, `module:delete`, `module:cache`, `module:clear`, `module:publish`                                                                                                                                                                                    |
+| 迁移管理   | 6      | `module:migrate`, `module:migrate-reset`, `module:migrate-fresh`, `module:migrate-refresh`, `module:migrate-rollback`, `module:migrate-status`                                                                                                                                       |
 | 数据填充   | 1      | `module:seed`                                                                                                                                                                                                                                                                       |
 | 代码生成   | 12     | `module:make-controller`, `module:make-model`, `module:make-migration`, `module:make-request`, `module:make-seeder`, `module:make-provider`, `module:make-command`, `module:make-event`, `module:make-listener`, `module:make-middleware`, `module:make-route`, `module:make-config` |
 | 调试检查   | 2      | `module:check-lang`, `module:debug-commands`                                                                                                                                                                                                                                         |
-| **总计** | **26** | **涵盖模块开发全流程**                                                                                                                                                                                                                                                                        |
+| **总计** | **28** | **涵盖模块开发全流程**                                                                                                                                                                                                                                                                        |
 
 ### 常用命令快速参考
 
@@ -56,6 +58,8 @@
 | 查看模块详情 | `module:info`            | `php artisan module:info Blog`                                             |
 | 验证模块   | `module:validate`        | `php artisan module:validate Blog`                                         |
 | 删除模块   | `module:delete`          | `php artisan module:delete Shop`                                           |
+| 刷新缓存   | `module:cache`           | `php artisan module:cache`                                                 |
+| 清除缓存   | `module:clear`           | `php artisan module:clear`                                                 |
 | 发布资源   | `module:publish`         | `php artisan module:publish --config`                                      |
 | 创建控制器  | `module:make-controller` | `php artisan module:make-controller Blog PostController --type=web`        |
 | 创建模型   | `module:make-model`      | `php artisan module:make-model Blog Post --table=posts`                    |
@@ -320,6 +324,50 @@ php artisan module:delete Shop
 
 # 强制删除 Shop 模块（不提示确认）
 php artisan module:delete Shop --force
+```
+
+> **健壮性说明**：删除前会绕过模块缓存重新扫描磁盘。即便开启了
+> `MODULES_CACHE_ENABLED=true` 且缓存未更新，也能正确识别并删除通过部署 /
+> git 拉取等方式新增的模块；若注册表未找到该模块，还会回退到磁盘真实路径
+> （同时匹配 StudlyCase / snake_case / 小写目录名）再次确认，避免「模块存在却
+> 提示不存在」的问题。删除成功后自动清除模块缓存。
+
+### module:cache
+
+重新扫描磁盘并写入模块缓存，用于生产环境加速模块加载。
+
+**签名：**
+```bash
+php artisan module:cache
+```
+
+**说明：**
+- 命令会绕过可能过期的缓存，以磁盘真实状态重新扫描并写入缓存。
+- 若 `modules.cache.enabled` 为 `false`，缓存不会被持久化（仅本次进程生效），
+  会给出提示，需在 `.env` 中设置 `MODULES_CACHE_ENABLED=true`。
+
+**示例：**
+```bash
+php artisan module:cache
+```
+
+### module:clear
+
+清除模块缓存文件并重置内存缓存，使后续命令以磁盘真实状态重新扫描。
+
+**签名：**
+```bash
+php artisan module:clear
+```
+
+**说明：**
+- 当模块被手动新增 / 删除（部署、git 拉取）导致缓存过期时，执行本命令可
+  立即恢复 `module:list` / `module:delete` 等命令的正确性。
+- 与 `module:delete` 不同，本命令不会删除任何模块目录，仅清除缓存。
+
+**示例：**
+```bash
+php artisan module:clear
 ```
 
 ## 迁移命令

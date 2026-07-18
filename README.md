@@ -1,6 +1,6 @@
 # Laravel 模块系统 - 完整指南
 
-一个为 Laravel 11+ / 12+ / 13+ 设计的现代化、工业级模块化系统，基于 PHP 8.2+ 开发。
+一个为 Laravel 11+ / 12+ / 13+ 设计的现代化、工业级模块化系统，基于 PHP 8.3+ 开发（Laravel 13 最低要求 PHP 8.3）。
 
 
 ## 📦 快速安装
@@ -146,6 +146,12 @@ php artisan module:delete Blog
 # 强制删除（不提示确认）
 php artisan module:delete Blog --force
 ```
+
+> **健壮性说明**：`module:delete` 在删除前会绕过模块缓存重新扫描磁盘，
+> 即使开启 `MODULES_CACHE_ENABLED=true`、缓存未更新，也能正确识别并删除
+> 通过部署 / git 拉取等方式新增的模块；若注册表中找不到该模块，还会回退到
+> 磁盘真实路径（同时匹配 StudlyCase / snake_case / 小写目录名）再次确认，
+> 避免「模块明明存在却提示模块不存在」的问题。
 
 
 ## 扩展宏（MySQL 8.0+ 优化版）
@@ -321,14 +327,14 @@ User::query()->regexpReplace('phone', '(\d{3})\d{4}(\d{4})', '$1****$2', 0, 'c',
 
 ## 🚀 特性
 
-- **现代化架构**：专为 Laravel 11+ / 12+ / 13+ 和 PHP 8.2+ 设计
+- **现代化架构**：专为 Laravel 11+ / 12+ / 13+ 和 PHP 8.3+ 设计
 - **配置驱动**：通过模块 PHP 配置文件管理所有元数据，不再需要 composer.json
 - **模块启用/禁用**：通过配置文件 `enabled` 键控制，禁用时完全不加载模块组件
 - **优先级控制**：`priority` 键控制模块加载顺序
 - **动态路由生成**：路由前缀和名称前缀根据配置动态生成
 - **自动发现机制**：自动发现模块的服务提供者、路由、命令、事件等
 - **环境隔离（Laravel 13 优化）**：CLI 命令相关功能与 `src/Commands` 下的类文件仅在「命令行环境」加载，浏览器（HTTP）请求期间完全跳过，降低内存与自动加载开销
-- **Laravel 13 原生特性适配**：兼容 CSRF 新中间件 `PreventRequestForgery`、属性路由/中间件（`#[Get]`/`#[Post]`/`#[Middleware]`），并提供向量相似度查询宏 `whereVectorSimilarTo`
+- **Laravel 13 原生特性适配**：兼容 CSRF 新中间件 `PreventRequestForgery`、属性路由/中间件（`#[Get]`/`#[Post]`/`#[Middleware]`）与属性化授权（`#[Authorize]`），提供向量相似度查询宏 `whereVectorSimilarTo`，并支持生成 Laravel 13 一等公民 JSON:API 资源（`module:make-resource --json-api`）
 - **灵活配置**：支持多路由中间件组、控制器命名空间映射
 - **功能完整**：支持路由、视图、配置、迁移、命令、事件等完整功能
 - **信息统计**：提供详细的模块信息和验证功能
@@ -350,6 +356,18 @@ User::query()->regexpReplace('phone', '(\d{3})\d{4}(\d{4})', '$1****$2', 0, 'c',
 - **迁移状态过滤**：支持按状态筛选迁移（已运行/待运行）
 - **迁移统计信息**：显示迁移统计汇总信息
 - **扩展查询宏**：支持whereHasIn、orWhereHasIn、whereHasNotIn、random、groupRandom 等宏查询
+
+### Laravel 13 适配要点
+
+本包已针对 Laravel 13.x 完成全面适配（破坏性变更极小，大部分应用可平滑升级），关键变更如下：
+
+- **PHP 8.3+**：`composer.json` 已将最低 PHP 版本提升为 `>=8.3`（Laravel 13 的硬性要求，不再支持 PHP 8.2）。
+- **CSRF 中间件重命名**：已兼容 `VerifyCsrfToken` → `PreventRequestForgery` 的变更；模块 `web` 路由默认套用的 `web` 中间件组在 Laravel 13 中即对应新的请求伪造保护（基于 `Sec-Fetch-Site` 的来源感知校验）。
+- **属性路由 / 中间件 / 授权**：`module:make-controller --attributes` 生成的控制器使用 `#[Get]`/`#[Post]`/`#[Middleware]`，并演示 Laravel 13 新增的 `#[Authorize]` 授权属性；模块路由统一使用完整类名（FQCN）引用控制器，不再依赖 Laravel 9+ 起已移除的路由组 `namespace` 选项。
+- **向量相似度检索**：扩展查询宏提供 `whereVectorSimilarTo` / `orderByVectorDistance`，桥接 Laravel 13 查询构造器原生向量检索能力（配合 PostgreSQL + pgvector 等向量数据库实现语义 / 相似度搜索）。
+- **JSON:API 资源（一等公民）**：`module:make-resource --json-api` 生成继承 `Illuminate\Http\Resources\JsonApi\JsonApiResource` 的资源，自动输出符合 JSON:API 规范的响应（自动处理 `type`/`id`/`attributes`/`relationships`、`?include=` 关联包含与 `?fields=` 稀疏字段集，并附带合规的 `Content-Type` 头）。
+- **声明式队列任务配置**：`module:make-job` 生成实现 `ShouldQueue` 的任务类，默认演示 Laravel 13 新增的 `Illuminate\Queue\Attributes` 属性化配置（`#[Tries]`/`#[Backoff]`/`#[Timeout]`/`#[FailOnTimeout]`/`#[MaxExceptions]`/`#[DeleteWhenMissingModels]`），以属性声明替代传统的 `public $tries` 等字段，配置更集中且与传统方式兼容。
+- **新增 API 完全兼容**：Laravel 13 新增的 `Queue::route()`（集中定义作业默认队列 / 连接）、`Cache::touch()`（延长缓存 TTL）等特性均可在模块服务提供者、命令中直接使用，无需额外适配。
 
 ## 💡 核心功能示例
 
@@ -597,6 +615,15 @@ php artisan module:make-command Blog TestCommand --command=blog:test
 # 创建数据填充器
 php artisan module:make-seeder Blog PostSeeder
 
+# 创建 API 资源转换器
+php artisan module:make-resource Blog PostResource
+
+# 创建 Laravel 13 一等公民 JSON:API 资源（继承 JsonApiResource，自动输出合规 JSON:API 响应）
+php artisan module:make-resource Blog PostResource --json-api
+
+# 创建队列任务类（默认演示 Laravel 13 基于 PHP 属性的声明式任务配置 #[Tries]/#[Backoff]）
+php artisan module:make-job Blog SendEmail
+
 # 创建策略
 php artisan module:make-policy Blog PostPolicy
 
@@ -618,6 +645,12 @@ php artisan module:validate Blog
 
 # 调试命令
 php artisan module:debug-commands --module=Blog
+
+# 重新扫描并写入模块缓存（生产环境部署后执行）
+php artisan module:cache
+
+# 清除模块缓存（下次访问重新扫描磁盘）
+php artisan module:clear
 ```
 
 ### 迁移管理命令

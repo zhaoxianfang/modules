@@ -31,12 +31,13 @@ class ResourceMakeCommand extends Command
                             {module : 模块名称（必需，例如：Blog）}
                             {name : 资源名称（必需，例如：PostResource）}
                             {--collection : 创建资源集合类}
+                            {--json-api : 生成 Laravel 13 一等公民 JSON:API 资源（继承 JsonApiResource）}
                             {--force : 覆盖已存在的文件}';
 
     /**
      * @var string
      */
-    protected $description = '在指定模块中创建 API 资源转换器';
+    protected $description = '在指定模块中创建 API 资源转换器（支持 --json-api 生成 Laravel 13 JSON:API 资源）';
 
     /**
      * 执行命令
@@ -46,6 +47,7 @@ class ResourceMakeCommand extends Command
         $moduleName = Str::studly($this->argument('module'));
         $resourceName = Str::studly($this->argument('name'));
         $force = $this->option('force');
+        $jsonApi = $this->option('json-api');
 
         $module = Module::find($moduleName);
 
@@ -82,7 +84,7 @@ class ResourceMakeCommand extends Command
         }
 
         $result = $stubGenerator->generate(
-            'resource.stub',
+            $jsonApi ? 'resource.json-api.stub' : 'resource.stub',
             'Http/Resources/' . $resourceName . '.php',
             $force
         );

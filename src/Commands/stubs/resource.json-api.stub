@@ -1,0 +1,76 @@
+<?php
+
+namespace {{NAMESPACE}}\{{NAME}}\Http\Resources;
+
+use Illuminate\Http\Resources\JsonApi\JsonApiResource;
+use Illuminate\Support\Str;
+
+/**
+ * {{CLASS}} JSON:API 资源
+ *
+ * {{NAME}} 模块的 JSON:API 资源转换器（Laravel 13 一等公民支持）。
+ * 继承 Illuminate\Http\Resources\JsonApi\JsonApiResource，自动输出符合
+ * JSON:API 规范的响应：type / id / attributes / relationships、
+ * ?include= 关联包含、?fields= 稀疏字段集，以及合规的 Content-Type 头。
+ *
+ * 文档：https://laravel.com/docs/13.x/eloquent-resources#json-api-resources
+ *
+ * 使用示例：
+ * <code>
+ * use Modules\{{NAME}}\Http\Resources\{{CLASS}};
+ *
+ * // 单资源
+ * return new {{CLASS}}($model);
+ *
+ * // 集合（无需单独的 *Collection 类）
+ * return {{CLASS}}::collection($models);
+ * </code>
+ */
+class {{CLASS}} extends JsonApiResource
+{
+    /**
+     * 资源类型（JSON:API 必需的 "type" 成员）
+     *
+     * 默认基于类名去掉 "Resource" 后缀后转为蛇形复数
+     * （如 PostResource => "posts"）。可按需覆盖为固定字符串。
+     */
+    public function toType(): string
+    {
+        $name = Str::beforeLast(class_basename($this), 'Resource');
+
+        return Str::snake(Str::pluralStudly($name));
+    }
+
+    /**
+     * 资源属性（对应 JSON:API 的 "attributes" 对象）
+     *
+     * 直接声明字段名数组即可；如需派生属性可改写为：
+     * <code>
+     * public function toAttributes($request): array
+     * {
+     *     return ['id' => $this->id, 'full_name' => $this->first_name.' '.$this->last_name];
+     * }
+     * </code>
+     *
+     * @var array<int, string>
+     */
+    public $attributes = [
+        'id',
+        // 'title',
+        // 'body',
+        // 'created_at',
+        // 'updated_at',
+    ];
+
+    /**
+     * 关联关系（对应 JSON:API 的 "relationships"）
+     *
+     * 仅在客户端通过 ?include=xxx 请求时才序列化。
+     * 键为关系名，值为对应的资源类（FQCN）。
+     *
+     * @var array<string, class-string>
+     */
+    public $relationships = [
+        // 'author' => \Modules\{{NAME}}\Http\Resources\SomeResource::class,
+    ];
+}

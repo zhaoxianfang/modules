@@ -50,6 +50,8 @@
 | `module:make-command`    | 创建命令    | `php artisan module:make-command <module> <name> [--command=] [--force]`                                        |
 | `module:make-route`      | 创建路由文件  | `php artisan module:make-route <module> <name> [--type=web] [--force]`                                          |
 | `module:make-config`     | 创建配置文件  | `php artisan module:make-config <module> <name> [--force]`                                                      |
+| `module:make-resource`   | 创建 API 资源转换器 | `php artisan module:make-resource <module> <name> [--collection] [--json-api] [--force]`                       |
+| `module:make-job`        | 创建队列任务类      | `php artisan module:make-job <module> <name> [--force]`                                                       |
 
 **⭐ 重要说明**：
 - `--type` 选项不再限制于 web/api/admin，支持任意自定义类型（如 mobile、miniapp、admin 等）
@@ -1294,6 +1296,136 @@ class PostSeeder extends Seeder
     }
 }
 ```
+
+---
+
+## 资源生成
+
+### 命令
+
+```bash
+php artisan module:make-resource <module> <name> [--collection] [--json-api] [--force]
+```
+
+### 参数
+
+- `module`：模块名称（必需）
+- `name`：资源类名称（必需，建议以 `Resource` 结尾，如 `PostResource`）
+
+### 选项
+
+| 选项 | 说明 | 默认值 |
+|-----|------|-------|
+| `--collection` | 创建资源集合类 | false |
+| `--json-api` | 生成 Laravel 13 一等公民 JSON:API 资源（继承 `Illuminate\Http\Resources\JsonApi\JsonApiResource`） | false |
+| `--force` | 覆盖已存在的资源 | false |
+
+### 示例
+
+#### 创建标准 API 资源
+
+```bash
+php artisan module:make-resource Blog PostResource
+```
+
+生成文件：`Modules/Blog/Http/Resources/PostResource.php`（继承 `JsonResource`）。
+
+#### 创建 Laravel 13 JSON:API 资源（推荐用于需要 JSON:API 规范响应的场景）
+
+```bash
+php artisan module:make-resource Blog PostResource --json-api
+```
+
+生成文件：`Modules/Blog/Http/Resources/PostResource.php`（继承 `JsonApiResource`）。
+
+该资源自动输出符合 [JSON:API](https://jsonapi.org/) 规范的响应：
+
+- 通过 `$attributes` 属性（或覆盖 `toAttributes()` 方法）声明字段；
+- 通过 `$relationships` 属性（或覆盖 `toRelationships()` 方法）声明关联，仅在客户端 `?include=xxx` 请求时序列化；
+- 自动处理稀疏字段集（`?fields=`）、资源类型（`toType()`）与 `Content-Type` 头；
+- 集合直接通过 `PostResource::collection($items)` 返回，无需单独的 `*Collection` 类。
+
+```php
+use Illuminate\Http\Resources\JsonApi\JsonApiResource;
+
+class PostResource extends JsonApiResource
+{
+    public $attributes = ['id', 'title', 'body', 'created_at'];
+
+    public $relationships = [
+        // 'author' => \App\Http\Resources\UserResource::class,
+    ];
+}
+```
+
+> 需要 Laravel 13+。`JsonApiResource` 使用 `toAttributes()` / `toRelationships()` 而非标准资源的 `toArray()`。
+
+---
+
+## 队列任务生成
+
+### 命令
+
+```bash
+php artisan module:make-job <module> <name> [--force]
+```
+
+### 参数
+
+- `module`：模块名称（必需）
+- `name`：任务类名称（必需，建议以业务语义命名，如 `SendEmail`、`ProcessPodcast`）
+
+### 选项
+
+| 选项 | 说明 | 默认值 |
+|-----|------|-------|
+| `--force` | 覆盖已存在的任务类 | false |
+
+### 示例
+
+```bash
+php artisan module:make-job Blog SendEmail
+```
+
+生成文件：`Modules/Blog/Jobs/SendEmail.php`（实现 `ShouldQueue`）。
+
+该任务默认演示 Laravel 13 新增的**基于 PHP 属性的声明式任务配置**（命名空间 `Illuminate\Queue\Attributes`）：
+
+```php
+use Illuminate\Queue\Attributes\Backoff;
+use Illuminate\Queue\Attributes\Tries;
+
+#[Tries(3)]
+#[Backoff(5)]
+class SendEmail implements ShouldQueue
+{
+    use Queueable;
+
+    public function handle(): void
+    {
+        // 异步处理逻辑
+    }
+}
+```
+
+可用属性一览（取消对应注释即可启用）：
+
+| 属性 | 作用 |
+|------|------|
+| `#[Tries(n)]` | 任务最大尝试次数（优先于命令行 `--tries`） |
+| `#[Backoff(n)]` | 重试退避秒数 |
+| `#[Timeout(n)]` | 任务允许运行的最大秒数，超时后 worker 退出 |
+| `#[FailOnTimeout]` | 超时后直接标记失败，不再占用尝试次数重试 |
+| `#[MaxExceptions(n)]` | 配合 `Tries`：仅当连续抛出 n 次未处理异常才最终失败 |
+| `#[DeleteWhenMissingModels]` | 依赖的 Eloquent 模型被删除时自动删除该任务 |
+
+调度方式：
+
+```php
+\Modules\Blog\Jobs\SendEmail::dispatch();
+```
+
+> 这些属性与传统配置（`$tries` 属性、`retryUntil()` 方法、`middleware()` 方法）完全兼容，可混用。
 
 ---
 

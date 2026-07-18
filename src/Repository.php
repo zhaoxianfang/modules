@@ -91,6 +91,14 @@ class Repository implements RepositoryInterface
     protected int $cacheTtl = 3600;
 
     /**
+     * 是否绕过缓存强制从磁盘扫描
+     *
+     * 用于 module:delete 等需要确保与磁盘状态一致的场景，
+     * 避免读取到过期的模块缓存而误判“模块不存在”。
+     */
+    protected bool $bypassCache = false;
+
+    /**
      * 创建新实例
      *
      * @param Filesystem     $files     文件系统
@@ -138,6 +146,8 @@ class Repository implements RepositoryInterface
 
     public function all(): array
     {
+        $this->ensureScanned();
+
         if ($this->sortByPriority) {
             return $this->sortByPriority($this->modules);
         }
@@ -147,6 +157,8 @@ class Repository implements RepositoryInterface
 
     public function allEnabled(): array
     {
+        $this->ensureScanned();
+
         if ($this->enabledModules === null) {
             $this->enabledModules = [];
 
@@ -166,6 +178,8 @@ class Repository implements RepositoryInterface
 
     public function allDisabled(): array
     {
+        $this->ensureScanned();
+
         if ($this->disabledModules === null) {
             $this->disabledModules = [];
 
@@ -181,6 +195,8 @@ class Repository implements RepositoryInterface
 
     public function find(string $name): ?ModuleInterface
     {
+        $this->ensureScanned();
+
         // 直接匹配
         if (isset($this->modules[$name])) {
             return $this->modules[$name];
@@ -225,6 +241,8 @@ class Repository implements RepositoryInterface
 
     public function getNames(): array
     {
+        $this->ensureScanned();
+
         return array_keys($this->modules);
     }
 
@@ -235,6 +253,8 @@ class Repository implements RepositoryInterface
 
     public function count(): int
     {
+        $this->ensureScanned();
+
         return count($this->modules);
     }
 
@@ -253,8 +273,8 @@ class Repository implements RepositoryInterface
             return;
         }
 
-        // 尝试从缓存加载
-        if ($this->loadFromCache()) {
+        // 尝试从缓存加载（除非显式要求绕过缓存）
+        if (! $this->bypassCache && $this->loadFromCache()) {
             $this->scanned = true;
             return;
         }
@@ -270,7 +290,25 @@ class Repository implements RepositoryInterface
     }
 
     /**
+     * 确保已完成至少一次扫描
+     *
+     * 所有公开查询方法都会先调用此方法，
+     * 保证即使服务提供者 boot 阶段因故未触发扫描，
+     * 或命令在扫描之前被调用，也能基于最新磁盘状态返回正确结果，
+     * 避免“模块明明存在却提示不存在”的问题。
+     */
+    public function ensureScanned(): void
+    {
+        if (! $this->scanned) {
+            $this->scan();
+        }
+    }
+
+    /**
      * 强制重新扫描，忽略缓存
+     *
+     * 用于模块被新增/删除后需要以磁盘真实状态为准的场景。
+     * 会临时绕过模块缓存，扫描结束后恢复正常缓存策略。
      */
     public function rescan(): void
     {
@@ -279,6 +317,7 @@ class Repository implements RepositoryInterface
         $this->enabledModules = null;
         $this->disabledModules = null;
         $this->scanned = false;
+        $this->bypassCache = true;
 
         foreach ($this->paths as $path) {
             $this->scanPath($path, $this->namespace);
@@ -286,6 +325,7 @@ class Repository implements RepositoryInterface
 
         $this->saveToCache();
         $this->scanned = true;
+        $this->bypassCache = false;
     }
 
     /**

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\File;
  * 负责加载和管理模块配置文件
  * 支持动态加载当前模块配置文件
  *
- * PHP 8.2+ 优化：
+ * PHP 8.3+ 优化：
  * - 简化的配置加载逻辑
  * - 改进的缓存机制
  * - 更好的类型声明
@@ -156,7 +156,7 @@ class ConfigLoader
      * 检测当前模块
      *
      * 通过调用栈自动检测当前代码所在的模块
-     * PHP 8.2+ 优化：简化的检测逻辑
+     * PHP 8.3+ 优化：简化的检测逻辑
      *
      * @return string|null
      */

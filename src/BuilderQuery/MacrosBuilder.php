@@ -48,7 +48,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  *
  * @package zxf\Modules\BuilderQuery
  * @version 2.2.0
- * @requires PHP 8.2+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
+ * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
  *
  * ============================================
  * 1. whereHas 优化系列 - 解决关联查询性能问题
@@ -264,7 +264,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * 16. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索
  * ============================================
  * @method $this whereVectorSimilarTo(string $column, mixed $value, ?float $minSimilarity = null) 按向量相似度筛选记录（需 Laravel 13+ 与向量数据库支持）
- * @method $this orderByVectorDistance(string $column, mixed $value, string $direction = 'asc') 按向量距离排序（最近邻检索）
+ * @method $this orderByVectorDistance(string $column, mixed $value) 按向量距离排序（最近邻检索，升序）
  */
 class MacrosBuilder extends Eloquent\Builder
 {
@@ -335,14 +335,27 @@ class MacrosBuilder extends Eloquent\Builder
      */
     public static function registerVectorSearch(ServiceProvider $provider): void
     {
-        // 按向量相似度筛选（如：就近语义匹配），底层为 Laravel 13 原生实现
+        // 按向量相似度筛选（如：就近语义匹配）。
+        // 桥接到 Laravel 13 查询构造器原生方法：
+        //   whereVectorSimilarTo(string $column, $vector, float $minSimilarity = 0.6, bool $order = true)
+        // 当调用方未指定 $minSimilarity 时，不向下传递该参数以使用框架默认阈值 0.6，
+        // 避免向框架传入 null 导致 1 - null 的语义偏差。
         Eloquent\Builder::macro('whereVectorSimilarTo', function (string $column, $value, ?float $minSimilarity = null) {
-            return $this->getQuery()->whereVectorSimilarTo($column, $value, $minSimilarity);
+            $query = $this->getQuery();
+
+            if ($minSimilarity === null) {
+                return $query->whereVectorSimilarTo($column, $value);
+            }
+
+            return $query->whereVectorSimilarTo($column, $value, $minSimilarity);
         });
 
-        // 按向量距离排序（最近邻检索），底层为 Laravel 13 原生实现
-        Eloquent\Builder::macro('orderByVectorDistance', function (string $column, $value, string $direction = 'asc') {
-            return $this->getQuery()->orderByVectorDistance($column, $value, $direction);
+        // 按向量距离排序（最近邻检索）。
+        // 桥接到 Laravel 13 查询构造器原生方法：
+        //   orderByVectorDistance(string $column, $vector) —— 仅按升序（最近邻）排序。
+        // 注意：Laravel 13 原生实现不接收方向参数，故此处仅透传列名与向量值。
+        Eloquent\Builder::macro('orderByVectorDistance', function (string $column, $value) {
+            return $this->getQuery()->orderByVectorDistance($column, $value);
         });
     }
 

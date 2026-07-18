@@ -21,7 +21,7 @@ use InvalidArgumentException;
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 2.0.0
- * @requires PHP 8.2+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
+ * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
  */
 class WithRecursiveMacro
 {

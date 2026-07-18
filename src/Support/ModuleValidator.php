@@ -38,11 +38,20 @@ class ModuleValidator
         }
 
         // 检查服务提供者
-        $providerClass = $module->getServiceProviderClass();
-        if (! $providerClass) {
-            $errors[] = '缺少主服务提供者文件';
-        } elseif (! class_exists($providerClass)) {
-            $errors[] = '服务提供者类不存在';
+        // 先以“文件是否存在”判定结构完整性（不依赖 composer 自动加载是否配置），
+        // 避免因项目未配置 Modules\ 命名空间的 PSR-4 而误报“缺少主服务提供者文件”。
+        $providerPath = $module->getProvidersPath();
+        $hasProviderFile = is_dir($providerPath)
+            && ! empty(glob($providerPath . DIRECTORY_SEPARATOR . '*ServiceProvider.php'));
+
+        if (! $hasProviderFile) {
+            $errors[] = '缺少主服务提供者文件 (Providers/*ServiceProvider.php)';
+        } else {
+            $providerClass = $module->getServiceProviderClass();
+            if ($providerClass === null || ! class_exists($providerClass)) {
+                $warnings[] = '服务提供者类无法被自动加载，请确认 composer.json 已配置 '
+                    . $module->getNamespace() . '\\ 命名空间并运行 composer dump-autoload';
+            }
         }
 
         // 检查配置文件
