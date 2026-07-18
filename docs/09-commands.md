@@ -215,6 +215,13 @@ php artisan module:make Shop --force
 php artisan module:make Shop --full
 ```
 
+> **缓存说明**：创建成功后命令会自动失效模块缓存（元数据 + 自动发现清单），
+> 因此下一个请求会重新扫描磁盘并注册新模块的路由、视图、迁移等组件，
+> 不会出现「新模块路由 404 / 组件未被发现」的问题。这与 `module:delete` 末尾的
+> 缓存失效处理保持一致。若你是在开启 `MODULES_CACHE_ENABLED` 后**手动**（非通过
+> `module:make`）往磁盘新增模块目录（如 git 部署拉取），缓存也会在下次启动时通过
+> 目录 mtime 校验自动失效，无需手动执行 `module:clear`。
+
 ### module:list
 
 列出所有模块及其状态。

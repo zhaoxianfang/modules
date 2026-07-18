@@ -446,8 +446,15 @@ class Repository implements RepositoryInterface
             $module->clearCache();
         }
 
-        // 删除文件缓存
+        // 删除模块元数据缓存文件
         $this->deleteCacheFile();
+
+        // 同步清除自动发现清单缓存（与元数据缓存同生命周期）
+        try {
+            \zxf\Modules\Support\ModuleAutoDiscovery::clearDiscoveryCache();
+        } catch (\Throwable) {
+            // 忽略
+        }
     }
 
     /**
@@ -507,6 +514,15 @@ class Repository implements RepositoryInterface
                 return false;
             }
 
+            // 防过期校验：若任意模块根目录的 mtime 发生变化（例如新增/删除了模块目录、
+            // 或 git 部署拉取了新模块），说明缓存已不能反映磁盘真实状态，直接失效并
+            // 回退到真实扫描，避免“新模块路由 404 / 已删模块仍被加载”等问题。
+            // 仅做一次廉价的 filemtime 探测（远轻于已消除的逐模块目录扫描）。
+            if (! $this->pathMtimesUnchanged($data['path_mtimes'] ?? [])) {
+                @unlink($cacheFile);
+                return false;
+            }
+
             foreach ($data['modules'] as $moduleData) {
                 if (! is_array($moduleData)) {
                     continue;
@@ -522,7 +538,9 @@ class Repository implements RepositoryInterface
                         'aliases' => $moduleData['aliases'] ?? [],
                         'author' => $moduleData['author'] ?? '',
                         'version' => $moduleData['version'] ?? '1.0.0',
-                        'enabled' => $moduleData['enabled'] ?? null,
+                        // 缓存中始终以布尔值存储（saveToCache 写入 isEnabled() 结果），
+                        // 默认 true 以避免 null 触发惰性重新读取配置文件。
+                        'enabled' => $moduleData['enabled'] ?? true,
                     ]
                 );
 
@@ -534,11 +552,48 @@ class Repository implements RepositoryInterface
                 }
             }
 
-            return ! empty($this->modules);
+            // 缓存文件有效即视为命中（即使模块列表为空，也避免重复磁盘扫描）
+            return true;
         } catch (\Throwable) {
             @unlink($cacheFile);
             return false;
         }
+    }
+
+    /**
+     * 收集各模块根目录的修改时间（用于缓存防过期校验）
+     *
+     * 模块目录的增删（以及 git 部署拉取）都会改变其父目录的 mtime，
+     * 因此比对这些 mtime 即可在廉价开销下判断模块集合是否发生变化。
+     *
+     * @return array<string, int|null>
+     */
+    protected function collectPathMtimes(): array
+    {
+        $mtimes = [];
+
+        foreach ($this->paths as $path) {
+            $mtimes[$path] = is_dir($path) ? @filemtime($path) : null;
+        }
+
+        return $mtimes;
+    }
+
+    /**
+     * 判断缓存中记录的模块根目录 mtime 是否与磁盘当前一致
+     */
+    protected function pathMtimesUnchanged(array $stored): bool
+    {
+        foreach ($this->paths as $path) {
+            $storedMtime = $stored[$path] ?? null;
+            $currentMtime = is_dir($path) ? @filemtime($path) : null;
+
+            if ($storedMtime !== $currentMtime) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -579,6 +634,7 @@ class Repository implements RepositoryInterface
             $content = '<?php return ' . var_export([
                 'modules' => $modulesData,
                 'cached_at' => time(),
+                'path_mtimes' => $this->collectPathMtimes(),
             ], true) . ';';
 
             file_put_contents($cacheFile, $content, LOCK_EX);

@@ -27,15 +27,23 @@ use zxf\Modules\Contracts\ModuleInterface;
  * 11. 策略类
  * 12. 仓库类
  *
+ * 性能说明（v5.x）：
+ * - 当 modules.cache.enabled=true 时，扫描得到的「发现清单」会被持久化到
+ *   storage/framework/cache/modules/discovery.php。
+ * - 后续每个请求/命令直接读取清单并「注册」，跳过 File::files() 目录扫描、
+ *   class_exists() 自动加载探测与 ReflectionClass 反射，显著降低 IO 与 CPU 开销。
+ * - 清单与模块元数据缓存同生命周期：module:cache 重建、module:clear 清除。
+ * - 任何清单读取/解析失败都会安全回退到实时扫描，绝不阻断启动。
+ *
  * @package zxf\Modules
- * @version 4.0.0
+ * @version 5.0.0
  */
 class ModuleAutoDiscovery
 {
     /**
      * 全局命令缓存
      *
-     * @var array<string>
+     * @var array<int, string>
      */
     protected static array $globalCommands = [];
 
@@ -50,7 +58,7 @@ class ModuleAutoDiscovery
     protected \Illuminate\Contracts\Foundation\Application $app;
 
     /**
-     * 发现缓存
+     * 发现缓存（调试/摘要用，键 => 值）
      *
      * @var array<string, mixed>
      */
@@ -76,13 +84,50 @@ class ModuleAutoDiscovery
     protected static array $hooks = [];
 
     /**
+     * 结构化发现结果（同时用于清单缓存与统计摘要）
+     *
+     * @var array<string, mixed>
+     */
+    protected array $discovered = [
+        'providers'       => [],
+        'aliases'         => [],
+        'commands'        => [],
+        'events'          => [],
+        'repositories'    => [],
+        'observers'       => [],
+        'policies'        => [],
+        'configs'         => [],
+        'routes'          => [],
+        'view_path'       => null,
+        'migration_path'  => null,
+        'translation_path' => null,
+    ];
+
+    /**
+     * 发现清单持久化缓存（模块名 => discovered 数组）
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    protected static array $manifestCache = [];
+
+    /**
+     * 清单是否已从文件加载
+     */
+    protected static bool $manifestLoaded = false;
+
+    /**
+     * 清单是否有改动待写入
+     */
+    protected static bool $manifestDirty = false;
+
+    /**
      * 创建新实例
      */
     public function __construct(ModuleInterface $module)
     {
         $this->module = $module;
         $this->app = app();
-        $this->cacheEnabled = config('modules.cache.enabled', false);
+        $this->cacheEnabled = (bool) ModuleContext::getConfig('modules.cache.enabled', false);
     }
 
     /**
@@ -129,83 +174,108 @@ class ModuleAutoDiscovery
 
         $this->triggerHook('before_discover', ['module' => $this->module->getName()]);
 
-        // 按顺序执行发现
-        $this->discoverProviders();
-        $this->discoverConfigs();
-        $this->discoverMiddlewares();
-        $this->discoverRoutes();
-        $this->discoverViews();
-        $this->discoverMigrations();
-        $this->discoverTranslations();
+        // 命中持久化清单：直接注册，跳过全部目录扫描与自动加载探测
+        if ($this->cacheEnabled) {
+            $this->loadManifestCache();
+            $name = $this->module->getName();
 
-        // Artisan 命令仅需在命令行（CLI）环境发现与注册，
-        // 浏览器（HTTP）请求阶段直接跳过，避免扫描与加载命令类文件。
-        if ($this->app->runningInConsole()) {
-            $this->discoverCommands();
+            if (isset(self::$manifestCache[$name]) && is_array(self::$manifestCache[$name])) {
+                $this->discovered = self::$manifestCache[$name];
+                $this->registerAll();
+
+                $this->triggerHook('after_discover', [
+                    'module' => $name,
+                    'cache' => $this->cache,
+                    'from_cache' => true,
+                ]);
+
+                return;
+            }
         }
 
-        $this->discoverEvents();
-        $this->discoverObservers();
-        $this->discoverPolicies();
-        $this->discoverRepositories();
+        // 实时扫描并注册
+        $this->scanAll();
+        $this->registerAll();
+
+        if ($this->cacheEnabled) {
+            $this->persistManifest();
+        }
 
         $this->triggerHook('after_discover', [
             'module' => $this->module->getName(),
             'cache' => $this->cache,
         ]);
+    }
 
-        if (! $this->cacheEnabled) {
-            $this->cache = [];
+    /**
+     * 扫描所有组件（仅探测，不注册）
+     */
+    protected function scanAll(): void
+    {
+        $this->scanProviders();
+        $this->scanConfigs();
+        $this->scanMiddlewares();
+        $this->scanRoutes();
+        $this->scanViews();
+        $this->scanMigrations();
+        $this->scanTranslations();
+
+        if ($this->app->runningInConsole()) {
+            $this->scanCommands();
         }
+
+        $this->scanEvents();
+        $this->scanObservers();
+        $this->scanPolicies();
+        $this->scanRepositories();
+    }
+
+    /**
+     * 注册所有已发现的组件
+     *
+     * 注册是「运行时状态」，不随缓存持久化，因此无论是否命中清单都必须执行。
+     */
+    protected function registerAll(): void
+    {
+        $this->registerProviders();
+        $this->registerConfigs();
+        $this->registerRoutes();
+        $this->registerViews();
+        $this->registerMigrations();
+        $this->registerTranslations();
+
+        if ($this->app->runningInConsole()) {
+            $this->registerCommands();
+        }
+
+        $this->registerObservers();
+        $this->registerPolicies();
     }
 
     // ========================================================================
     //  服务提供者
     // ========================================================================
 
-    protected function discoverProviders(): void
+    protected function scanProviders(): void
     {
         if (! $this->shouldDiscover('providers')) {
             return;
         }
 
-        // 1. 注册配置文件中声明的额外 providers
-        $extraProviders = $this->module->getLaravelProviders();
-        foreach ($extraProviders as $providerClass) {
+        foreach ($this->module->getLaravelProviders() as $providerClass) {
             if (is_string($providerClass) && class_exists($providerClass)) {
-                try {
-                    $this->app->register($providerClass);
-                    $this->cache["provider.extra.{$providerClass}"] = true;
-                    $this->log("Registered extra provider: {$providerClass}");
-                } catch (\Throwable $e) {
-                    $this->log("Extra provider registration error: {$e->getMessage()}");
-                }
+                $this->discovered['providers'][] = $providerClass;
+                $this->cache["provider.extra.{$providerClass}"] = $providerClass;
             }
         }
 
-        // 2. 注册配置文件中声明的额外别名
-        $extraAliases = $this->module->getLaravelAliases();
-        if (! empty($extraAliases) && method_exists($this->app, 'alias')) {
-            foreach ($extraAliases as $alias => $class) {
-                if (is_string($alias) && is_string($class) && class_exists($class)) {
-                    try {
-                        $this->app->alias($class, $alias);
-                        $this->cache["alias.{$alias}"] = $class;
-                        $this->log("Registered alias: {$alias} => {$class}");
-                    } catch (\Throwable) {
-                        // 手动绑定到容器
-                        try {
-                            $this->app->singleton($alias, fn () => $this->app->make($class));
-                            $this->cache["alias.{$alias}"] = $class;
-                        } catch (\Throwable) {
-                            // 静默失败
-                        }
-                    }
-                }
+        foreach ($this->module->getLaravelAliases() as $alias => $class) {
+            if (is_string($alias) && is_string($class) && class_exists($class)) {
+                $this->discovered['aliases'][$alias] = $class;
+                $this->cache["alias.{$alias}"] = $class;
             }
         }
 
-        // 3. 自动扫描 Providers/ 目录下的 ServiceProvider 类
         $providersPath = $this->module->getProvidersPath();
 
         if (! is_dir($providersPath)) {
@@ -230,9 +300,8 @@ class ModuleAutoDiscovery
                 $reflection = new \ReflectionClass($providerClass);
 
                 if ($reflection->isSubclassOf(\Illuminate\Support\ServiceProvider::class) && ! $reflection->isAbstract()) {
-                    $this->app->register($providerClass);
+                    $this->discovered['providers'][] = $providerClass;
                     $this->cache["provider.{$className}"] = $providerClass;
-                    $this->log("Registered provider: {$providerClass}");
                 }
             }
         } catch (\Throwable $e) {
@@ -240,11 +309,40 @@ class ModuleAutoDiscovery
         }
     }
 
+    protected function registerProviders(): void
+    {
+        foreach (array_unique($this->discovered['providers']) as $providerClass) {
+            try {
+                $this->app->register($providerClass);
+                $this->log("Registered provider: {$providerClass}");
+            } catch (\Throwable $e) {
+                $this->log("Provider registration error: {$e->getMessage()}");
+            }
+        }
+
+        foreach ($this->discovered['aliases'] as $alias => $class) {
+            try {
+                if (method_exists($this->app, 'alias')) {
+                    $this->app->alias($class, $alias);
+                } else {
+                    $this->app->singleton($alias, fn () => $this->app->make($class));
+                }
+                $this->log("Registered alias: {$alias} => {$class}");
+            } catch (\Throwable) {
+                try {
+                    $this->app->singleton($alias, fn () => $this->app->make($class));
+                } catch (\Throwable) {
+                    // 静默失败
+                }
+            }
+        }
+    }
+
     // ========================================================================
     //  配置文件
     // ========================================================================
 
-    protected function discoverConfigs(): void
+    protected function scanConfigs(): void
     {
         if (! $this->shouldDiscover('config')) {
             return;
@@ -256,9 +354,10 @@ class ModuleAutoDiscovery
             return;
         }
 
+        $moduleLower = $this->module->getLowerName();
+
         try {
             $files = File::files($configPath);
-            $moduleLower = $this->module->getLowerName();
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -266,21 +365,20 @@ class ModuleAutoDiscovery
                 }
 
                 $filename = $file->getBasename('.php');
+                $isMain = (strtolower($filename) === $moduleLower || $filename === 'config');
 
-                if (in_array(strtolower($filename), [$moduleLower, 'config'], true)) {
-                    $configKey = $moduleLower;
-                } else {
-                    $configKey = $moduleLower . '.' . strtolower($filename);
-                }
-
-                $configValue = require $file->getPathname();
+                // 主配置文件已由 Module::initialize() 加载，直接复用，避免重复 require
+                $configValue = $isMain
+                    ? $this->module->getModuleConfig()
+                    : require $file->getPathname();
 
                 if (! is_array($configValue)) {
                     continue;
                 }
 
-                // 合并配置：后加载的覆盖先加载的
-                config([$configKey => array_merge(config($configKey, []), $configValue)]);
+                $configKey = $isMain ? $moduleLower : $moduleLower . '.' . strtolower($filename);
+
+                $this->discovered['configs'][$configKey] = $configValue;
                 $this->cache["config.{$configKey}"] = true;
                 $this->log("Loaded config: {$configKey}");
             }
@@ -289,11 +387,23 @@ class ModuleAutoDiscovery
         }
     }
 
+    protected function registerConfigs(): void
+    {
+        foreach ($this->discovered['configs'] as $configKey => $configValue) {
+            if (! is_array($configValue)) {
+                continue;
+            }
+
+            // 合并配置：后加载的覆盖先加载的
+            config([$configKey => array_merge(config($configKey, []), $configValue)]);
+        }
+    }
+
     // ========================================================================
     //  中间件
     // ========================================================================
 
-    protected function discoverMiddlewares(): void
+    protected function scanMiddlewares(): void
     {
         if (! $this->shouldDiscover('middlewares')) {
             return;
@@ -338,7 +448,7 @@ class ModuleAutoDiscovery
     //  路由文件
     // ========================================================================
 
-    protected function discoverRoutes(): void
+    protected function scanRoutes(): void
     {
         if (! $this->shouldDiscover('routes')) {
             return;
@@ -349,11 +459,6 @@ class ModuleAutoDiscovery
         if (! is_dir($routesPath)) {
             return;
         }
-
-        $middlewareGroups = config('modules.middleware_groups', [
-            'web' => ['web'],
-            'api' => ['api'],
-        ]);
 
         try {
             $files = File::files($routesPath);
@@ -369,19 +474,49 @@ class ModuleAutoDiscovery
                     continue;
                 }
 
-                $middleware = $middlewareGroups[$filename] ?? [];
+                $this->discovered['routes'][] = $filename;
+                $this->cache["route.{$filename}"] = true;
+            }
+        } catch (\Throwable $e) {
+            $this->log("Route discovery error: {$e->getMessage()}");
+        }
+    }
 
+    protected function registerRoutes(): void
+    {
+        if (empty($this->discovered['routes'])) {
+            return;
+        }
+
+        $routesPath = $this->module->getRoutesPath();
+
+        if (! is_dir($routesPath)) {
+            return;
+        }
+
+        $middlewareGroups = config('modules.middleware_groups', [
+            'web' => ['web'],
+            'api' => ['api'],
+        ]);
+
+        try {
+            foreach ($this->discovered['routes'] as $filename) {
+                $file = $routesPath . DIRECTORY_SEPARATOR . $filename . '.php';
+
+                if (! file_exists($file)) {
+                    continue;
+                }
+
+                $middleware = $middlewareGroups[$filename] ?? [];
                 $router = app('router');
                 $routeGroup = $router;
 
-                // Laravel 9+ 已移除路由组的隐式控制器命名空间，
-                // 模块路由文件直接以完整类名（FQCN）引用控制器，无需设置 namespace。
                 if (! empty($middleware)) {
                     $routeGroup = $routeGroup->middleware($middleware);
                 }
 
-                $routeGroup->group(function () use ($routeFile) {
-                    require $routeFile->getPathname();
+                $routeGroup->group(function () use ($file) {
+                    require $file;
                 });
 
                 $this->log("Loaded route: {$filename}");
@@ -396,7 +531,7 @@ class ModuleAutoDiscovery
     //  视图
     // ========================================================================
 
-    protected function discoverViews(): void
+    protected function scanViews(): void
     {
         if (! $this->shouldDiscover('views')) {
             return;
@@ -414,10 +549,21 @@ class ModuleAutoDiscovery
             return;
         }
 
+        $this->discovered['view_path'] = $viewsPath;
+        $this->cache['view'] = true;
+    }
+
+    protected function registerViews(): void
+    {
+        $viewsPath = $this->discovered['view_path'] ?? null;
+
+        if (! is_string($viewsPath) || ! is_dir($viewsPath)) {
+            return;
+        }
+
         $namespaceFormat = config('modules.views.namespace_format', 'lower');
 
         $viewNamespace = match ($namespaceFormat) {
-            'lower' => $this->module->getLowerName(),
             'studly' => $this->module->getName(),
             'camel' => $this->module->getCamelName(),
             default => $this->module->getLowerName(),
@@ -436,7 +582,7 @@ class ModuleAutoDiscovery
     //  迁移
     // ========================================================================
 
-    protected function discoverMigrations(): void
+    protected function scanMigrations(): void
     {
         if (! $this->shouldDiscover('migrations')) {
             return;
@@ -450,6 +596,18 @@ class ModuleAutoDiscovery
         $migrationsPath = $this->findFirstExistingPath($possiblePaths);
 
         if (! $migrationsPath) {
+            return;
+        }
+
+        $this->discovered['migration_path'] = $migrationsPath;
+        $this->cache['migration'] = true;
+    }
+
+    protected function registerMigrations(): void
+    {
+        $migrationsPath = $this->discovered['migration_path'] ?? null;
+
+        if (! is_string($migrationsPath) || ! is_dir($migrationsPath)) {
             return;
         }
 
@@ -471,7 +629,7 @@ class ModuleAutoDiscovery
     //  翻译
     // ========================================================================
 
-    protected function discoverTranslations(): void
+    protected function scanTranslations(): void
     {
         if (! $this->shouldDiscover('translations')) {
             return;
@@ -486,6 +644,18 @@ class ModuleAutoDiscovery
         $langPath = $this->findFirstExistingPath($possiblePaths);
 
         if (! $langPath) {
+            return;
+        }
+
+        $this->discovered['translation_path'] = $langPath;
+        $this->cache['translation'] = true;
+    }
+
+    protected function registerTranslations(): void
+    {
+        $langPath = $this->discovered['translation_path'] ?? null;
+
+        if (! is_string($langPath) || ! is_dir($langPath)) {
             return;
         }
 
@@ -513,9 +683,25 @@ class ModuleAutoDiscovery
     // ========================================================================
 
     /**
-     * 扫描 Artisan 命令
+     * 扫描并注册 Artisan 命令
+     *
+     * 公开方法，供 module:debug-commands 等直接调用。
      */
     public function discoverCommands(): void
+    {
+        if (! $this->app->runningInConsole()) {
+            return;
+        }
+
+        if (! $this->shouldDiscover('commands')) {
+            return;
+        }
+
+        $this->scanCommands();
+        $this->registerCommands();
+    }
+
+    protected function scanCommands(): void
     {
         if (! $this->app->runningInConsole()) {
             return;
@@ -529,8 +715,6 @@ class ModuleAutoDiscovery
             ['path' => $this->module->getCommandsPath(), 'ns' => '\\Console\\Commands'],
             ['path' => $this->module->getPath('Commands'), 'ns' => '\\Commands'],
         ];
-
-        $foundCommands = [];
 
         foreach ($possiblePaths as $pathInfo) {
             $commandsPath = $pathInfo['path'];
@@ -557,13 +741,22 @@ class ModuleAutoDiscovery
                     $reflection = new \ReflectionClass($commandClass);
 
                     if ($reflection->isSubclassOf(\Illuminate\Console\Command::class) && ! $reflection->isAbstract()) {
-                        $foundCommands[] = $commandClass;
+                        $this->discovered['commands'][] = $commandClass;
                     }
                 }
             } catch (\Throwable $e) {
                 $this->log("Command scan error: {$e->getMessage()}");
             }
         }
+    }
+
+    protected function registerCommands(): void
+    {
+        if (empty($this->discovered['commands'])) {
+            return;
+        }
+
+        $foundCommands = array_values(array_unique($this->discovered['commands']));
 
         // 去重并添加到全局缓存
         foreach ($foundCommands as $commandClass) {
@@ -572,31 +765,33 @@ class ModuleAutoDiscovery
             }
         }
 
+        $this->cache['commands'] = $foundCommands;
+
         // 注册命令到 Artisan（通过 Kernel，而非 Application）
-        if (! empty($foundCommands)) {
-            try {
-                $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
-                foreach ($foundCommands as $commandClass) {
-                    $kernel->registerCommand($this->app->make($commandClass));
-                }
-            } catch (\Throwable) {
-                // 降级方案：通过 Artisan facade
+        try {
+            $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+            foreach ($foundCommands as $commandClass) {
                 try {
-                    \Illuminate\Support\Facades\Artisan::addCommands($foundCommands);
+                    $kernel->registerCommand($this->app->make($commandClass));
                 } catch (\Throwable $e) {
                     $this->log("Command registration failed: {$e->getMessage()}");
                 }
             }
+        } catch (\Throwable) {
+            // 降级方案：通过 Artisan facade
+            try {
+                \Illuminate\Support\Facades\Artisan::addCommands($foundCommands);
+            } catch (\Throwable $e) {
+                $this->log("Command registration failed: {$e->getMessage()}");
+            }
         }
-
-        $this->cache['commands'] = $foundCommands;
     }
 
     // ========================================================================
     //  事件
     // ========================================================================
 
-    protected function discoverEvents(): void
+    protected function scanEvents(): void
     {
         if (! $this->shouldDiscover('events')) {
             return;
@@ -610,7 +805,6 @@ class ModuleAutoDiscovery
 
         try {
             $files = File::files($eventsPath);
-            $events = [];
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -621,11 +815,10 @@ class ModuleAutoDiscovery
                 $eventClass = $this->module->getClassNamespace() . '\\Events\\' . $className;
 
                 if (class_exists($eventClass)) {
-                    $events[] = $eventClass;
+                    $this->discovered['events'][] = $eventClass;
+                    $this->cache["event.{$className}"] = $eventClass;
                 }
             }
-
-            $this->cache['events'] = $events;
         } catch (\Throwable $e) {
             $this->log("Event discovery error: {$e->getMessage()}");
         }
@@ -635,7 +828,7 @@ class ModuleAutoDiscovery
     //  模型观察者
     // ========================================================================
 
-    protected function discoverObservers(): void
+    protected function scanObservers(): void
     {
         if (! $this->shouldDiscover('observers')) {
             return;
@@ -667,7 +860,10 @@ class ModuleAutoDiscovery
                 $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
 
                 if (class_exists($modelClass)) {
-                    $modelClass::observe($observerClass);
+                    $this->discovered['observers'][] = [
+                        'model' => $modelClass,
+                        'observer' => $observerClass,
+                    ];
                     $this->cache["observer.{$modelName}"] = $observerClass;
                 }
             }
@@ -676,11 +872,23 @@ class ModuleAutoDiscovery
         }
     }
 
+    protected function registerObservers(): void
+    {
+        foreach ($this->discovered['observers'] as $item) {
+            try {
+                ($item['model'])::observe($item['observer']);
+                $this->log("Registered observer: {$item['observer']}");
+            } catch (\Throwable $e) {
+                $this->log("Observer registration error: {$e->getMessage()}");
+            }
+        }
+    }
+
     // ========================================================================
     //  策略类
     // ========================================================================
 
-    protected function discoverPolicies(): void
+    protected function scanPolicies(): void
     {
         if (! $this->shouldDiscover('policies')) {
             return;
@@ -712,7 +920,10 @@ class ModuleAutoDiscovery
                 $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
 
                 if (class_exists($modelClass)) {
-                    Gate::policy($modelClass, $policyClass);
+                    $this->discovered['policies'][] = [
+                        'model' => $modelClass,
+                        'policy' => $policyClass,
+                    ];
                     $this->cache["policy.{$modelName}"] = $policyClass;
                 }
             }
@@ -721,11 +932,23 @@ class ModuleAutoDiscovery
         }
     }
 
+    protected function registerPolicies(): void
+    {
+        foreach ($this->discovered['policies'] as $item) {
+            try {
+                Gate::policy($item['model'], $item['policy']);
+                $this->log("Registered policy: {$item['policy']}");
+            } catch (\Throwable $e) {
+                $this->log("Policy registration error: {$e->getMessage()}");
+            }
+        }
+    }
+
     // ========================================================================
     //  仓库类
     // ========================================================================
 
-    protected function discoverRepositories(): void
+    protected function scanRepositories(): void
     {
         if (! $this->shouldDiscover('repositories')) {
             return;
@@ -739,7 +962,6 @@ class ModuleAutoDiscovery
 
         try {
             $files = File::files($reposPath);
-            $repos = [];
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -750,13 +972,127 @@ class ModuleAutoDiscovery
                 $repoClass = $this->module->getClassNamespace() . '\\Repositories\\' . $className;
 
                 if (class_exists($repoClass)) {
-                    $repos[$className] = $repoClass;
+                    $this->discovered['repositories'][$className] = $repoClass;
+                    $this->cache["repository.{$className}"] = $repoClass;
                 }
             }
-
-            $this->cache['repositories'] = $repos;
         } catch (\Throwable $e) {
             $this->log("Repository discovery error: {$e->getMessage()}");
+        }
+    }
+
+    // ========================================================================
+    //  清单缓存（性能核心）
+    // ========================================================================
+
+    /**
+     * 获取清单缓存文件路径
+     */
+    protected static function getManifestPath(): string
+    {
+        $dir = ModuleContext::getConfig('modules.cache.path', storage_path('framework/cache/modules'));
+
+        return rtrim((string) $dir, '/\\') . '/discovery.php';
+    }
+
+    /**
+     * 从文件加载清单缓存（进程内仅加载一次）
+     */
+    protected static function loadManifestCache(): void
+    {
+        if (self::$manifestLoaded) {
+            return;
+        }
+
+        self::$manifestLoaded = true;
+
+        $file = self::getManifestPath();
+
+        if (! file_exists($file)) {
+            return;
+        }
+
+        try {
+            $data = require $file;
+
+            if (is_array($data)) {
+                self::$manifestCache = $data;
+            }
+        } catch (\Throwable) {
+            self::$manifestCache = [];
+        }
+    }
+
+    /**
+     * 将当前模块的发现结果写入清单缓存
+     */
+    protected function persistManifest(): void
+    {
+        $name = $this->module->getName();
+        self::$manifestCache[$name] = $this->discovered;
+        self::$manifestDirty = true;
+
+        $this->saveManifestCache();
+    }
+
+    /**
+     * 将内存中的清单缓存落盘
+     */
+    protected static function saveManifestCache(): void
+    {
+        if (! self::$manifestDirty) {
+            return;
+        }
+
+        $file = self::getManifestPath();
+        self::$manifestDirty = false;
+
+        try {
+            $dir = dirname($file);
+            if (! is_dir($dir)) {
+                @mkdir($dir, 0755, true);
+            }
+
+            $content = '<?php return ' . var_export(self::$manifestCache, true) . ';';
+            file_put_contents($file, $content, LOCK_EX);
+        } catch (\Throwable) {
+            // 缓存写入失败不中断
+        }
+    }
+
+    /**
+     * 预热单个模块的发现清单（用于 module:cache）
+     *
+     * 仅扫描并持久化，不注册，避免在 CLI 中产生副作用。
+     */
+    public static function warm(ModuleInterface $module): void
+    {
+        if (! (bool) ModuleContext::getConfig('modules.cache.enabled', false)) {
+            return;
+        }
+
+        try {
+            $instance = new self($module);
+            $instance->scanAll();
+            $instance->persistManifest();
+        } catch (\Throwable) {
+            // 预热失败不影响主流程
+        }
+    }
+
+    /**
+     * 清除发现清单缓存
+     */
+    public static function clearDiscoveryCache(): void
+    {
+        self::$manifestCache = [];
+        self::$manifestLoaded = false;
+        self::$manifestDirty = false;
+
+        $file = self::getManifestPath();
+
+        if (file_exists($file)) {
+            @unlink($file);
         }
     }
 
@@ -766,7 +1102,7 @@ class ModuleAutoDiscovery
 
     protected function shouldDiscover(string $type): bool
     {
-        return config("modules.discovery.{$type}", true);
+        return (bool) ModuleContext::getConfig("modules.discovery.{$type}", true);
     }
 
     protected function findFirstExistingPath(array $possiblePaths): ?string
@@ -797,6 +1133,11 @@ class ModuleAutoDiscovery
     public function clearCache(): void
     {
         $this->cache = [];
+        $this->discovered = [
+            'providers' => [], 'aliases' => [], 'commands' => [], 'events' => [],
+            'repositories' => [], 'observers' => [], 'policies' => [], 'configs' => [],
+            'routes' => [], 'view_path' => null, 'migration_path' => null, 'translation_path' => null,
+        ];
     }
 
     public function getLogs(): array
@@ -819,17 +1160,17 @@ class ModuleAutoDiscovery
         return [
             'module' => $this->module->getName(),
             'enabled' => $this->module->isEnabled(),
-            'providers' => count(array_filter($this->cache, fn($k) => str_starts_with($k, 'provider.'), ARRAY_FILTER_USE_KEY)),
-            'configs' => array_keys(array_filter($this->cache, fn($k) => str_starts_with($k, 'config.'), ARRAY_FILTER_USE_KEY)),
-            'routes' => array_keys(array_filter($this->cache, fn($k) => str_starts_with($k, 'route.'), ARRAY_FILTER_USE_KEY)),
-            'views' => isset($this->cache['view']),
-            'migrations' => isset($this->cache['migration']),
-            'translations' => isset($this->cache['translation']),
-            'commands' => is_array($this->cache['commands'] ?? null) ? count($this->cache['commands']) : 0,
-            'events' => is_array($this->cache['events'] ?? null) ? count($this->cache['events']) : 0,
-            'observers' => count(array_filter($this->cache, fn($k) => str_starts_with($k, 'observer.'), ARRAY_FILTER_USE_KEY)),
-            'policies' => count(array_filter($this->cache, fn($k) => str_starts_with($k, 'policy.'), ARRAY_FILTER_USE_KEY)),
-            'repositories' => is_array($this->cache['repositories'] ?? null) ? count($this->cache['repositories']) : 0,
+            'providers' => count($this->discovered['providers']),
+            'configs' => array_keys($this->discovered['configs']),
+            'routes' => $this->discovered['routes'],
+            'views' => $this->discovered['view_path'] !== null,
+            'migrations' => $this->discovered['migration_path'] !== null,
+            'translations' => $this->discovered['translation_path'] !== null,
+            'commands' => count($this->discovered['commands']),
+            'events' => count($this->discovered['events']),
+            'observers' => count($this->discovered['observers']),
+            'policies' => count($this->discovered['policies']),
+            'repositories' => count($this->discovered['repositories']),
         ];
     }
 }

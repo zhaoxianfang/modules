@@ -118,6 +118,9 @@ class ModuleLoader
         // 清除全局命令缓存
         ModuleAutoDiscovery::clearGlobalCommands();
 
+        // 清除自动发现清单缓存（避免复用过期清单）
+        ModuleAutoDiscovery::clearDiscoveryCache();
+
         // 清除模块上下文缓存
         ModuleContext::clearCache();
 

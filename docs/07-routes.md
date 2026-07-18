@@ -79,7 +79,7 @@ Route::get('/posts', [PostController::class, 'index']);
 
 **说明：**
 - 这两个配置**仅对生成模块时的路由文件生效**，不影响运行时的路由加载
-- RouteLoader 在加载路由时不再重复添加前缀，路由文件内部已包含完整的路由组声明
+- 模块路由加载器（ModuleAutoDiscovery） 在加载路由时不再重复添加前缀，路由文件内部已包含完整的路由组声明
 - 路由文件中的前缀值根据此配置动态生成
 
 **路由前缀规则：**
@@ -121,7 +121,7 @@ use Modules\Blog\Http\Controllers\Web;
 | 路由名称前缀: web.blog.（根据 config/modules.php 配置）
 | 控制器命名空间: Modules\Blog\Http\Controllers\Web
 |
-| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 注意：路由文件包含路由组声明，由 模块路由加载器（ModuleAutoDiscovery） 统一管理路由前缀和名称前缀。
 | 如需修改，请通过 modules.php 配置控制是否添加前缀。
 */
 
@@ -206,7 +206,7 @@ use Modules\Blog\Http\Controllers\Api;
 | 路由名称前缀: api.blog.（根据 config/modules.php 配置）
 | 控制器命名空间: Modules\Blog\Http\Controllers\Api
 |
-| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 注意：路由文件包含路由组声明，由 模块路由加载器（ModuleAutoDiscovery） 统一管理路由前缀和名称前缀。
 | 如需修改，请通过 modules.php 配置控制是否添加前缀。
 */
 
@@ -274,7 +274,7 @@ use Modules\Blog\Http\Controllers\Admin;
 | 路由名称前缀: admin.blog.（根据 config/modules.php 配置）
 | 控制器命名空间: Modules\Blog\Http\Controllers\Admin
 |
-| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 注意：路由文件包含路由组声明，由 模块路由加载器（ModuleAutoDiscovery） 统一管理路由前缀和名称前缀。
 | 如需修改，请通过 modules.php 配置控制是否添加前缀。
 */
 

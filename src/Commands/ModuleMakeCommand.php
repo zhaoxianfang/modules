@@ -7,6 +7,7 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -94,6 +95,16 @@ class ModuleMakeCommand extends Command
 
             $this->info("模块 [{$name}] 创建成功");
             $this->line("用户指南位置: " . config('modules.path', base_path('Modules')) . '/UserGuide.md');
+
+            // 模块集合已发生变化：失效模块缓存（元数据 + 自动发现清单），
+            // 确保下一个请求重新扫描磁盘并注册新模块的路由、视图、迁移等组件，
+            // 避免“新模块路由 404 / 组件未被自动发现”等问题。
+            // 与 module:delete 末尾的缓存失效处理保持一致。
+            try {
+                Module::clearCache();
+            } catch (\Throwable) {
+                // 忽略缓存清理失败
+            }
 
             return Command::SUCCESS;
         } catch (\Exception $e) {

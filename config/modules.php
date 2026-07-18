@@ -438,6 +438,9 @@ return [
     |   - 只启用必需的自动发现项
     |   - 配合 cache.enabled 使用模块缓存
     |   - 不需要的组件设为 false 减少扫描开销
+    |   - 启用 modules.cache.enabled 后，发现结果会持久化到
+    |     storage/framework/cache/modules/discovery.php，
+    |     后续请求跳过目录扫描与 class_exists/反射探测（详见文档 3.4 节）
     |
     */
     'discovery' => [
@@ -483,8 +486,8 @@ return [
     | path: 缓存文件存储路径（文件驱动时使用）
     |
     | 缓存管理命令：
-    |   php artisan module:cache      # 重新生成模块缓存
-    |   php artisan module:clear      # 清除模块缓存
+    |   php artisan module:cache      # 重新生成模块缓存（并预热自动发现清单）
+    |   php artisan module:clear      # 清除模块缓存（同时清除自动发现清单）
     |
     */
     'cache' => [

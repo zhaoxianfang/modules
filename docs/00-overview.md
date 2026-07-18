@@ -290,7 +290,7 @@ use Modules\Blog\Http\Controllers\Web;
 | 路由名称前缀: web.blog.（根据 config/modules.php 配置）
 | 控制器命名空间: Modules\Blog\Http\Controllers\Web
 |
-| 注意：路由文件包含路由组声明，由 RouteLoader 统一管理路由前缀和名称前缀。
+| 注意：路由文件包含路由组声明，由 模块路由加载器（ModuleAutoDiscovery） 统一管理路由前缀和名称前缀。
 | 如需修改，请通过 modules.php 配置控制是否添加前缀。
 */
 
