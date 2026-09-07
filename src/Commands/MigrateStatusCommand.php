@@ -227,6 +227,12 @@ class MigrateStatusCommand extends Command
         $modulesWithMigrations = 0;
 
         foreach ($modules as $module) {
+            // 多模块模式下 --path 表示「统一的自定义迁移目录」，对所有模块而言
+            // 指向同一路径，只应查询一次（否则会重复输出相同内容）。
+            if ($customPath !== null && $index > 1) {
+                break;
+            }
+
             $migrationPath = $customPath ?: $module->getMigrationsPath();
 
             if (! is_dir($migrationPath)) {
@@ -296,8 +302,8 @@ class MigrateStatusCommand extends Command
      */
     protected function getMigrationStatus(ModuleInterface $module, string $migrationPath, array $ranMigrations = []): array
     {
-        // $module 参数保留用于方法签名一致性，当前实现中暂未使用
-        unset($module);
+        // 注：$module 参数保留以维持方法签名一致性，当前实现按迁移路径查询，
+        // 模块归属由调用方在 showAllModulesStatus 中拼装，此处不依赖 $module。
 
         $files = glob($migrationPath . DIRECTORY_SEPARATOR . '*.php');
 
@@ -332,16 +338,6 @@ class MigrateStatusCommand extends Command
         }
 
         return $rows;
-    }
-
-    /**
-     * 获取已运行的迁移（仅名称列表）
-     *
-     * @return array
-     */
-    protected function getRanMigrations(): array
-    {
-        return array_keys($this->getRanMigrationsWithBatches());
     }
 
     /**

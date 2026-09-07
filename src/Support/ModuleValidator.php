@@ -56,9 +56,11 @@ class ModuleValidator
 
         // 检查配置文件
         $configValidate = self::validateConfig($module);
-        if(!$configValidate['valid']){
-            // 配置文件异常
-            $errors[] = $configValidate['error'];
+        if (! $configValidate['valid']) {
+            // 配置文件异常（合并其错误明细）
+            foreach ($configValidate['errors'] as $configError) {
+                $errors[] = $configError;
+            }
         }
 
         // 检查控制器目录
@@ -69,6 +71,17 @@ class ModuleValidator
         // 检查视图目录
         if (! is_dir($module->getViewsPath())) {
             $warnings[] = '缺少视图目录 (Resources/views)';
+        }
+
+        // 检查路由文件
+        $routeValidation = self::validateRoutes($module);
+        if (! $routeValidation['valid']) {
+            foreach ($routeValidation['errors'] as $routeError) {
+                $errors[] = $routeError;
+            }
+        }
+        foreach ($routeValidation['warnings'] as $routeWarning) {
+            $warnings[] = $routeWarning;
         }
 
         return [
@@ -103,51 +116,61 @@ class ModuleValidator
         if (! file_exists($configFile)) {
             return [
                 'valid' => false,
-                'error' => '模块配置文件不存在，请创建 Config/' . $module->getLowerName() . '.php 或 Config/config.php',
+                'errors' => ['模块配置文件不存在，请创建 Config/' . $module->getLowerName() . '.php 或 Config/config.php'],
             ];
         }
 
-        $config = require $configFile;
+        try {
+            $config = require $configFile;
+        } catch (\Throwable $e) {
+            return [
+                'valid' => false,
+                'errors' => ['配置文件加载失败 (' . $configFile . '): ' . $e->getMessage()],
+            ];
+        }
 
         if (! is_array($config)) {
             return [
                 'valid' => false,
-                'error' => '配置文件必须返回一个数组: ' . $file,
+                'errors' => ['配置文件必须返回一个数组: ' . $file],
             ];
         }
 
-        $error = '';
+        $errors = [];
 
         if (! isset($config['enabled'])) {
-            $error = '配置文件缺少 enabled 键';
+            $errors[] = '配置文件缺少 enabled 键';
         } elseif (! is_bool($config['enabled'])) {
-            $error = 'enabled 键必须是布尔值';
+            $errors[] = 'enabled 键必须是布尔值';
         }
 
         return [
-            'valid' => empty($error),
-            'error' => $error ? $error . ': ' . $file : '',
+            'valid' => empty($errors),
+            'errors' => $errors,
         ];
     }
 
     /**
-     * 验证模块路由
+     * 验证模块路由文件
+     *
+     * 检查每个路由文件是否真实存在且可读，避免运行时 require 失败。
      *
      * @param ModuleInterface $module
-     * @return array
+     * @return array{valid: bool, errors: array<int, string>, warnings: array<int, string>}
      */
     public static function validateRoutes(ModuleInterface $module): array
     {
         $routeFiles = $module->getRouteFiles();
 
+        $errors = [];
+
         if (empty($routeFiles)) {
             return [
-                'valid' => false,
+                'valid' => true,
+                'errors' => $errors,
                 'warnings' => ['没有路由文件'],
             ];
         }
-
-        $errors = [];
 
         foreach ($routeFiles as $routeFile) {
             $routePath = $module->getRoutesPath() . DIRECTORY_SEPARATOR . $routeFile . '.php';
@@ -157,7 +180,7 @@ class ModuleValidator
                 continue;
             }
 
-            // 检查路由文件是否可读（避免 eval 安全风险）
+            // 检查路由文件是否可读（避免运行时 require 失败）
             $content = @file_get_contents($routePath);
             if ($content === false) {
                 $errors[] = "路由文件 {$routeFile}.php 无法读取";
@@ -167,6 +190,7 @@ class ModuleValidator
         return [
             'valid' => empty($errors),
             'errors' => $errors,
+            'warnings' => [],
         ];
     }
 }

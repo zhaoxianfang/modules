@@ -9,6 +9,12 @@ use Illuminate\Support\Str;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\ModuleInfo;
 
+/**
+ * 模块信息命令
+ *
+ * 展示指定模块的详细信息，包括路径、命名空间、配置、视图、
+ * 迁移、文件数量与体积等。
+ */
 class ModuleInfoCommand extends Command
 {
     /**

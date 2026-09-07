@@ -2,170 +2,170 @@
 
 namespace {{NAMESPACE}}\{{NAME}}\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * {{CLASS}} 模型
  *
- * {{NAME}} 模块的数据模型
- * 继承 Eloquent Model，提供完整的数据库操作能力
+ * {{NAME}} 模块的数据模型，继承 Eloquent Model。
+ * 按 Laravel 13 官方风格生成（casts() 方法、无冗余默认属性、现代访问器 API）。
  *
- * @property int $id 主键 ID
- * @property string $name 名称
- * @property string|null $description 描述
- * @property string $status 状态
- * @property int $sort_order 排序
- * @property \Illuminate\Support\Carbon|null $created_at 创建时间
- * @property \Illuminate\Support\Carbon|null $updated_at 更新时间
- * @property \Illuminate\Support\Carbon|null $deleted_at 删除时间
+ * 常用示例：
+ * ```php
+ * // 新增记录
+ * {{CLASS}}::query()->create(['name' => '示例']);
+ *
+ * // 查询并分页
+ * {{CLASS}}::query()->active()->paginate(15);
+ * ```
+ *
+ * @property int|null $id 主键 ID
+ * @property string|null $name 名称
+ * @property string|null $status 状态（active/inactive）
+ * @property Carbon|null $created_at 创建时间
+ * @property Carbon|null $updated_at 更新时间
  */
 class {{CLASS}} extends Model
 {
-    use SoftDeletes;
-
     /**
      * 数据表名称
      *
-     * 如果不指定，Eloquent 会使用模型类的复数蛇形命名（自动转换）
-     * 例如：{{CLASS}} => {{LOWER_NAME}} 表
+     * 模块迁移生成的数据表为「单数小写」（如 blog），
+     * 而 Eloquent 默认按类名复数蛇形推导（Blog => blogs），
+     * 故必须显式声明，否则会查询到错误的表。
      *
      * @var string
      */
     protected $table = '{{LOWER_NAME}}';
 
     /**
-     * 可批量赋值的属性
+     * 可批量赋值的属性（Laravel 11+ 默认 $guarded = ['*']，此处显式放开）
      *
-     * 这些属性可以通过 create()、update()、fill() 方法批量赋值
-     * 出于安全考虑，只列出允许批量赋值的字段
+     * 只有列入此数组的字段才能通过 create()/update()/fill() 批量赋值，
+     * 防止用户提交意外的字段（Mass Assignment）。
      *
      * @var array<int, string>
-     *
-     * @example 使用示例
-     * ```php
-     * {{CLASS}}::create([
-     *     'name' => '示例名称',
-     *     'description' => '示例描述',
-     * ]);
-     * ```
      */
     protected $fillable = [
         'name',
-        'description',
         'status',
-        'sort_order',
     ];
 
     /**
-     * 隐藏的属性
+     * 属性类型转换（Laravel 11+ 方法形式，替代旧的 $casts 属性）
      *
-     * 这些属性在序列化为 JSON 或数组时会被隐藏
-     * 通常用于隐藏敏感信息，如密码、令牌等
+     * 支持：int / float / string / bool / object / array / collection /
+     *       date / datetime / immutable_date / encrypted / enum 等。
      *
-     * @var array<int, string>
+     * @return array<string, string>
      */
-    protected $hidden = [
-        // 示例：隐藏敏感字段
-        // 'password',
-        // 'remember_token',
-    ];
-
-    /**
-     * 属性类型转换
-     *
-     * 自动将字段转换为指定的类型
-     * 支持的类型：int, float, string, bool, object, array, collection, date, datetime
-     *
-     * @var array<string, string>
-     */
-    protected $casts = [
-        'created_at' => 'datetime',
-        'updated_at' => 'datetime',
-        'deleted_at' => 'datetime',
-        'is_active' => 'boolean',
-    ];
-
-    /**
-     * 默认属性值
-     *
-     * 为模型属性设置默认值
-     *
-     * @var array<string, mixed>
-     */
-    protected $attributes = [
-        'status' => 'active',
-        'sort_order' => 0,
-    ];
+    protected function casts(): array
+    {
+        return [
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+        ];
+    }
 
     /*
     |--------------------------------------------------------------------------
     | 查询作用域（Scopes）
     |--------------------------------------------------------------------------
-    | 可复用的查询条件
+    | 通过 ->active() 等方式复用的查询条件
     */
 
     /**
      * 只查询已激活的记录
      *
-     * @param \Illuminate\Database\Eloquent\Builder $query 查询构建器
-     * @return void
+     * @param  Builder<\zxf\Modules\{{NAME}}\Models\{{CLASS}}>  $query
+     * @return Builder<\zxf\Modules\{{NAME}}\Models\{{CLASS}}>
      */
-    public function scopeActive($query): void
+    public function scopeActive(Builder $query): Builder
     {
-        $query->where('status', 'active');
+        return $query->where('status', 'active');
     }
 
     /**
-     * 按名称搜索
+     * 按名称模糊搜索
      *
-     * @param \Illuminate\Database\Eloquent\Builder $query 查询构建器
-     * @param string $search 搜索关键词
-     * @return void
+     * @param  Builder<\zxf\Modules\{{NAME}}\Models\{{CLASS}}>  $query
+     * @param  string  $keyword 搜索关键词
+     * @return Builder<\zxf\Modules\{{NAME}}\Models\{{CLASS}}>
      */
-    public function scopeSearchByName($query, string $search): void
+    public function scopeSearch(Builder $query, string $keyword): Builder
     {
-        $query->where('name', 'like', "%{$search}%");
+        return $query->where('name', 'like', "%{$keyword}%");
     }
 
     /*
     |--------------------------------------------------------------------------
-    | 访问器（Accessors）
+    | 访问器与修改器（Accessors & Mutators）
     |--------------------------------------------------------------------------
-    | 获取属性时自动处理的计算属性
+    | 使用 Laravel 9+ 的 Attribute API，推荐方法形式定义
     */
 
     /**
-     * 获取激活状态（现代访问器 API）
+     * 是否激活（现代访问器 API）
      *
-     * 使用 Laravel 9+ 的 Attribute::make 定义访问器，
-     * 如需同时定义修改器可追加 ->set(fn ($v) => ...) 闭包。
+     * 获取时：$model->is_active 自动调用 get 闭包
+     * 设置时：$model->is_active = true 自动调用 set 闭包
      *
-     * @return \Illuminate\Database\Eloquent\Casts\Attribute<bool>
+     * @return Attribute<bool, bool>
      */
-    public function isActive(): Attribute
+    protected function isActive(): Attribute
     {
         return Attribute::make(
             get: fn (): bool => $this->status === 'active',
+            set: fn (bool $value): string => $value ? 'active' : 'inactive',
         );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | 自定义方法
+    | 模型关联（Relations）
+    |--------------------------------------------------------------------------
+    | 按需取消注释并修改为真实关联
+    */
+
+    /**
+     * 一对多关联示例：属于该作者的文章列表
+     *
+     * @return HasMany<\zxf\Modules\{{NAME}}\Models\Post>
+     */
+    // public function posts(): HasMany
+    // {
+    //     return $this->hasMany(Post::class, 'author_id');
+    // }
+
+    /**
+     * 反向一对多关联示例：归属的用户
+     *
+     * @return BelongsTo<\zxf\Modules\User\Models\User>
+     */
+    // public function user(): BelongsTo
+    // {
+    //     return $this->belongsTo(\zxf\Modules\User\Models\User::class);
+    // }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 其他方法
     |--------------------------------------------------------------------------
     */
 
     /**
-     * 检查是否可以被删除
+     * 检查记录是否可删除
      *
      * @return bool 是否可以删除
      */
     public function canBeDeleted(): bool
     {
-        // 添加业务逻辑判断
+        // TODO: 在此添加业务约束（如存在关联数据时禁止删除）
         return true;
     }
 }
-

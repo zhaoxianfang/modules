@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -22,7 +20,7 @@ use zxf\Modules\Support\StubGenerator;
  *
  * @package zxf\Modules\Commands
  */
-class TestMakeCommand extends Command
+class TestMakeCommand extends AbstractMakeCommand
 {
     /**
      * @var string
@@ -43,7 +41,11 @@ class TestMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $testName = Str::studly($this->argument('name'));
         $force = $this->option('force');
         $isFeature = $this->option('feature');
@@ -53,53 +55,20 @@ class TestMakeCommand extends Command
             $testName .= 'Test';
         }
 
-        $module = Module::find($moduleName);
-
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-            return Command::FAILURE;
-        }
-
-        $testPath = $module->getPath('Tests/' . $testName . '.php');
-
-        if (File::exists($testPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在测试 [{$testName}]");
-            $this->line('提示：使用 --force 选项覆盖已存在的测试');
-            return Command::FAILURE;
-        }
-
-        if (File::exists($testPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的测试 [{$testName}]");
-        }
-
-        $namespace = config('modules.namespace', 'Modules');
-
-        $stubGenerator = new StubGenerator($moduleName);
-        $stubGenerator->addReplacements([
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacements([
             '{{CLASS}}' => $testName,
-            '{{NAMESPACE}}' => $namespace,
-            '{{NAME}}' => $moduleName,
+            '{{NAMESPACE}}' => $this->module->getNamespace(),
+            '{{NAME}}' => $module->getName(),
         ]);
 
-        // 确保目录存在
-        $testDir = $module->getPath('Tests');
-        if (! is_dir($testDir)) {
-            File::makeDirectory($testDir, 0755, true);
-        }
+        $result = $this->writeStub($generator, 'test.stub', 'Tests/' . $testName . '.php', '测试', $force);
 
-        $result = $stubGenerator->generate(
-            'test.stub',
-            'Tests/' . $testName . '.php',
-            $force
-        );
-
-        if ($result) {
+        if ($result === Command::SUCCESS) {
             $testType = $isFeature ? '功能测试' : '单元测试';
-            $this->info("✓ 成功在模块 [{$moduleName}] 中创建{$testType} [{$testName}]");
-            return Command::SUCCESS;
+            $this->info("✓ 成功在模块 [{$module->getName()}] 中创建{$testType} [{$testName}]");
         }
 
-        $this->error("创建测试 [{$testName}] 失败");
-        return Command::FAILURE;
+        return $result;
     }
 }

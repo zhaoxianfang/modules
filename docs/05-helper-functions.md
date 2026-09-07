@@ -331,7 +331,9 @@ function module_has_config(string $configFile = '', string $key = '', ?string $m
 
 ```php
 // 检查配置项
-if (module_has_config('blog', 'options.posts_per_page', 'Blog')) {
+// 注意：module_has_config() 的 $key 为「单层键」，不支持 'a.b' 点号嵌套；
+// 而 module_config() 的 $key 支持点号多级读取。
+if (module_has_config('options', 'posts_per_page', 'Blog')) {
     $perPage = module_config('options.posts_per_page', 15, 'Blog');
 }
 

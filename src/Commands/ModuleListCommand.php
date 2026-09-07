@@ -7,6 +7,11 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use zxf\Modules\Facades\Module;
 
+/**
+ * 模块列表命令
+ *
+ * 以表格形式列出所有模块及其状态（启用/禁用）、优先级等信息。
+ */
 class ModuleListCommand extends Command
 {
     /**

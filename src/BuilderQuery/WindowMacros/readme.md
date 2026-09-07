@@ -14,6 +14,7 @@
 6. [分页优化](#分页优化)
 7. [JSON 操作](#json-操作)
 8. [正则表达式](#正则表达式)
+9. [字符串函数](#字符串函数)
 
 ---
 
@@ -370,6 +371,108 @@ $tree = Category::withTree()
 
 ---
 
+## 字符串函数
+
+基于 MySQL 8.0 内置字符串函数封装的高效查询能力，完整文档见 [BuilderQuery 主文档](../readme.md#17-字符串函数系列mysql-80-高效字符串处理)。
+
+### 子串位置查找（分词查询匹配）
+
+```php
+// 单关键词命中
+Post::query()->whereLocate('description', 'Laravel')->get();
+
+// 多关键词全命中（AND）：内容必须同时包含 Laravel 与 MySQL
+Article::query()->whereLocateAll('content', ['Laravel', 'MySQL'])->get();
+
+// 多关键词任一命中（OR）
+Article::query()->whereLocateAny('content', ['Laravel', 'MySQL'])->get();
+
+// orWhereLocate - OR 条件组合
+Post::query()->whereLocate('title', 'MySQL')->orWhereLocate('description', '数据库')->get();
+```
+
+### 字符长度排序与筛选
+
+```php
+// 按字符数升序（多字节安全）
+User::query()->orderByCharLength('name')->get();
+
+// 内容最长的文章排在最前
+Post::query()->orderByDescCharLength('body')->get();
+
+// 用户名长度大于等于 4
+User::query()->whereCharLength('name', '>=', 4)->get();
+
+// 自然排序：v1, v2, ..., v10 而非字典序 v1, v10, v2
+Version::query()->orderByNatural('tag')->get();
+```
+
+### 自定义排序与列表查找
+
+```php
+// 按状态优先级自定义排序
+Order::query()->fieldOrderBy('status', ['pending', 'shipped', 'delivered', 'completed'])->get();
+
+// 逗号分隔标签列包含 "php"
+Article::query()->whereFindInSet('tags', 'php')->get();
+
+// 包含任意指定值 / 必须同时包含全部指定值
+Article::query()->whereFindInSetAny('tags', ['php', 'go'])->get();
+Article::query()->whereFindInSetAll('tags', ['php', 'mysql'])->get();
+```
+
+### 多列拼接搜索与提取
+
+```php
+// 在 姓名/手机号/邮箱 三字段中一站式搜索 "张"
+User::query()->whereConcatLike(['name', 'phone', 'email'], '张')->get();
+
+// 提取邮箱用户名部分（"a@b.com" -> "a"）
+User::query()->substringIndex('email', '@', 1, 'username_part')->get();
+
+// 每个分类下所有文章标题（逗号分隔）
+Post::query()->groupBy('category_id')->groupConcat('title', 'titles')->get();
+```
+
+### 全文检索（MATCH...AGAINST）
+
+参与全文检索的列需先建立 FULLTEXT 索引：
+
+```sql
+ALTER TABLE articles ADD FULLTEXT INDEX ft_title_body (title, body);
+```
+
+```php
+// 自然语言全文搜索
+Article::query()->whereFullText(['title', 'body'], 'Laravel 查询构造器')->get();
+
+// 布尔模式：+word 必须包含  -word 必须排除  "短语" 精确匹配  word* 前缀匹配
+Post::query()->whereFullTextBoolean('title', '+Laravel -Vue')->get();
+
+// 按相关度从高到低排序
+Article::query()
+    ->whereFullText(['title', 'body'], 'Laravel')
+    ->orderByFullTextRelevance(['title', 'body'], 'Laravel')
+    ->get();
+```
+
+### 发音匹配与字符串变换
+
+```php
+// 英文发音相似匹配（"Smith" 与 "Smyth"）
+Contact::query()->whereSoundex('last_name', 'Smith')->get();
+
+// 手机号脱敏 / 去空格 / 大小写 / 反转 / 补零
+User::query()->replaceString('phone', '138', '***', 'masked_phone')->get();
+User::query()->trimString('name', 'clean_name')->get();
+User::query()->lowerString('email', 'email_lower')->get();
+Country::query()->upperString('code', 'code_upper')->get();
+User::query()->reverseString('phone', 'reversed_phone')->get();
+Order::query()->padString('order_no', 8, '0', 'left', 'padded_no')->get(); // "123" -> "00000123"
+```
+
+---
+
 ## 性能优化指南
 
 ### 1. 索引策略
@@ -440,14 +543,53 @@ $managerIds = Employee::withAllParents($employeeId, 'manager_id')->pluck('id');
 
 ## 注意事项
 
-1. **MySQL 版本**: 所有窗口函数需要 MySQL 8.4+
+1. **MySQL 版本**: 窗口函数需要 MySQL 8.0+（推荐 8.0.31+ 以使用 INTERSECT/EXCEPT，8.0.14+ 以使用 LATERAL）
 2. **性能考虑**: 大数据量分页优先使用 `cursorPaginate`
 3. **索引优化**: 窗口函数的分区字段和排序字段需要索引
 4. **内存使用**: `jsonExtractAll` 和 `regexpExtractAll` 可能返回大量数据
 
 ---
 
+## 安全性（v2.x 设计原则）
+
+所有宏方法均遵循「安全优先」的 SQL 拼装规范，从根本上杜绝注入与跨数据库兼容问题：
+
+1. **标识符白名单**：列名、别名、分组字段、JSON 路径、聚合函数名、框架边界、排序方向、
+   正则模式、比较运算符均经过严格的正则白名单校验（`SqlSecurity` 工具层）。
+   任何包含空格、引号、括号、注释符等可被用于注入的字符都会被拒绝并抛出 `InvalidArgumentException`。
+2. **驱动无关引用**：标识符统一经由 grammar 的 `wrap()` 生成（MySQL 反引号、PostgreSQL/SQLite 双引号），
+   不再硬编码 `` `column` `` 反引号。
+3. **字面值参数绑定**：正则模式、替换文本、JSON 默认值、LIKE 模式、随机种子等所有用户输入的字面值
+   一律通过 `?` 占位符走参数绑定，绝不裸拼进 SQL。
+4. **驱动守卫**：依赖 MySQL 专属语法（`REGEXP_LIKE` / `JSON_EXTRACT` / `VALUES ROW` /
+   `ON DUPLICATE KEY UPDATE` / `LATERAL` / `WITH RECURSIVE` / `TABLESAMPLE` 等）的宏入口均加
+   `assertMysql()` 守卫，在非 MySQL 驱动上调用会抛出清晰异常，而非生成非法 SQL。
+5. **默认最小权限**：未提供显式 MySQL 版本要求时，多数宏最低兼容 MySQL 8.0+（非文档示例中的 8.4）。
+
+> ⚠️ 调用方责任：传入的 `column` / `path` / `alias` 等参数虽然经过白名单校验，但仍应仅接受
+> **可信或已校验的字段名**（如来自模型属性、白名单映射），避免把攻击者可控的任意字符串作为字段名传入。
+
+---
+
 ## 更新日志
+
+### v2.3.0
+- 新增：字符串函数系列（29 个宏）
+  - LOCATE 分词查询匹配（whereLocate / whereLocateAll / whereLocateAny）
+  - CHAR_LENGTH 多字节长度排序与筛选（orderByCharLength / whereCharLength / orderByNatural 自然排序）
+  - FIELD 自定义枚举排序（fieldOrderBy）与 FIND_IN_SET 列表查找
+  - CONCAT_WS 跨字段拼接搜索（whereConcatLike）与 SUBSTRING_INDEX 字段提取
+  - GROUP_CONCAT 行转字符串聚合
+  - MATCH...AGAINST 全文检索（自然语言 / 布尔模式 / 查询扩展 / 相关度排序）
+  - SOUNDEX 发音相似匹配与 REPLACE/TRIM/LOWER/UPPER/REVERSE/LPAD/RPAD 字符串变换
+- 全部接口经 `SqlSecurity` 白名单校验 + 字面值参数绑定 + `assertMysql()` 驱动守卫
+
+### v2.1.0
+- 安全：引入 `SqlSecurity` 公共工具层，所有宏方法消除 SQL 注入点
+  - 列名 / 别名 / 排序方向 / 正则模式 / JSON 路径 / 聚合函数 / 框架边界全部白名单校验
+  - 标识符统一经 grammar wrap（跨 MySQL / PostgreSQL / SQLite）
+  - 字面值（正则、JSON 默认、LIKE、种子）全部参数绑定
+  - MySQL 专属语法入口加 `assertMysql()` 驱动守卫
 
 ### v2.0.0
 - 新增：窗口函数系列（25+ 函数）

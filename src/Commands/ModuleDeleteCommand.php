@@ -70,6 +70,16 @@ class ModuleDeleteCommand extends Command
             return Command::FAILURE;
         }
 
+        // 安全性校验：删除是递归且不可恢复的操作，必须确保目标路径确实位于
+        // 受信任的模块目录（modules.path 及其 scan_paths）之下，防止路径穿越
+        // （如传入含 ../ 的模块名）误删系统文件。
+        if (! $this->isWithinTrustedPaths($modulePath)) {
+            $this->error("模块路径 [{$modulePath}] 不在受信任的模块目录内，已拒绝删除以防止误删。");
+            $this->line("受信任目录: " . implode(', ', $this->trustedPaths()));
+
+            return Command::FAILURE;
+        }
+
         $this->warn("⚠️  警告：此操作将永久删除模块 [{$name}]");
         $this->line("模块路径: {$modulePath}");
 
@@ -97,7 +107,7 @@ class ModuleDeleteCommand extends Command
 
         // 删除后清理模块缓存，确保后续 module:list 等命令重新扫描磁盘
         try {
-            Module::clearCache();
+            Module::clearRepositoryCache();
         } catch (\Throwable) {
             // 忽略缓存清理失败
         }
@@ -150,5 +160,53 @@ class ModuleDeleteCommand extends Command
         }
 
         return null;
+    }
+
+    /**
+     * 获取所有受信任的模块根目录（已规范化为绝对路径）
+     *
+     * @return array<int, string>
+     */
+    protected function trustedPaths(): array
+    {
+        $paths = array_merge(
+            [config('modules.path', base_path('Modules'))],
+            (array) config('modules.scan_paths', [])
+        );
+
+        $result = [];
+        foreach ($paths as $base) {
+            if (! is_string($base) || $base === '') {
+                continue;
+            }
+
+            $real = realpath($base);
+            if ($real !== false) {
+                $result[] = $real;
+            } elseif (is_dir($base)) {
+                $result[] = rtrim($base, '/\\');
+            }
+        }
+
+        return array_values(array_unique($result));
+    }
+
+    /**
+     * 判断给定路径是否位于受信任的模块目录之内（防止路径穿越）
+     */
+    protected function isWithinTrustedPaths(string $path): bool
+    {
+        $real = realpath($path);
+        if ($real === false) {
+            return false;
+        }
+
+        foreach ($this->trustedPaths() as $trusted) {
+            if ($real === $trusted || str_starts_with($real . DIRECTORY_SEPARATOR, $trusted . DIRECTORY_SEPARATOR)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

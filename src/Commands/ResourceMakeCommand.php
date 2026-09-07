@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -22,7 +20,7 @@ use zxf\Modules\Support\StubGenerator;
  *
  * @package zxf\Modules\Commands
  */
-class ResourceMakeCommand extends Command
+class ResourceMakeCommand extends AbstractMakeCommand
 {
     /**
      * @var string
@@ -44,57 +42,28 @@ class ResourceMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $resourceName = Str::studly($this->argument('name'));
         $force = $this->option('force');
         $jsonApi = $this->option('json-api');
 
-        $module = Module::find($moduleName);
-
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-            return Command::FAILURE;
-        }
-
-        $resourcePath = $module->getPath('Http/Resources/' . $resourceName . '.php');
-
-        if (File::exists($resourcePath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在资源 [{$resourceName}]");
-            $this->line('提示：使用 --force 选项覆盖已存在的资源');
-            return Command::FAILURE;
-        }
-
-        if (File::exists($resourcePath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的资源 [{$resourceName}]");
-        }
-
-        $namespace = config('modules.namespace', 'Modules');
-
-        $stubGenerator = new StubGenerator($moduleName);
-        $stubGenerator->addReplacements([
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacements([
             '{{CLASS}}' => $resourceName,
-            '{{NAMESPACE}}' => $namespace,
-            '{{NAME}}' => $moduleName,
+            '{{NAMESPACE}}' => $this->module->getNamespace(),
+            '{{NAME}}' => $module->getName(),
         ]);
 
-        // 确保目录存在
-        $resourceDir = $module->getPath('Http/Resources');
-        if (! is_dir($resourceDir)) {
-            File::makeDirectory($resourceDir, 0755, true);
-        }
-
-        $result = $stubGenerator->generate(
+        return $this->writeStub(
+            $generator,
             $jsonApi ? 'resource.json-api.stub' : 'resource.stub',
             'Http/Resources/' . $resourceName . '.php',
+            '资源',
             $force
         );
-
-        if ($result) {
-            $this->info("✓ 成功在模块 [{$moduleName}] 中创建资源 [{$resourceName}]");
-            return Command::SUCCESS;
-        }
-
-        $this->error("创建资源 [{$resourceName}] 失败");
-        return Command::FAILURE;
     }
 }

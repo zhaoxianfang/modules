@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -17,7 +15,7 @@ use zxf\Modules\Support\StubGenerator;
  * 支持自定义命令签名和描述
  * 创建的命令会自动注册到模块中
  */
-class CommandMakeCommand extends Command
+class CommandMakeCommand extends AbstractMakeCommand
 {
     /**
      * 命令签名
@@ -51,77 +49,42 @@ class CommandMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $commandName = Str::studly($this->argument('name'));
         $commandSignature = $this->option('command');
         $force = $this->option('force');
 
-        // 验证模块是否存在
-        $module = Module::find($moduleName);
-
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-            $this->line("提示：请先创建模块，使用 php artisan module:make {$moduleName}");
-            return Command::FAILURE;
-        }
-
-        // 检查命令是否已存在
-        $commandPath = $module->getPath('Console/Commands/' . $commandName . '.php');
-
-        if (File::exists($commandPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在命令类 [{$commandName}]");
-            $this->line("文件位置: {$commandPath}");
-            $this->line("提示：使用 --force 选项覆盖已存在的命令");
-            return Command::FAILURE;
-        }
-
-        if (File::exists($commandPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的命令类 [{$commandName}]");
-        }
-
         // 生成命令签名
         if (empty($commandSignature)) {
             // 使用模块名小写作为命令命名空间，不添加 module: 前缀
-            $commandSignature = Str::snake($moduleName) . ':command-name';
+            $commandSignature = Str::snake($module->getName()) . ':command-name';
             $this->line("命令签名: {$commandSignature}");
             $this->line("提示：你可以使用 --command 选项自定义命令签名");
         }
 
-        $namespace = config('modules.namespace', 'Modules');
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacement('{{CLASS}}', $commandName);
+        $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
+        $generator->addReplacement('{{NAME}}', $module->getName());
+        $generator->addReplacement('{{SIGNATURE}}', $commandSignature);
+        $generator->addReplacement('{{DESCRIPTION}}', $commandName . ' 命令');
+        $generator->addReplacement('{{LOWER_NAME}}', Str::snake($module->getName()));
 
-        // 确保命令目录存在
-        $commandDir = $module->getPath('Console/Commands');
-        if (! is_dir($commandDir)) {
-            File::makeDirectory($commandDir, 0755, true);
-        }
+        $result = $this->writeStub($generator, 'command.stub', 'Console/Commands/' . $commandName . '.php', '命令类', $force);
 
-        // 使用 StubGenerator 生成命令文件
-        $stubGenerator = new StubGenerator($moduleName);
-        $stubGenerator->addReplacement('{{CLASS}}', $commandName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
-        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
-        $stubGenerator->addReplacement('{{SIGNATURE}}', $commandSignature);
-        $stubGenerator->addReplacement('{{DESCRIPTION}}', $commandName . ' 命令');
-        $stubGenerator->addReplacement('{{LOWER_NAME}}', Str::snake($moduleName));
-
-        $result = $stubGenerator->generate(
-            'command.stub',
-            'Console/Commands/' . $commandName . '.php',
-            $force
-        );
-
-        if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建命令类 [{$commandName}]");
-            $this->line("命令位置: {$commandPath}");
+        if ($result === Command::SUCCESS) {
+            $this->line("命令位置: " . $this->targetPath('Console/Commands/' . $commandName . '.php'));
             $this->line("");
             $this->line("使用命令:");
             $this->line("  php artisan {$commandSignature}");
-            return Command::SUCCESS;
+        } else {
+            $this->line("提示：检查文件权限和磁盘空间");
         }
 
-        $this->error("创建命令类 [{$commandName}] 失败");
-        $this->line("提示：检查文件权限和磁盘空间");
-
-        return Command::FAILURE;
+        return $result;
     }
 }

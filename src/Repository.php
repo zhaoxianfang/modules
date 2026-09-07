@@ -8,6 +8,7 @@ use Illuminate\Filesystem\Filesystem;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Exceptions\ModuleNotFoundException;
+use zxf\Modules\Support\ModuleCacheStore;
 use zxf\Modules\Support\ModuleContext;
 
 /**
@@ -38,20 +39,6 @@ class Repository implements RepositoryInterface
     protected array $modules = [];
 
     /**
-     * 已启用模块缓存
-     *
-     * @var array<string, ModuleInterface>|null
-     */
-    protected ?array $enabledModules = null;
-
-    /**
-     * 已禁用模块缓存
-     *
-     * @var array<string, ModuleInterface>|null
-     */
-    protected ?array $disabledModules = null;
-
-    /**
      * 模块别名映射 [alias => name]
      *
      * @var array<string, string>
@@ -79,6 +66,24 @@ class Repository implements RepositoryInterface
      * 是否已扫描
      */
     protected bool $scanned = false;
+
+    /**
+     * 启用模块内存缓存 [name => ModuleInterface]
+     *
+     * 由 allEnabled() 惰性填充，invalidateStatusCache() 失效。
+     *
+     * @var array<string, ModuleInterface>|null
+     */
+    protected ?array $enabledModules = null;
+
+    /**
+     * 禁用模块内存缓存 [name => ModuleInterface]
+     *
+     * 由 allDisabled() 惰性填充，invalidateStatusCache() 失效。
+     *
+     * @var array<string, ModuleInterface>|null
+     */
+    protected ?array $disabledModules = null;
 
     /**
      * 缓存存储路径
@@ -159,38 +164,58 @@ class Repository implements RepositoryInterface
     {
         $this->ensureScanned();
 
-        if ($this->enabledModules === null) {
-            $this->enabledModules = [];
+        if ($this->enabledModules !== null) {
+            return $this->enabledModules;
+        }
 
-            foreach ($this->modules as $name => $module) {
-                if ($module->isEnabled()) {
-                    $this->enabledModules[$name] = $module;
-                }
+        $enabledModules = [];
+
+        foreach ($this->modules as $name => $module) {
+            if ($module->isEnabled()) {
+                $enabledModules[$name] = $module;
             }
         }
 
         if ($this->sortByPriority) {
-            return $this->sortByPriority($this->enabledModules);
+            $enabledModules = $this->sortByPriority($enabledModules);
         }
 
-        return $this->enabledModules;
+        return $this->enabledModules = $enabledModules;
     }
 
     public function allDisabled(): array
     {
         $this->ensureScanned();
 
-        if ($this->disabledModules === null) {
-            $this->disabledModules = [];
+        if ($this->disabledModules !== null) {
+            return $this->disabledModules;
+        }
 
-            foreach ($this->modules as $name => $module) {
-                if (! $module->isEnabled()) {
-                    $this->disabledModules[$name] = $module;
-                }
+        $disabledModules = [];
+
+        foreach ($this->modules as $name => $module) {
+            if (! $module->isEnabled()) {
+                $disabledModules[$name] = $module;
             }
         }
 
-        return $this->disabledModules;
+        if ($this->sortByPriority) {
+            $disabledModules = $this->sortByPriority($disabledModules);
+        }
+
+        return $this->disabledModules = $disabledModules;
+    }
+
+    /**
+     * 失效「启用/禁用模块」缓存
+     *
+     * 运行时调用 Module::setEnabled 改变模块状态后，需调用此方法使
+     * allEnabled()/allDisabled() 的缓存结果失效，否则会返回过时的集合。
+     */
+    public function invalidateStatusCache(): void
+    {
+        $this->enabledModules = null;
+        $this->disabledModules = null;
     }
 
     public function find(string $name): ?ModuleInterface
@@ -314,8 +339,6 @@ class Repository implements RepositoryInterface
     {
         $this->modules = [];
         $this->aliases = [];
-        $this->enabledModules = null;
-        $this->disabledModules = null;
         $this->scanned = false;
         $this->bypassCache = true;
 
@@ -438,9 +461,6 @@ class Repository implements RepositoryInterface
 
     public function clearCache(): void
     {
-        $this->enabledModules = null;
-        $this->disabledModules = null;
-
         // 清除模块内部缓存
         foreach ($this->modules as $module) {
             $module->clearCache();
@@ -453,8 +473,29 @@ class Repository implements RepositoryInterface
         try {
             \zxf\Modules\Support\ModuleAutoDiscovery::clearDiscoveryCache();
         } catch (\Throwable) {
-            // 忽略
+            // 忽略：自动发现未启用时不阻断清缓存
         }
+
+        $this->invalidateStatusCache();
+    }
+
+    /**
+     * 清除仓库级模块注册清单缓存并强制下次访问重新扫描磁盘
+     *
+     * 与 clearCache() 的区别：本方法额外重置「已扫描」标记与内存中的模块注册表，
+     * 使下一次 any 查询必然重新扫描磁盘，适用于
+     * module:make / module:delete / module:clear 等改变了磁盘模块集合的场景。
+     */
+    public function clearRepositoryCache(): void
+    {
+        $this->modules = [];
+        $this->aliases = [];
+        $this->scanned = false;
+        $this->bypassCache = true;
+
+        $this->clearCache();
+
+        $this->bypassCache = false;
     }
 
     /**
@@ -462,8 +503,7 @@ class Repository implements RepositoryInterface
      */
     protected function invalidateCache(): void
     {
-        $this->enabledModules = null;
-        $this->disabledModules = null;
+        $this->invalidateStatusCache();
     }
 
     /**
@@ -508,9 +548,11 @@ class Repository implements RepositoryInterface
         }
 
         try {
-            $data = require $cacheFile;
+            // 以 JSON 读取（避免 require 被 OPcache 缓存、并杜绝缓存文件被篡改后
+            // 执行任意 PHP 代码的风险）。读取失败一律安全回退到实时扫描。
+            $data = ModuleCacheStore::read($cacheFile);
 
-            if (! is_array($data) || ! isset($data['modules'])) {
+            if ($data === null || ! isset($data['modules'])) {
                 return false;
             }
 
@@ -631,13 +673,11 @@ class Repository implements RepositoryInterface
                 ];
             }
 
-            $content = '<?php return ' . var_export([
+            ModuleCacheStore::write($cacheFile, [
                 'modules' => $modulesData,
                 'cached_at' => time(),
                 'path_mtimes' => $this->collectPathMtimes(),
-            ], true) . ';';
-
-            file_put_contents($cacheFile, $content, LOCK_EX);
+            ]);
         } catch (\Throwable) {
             // 缓存写入失败不中断
         }
@@ -645,10 +685,14 @@ class Repository implements RepositoryInterface
 
     /**
      * 获取缓存文件路径
+     *
+     * 注意：使用 .json 而非 .php —— 早期版本把缓存写成可执行的 PHP 文件并 require，
+     * 在生产环境（opcache.validate_timestamps=0）会导致缓存永久不失效，
+     * 且缓存文件一旦被篡改即可执行任意代码。
      */
     protected function getCacheFilePath(): string
     {
-        return ($this->cachePath ?? storage_path('framework/cache/modules')) . '/modules.php';
+        return ($this->cachePath ?? storage_path('framework/cache/modules')) . '/modules.json';
     }
 
     /**
@@ -656,9 +700,6 @@ class Repository implements RepositoryInterface
      */
     protected function deleteCacheFile(): void
     {
-        $cacheFile = $this->getCacheFilePath();
-        if (file_exists($cacheFile)) {
-            @unlink($cacheFile);
-        }
+        ModuleCacheStore::delete($this->getCacheFilePath());
     }
 }

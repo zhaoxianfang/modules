@@ -114,6 +114,14 @@ interface RepositoryInterface
     public function clearCache(): void;
 
     /**
+     * 清除仓库级模块注册清单缓存并强制下次访问重新扫描磁盘
+     *
+     * 与 clearCache() 的区别：额外重置「已扫描」标记与内存中的模块注册表，
+     * 适用于模块被创建/删除后需要立即与磁盘状态保持一致的场景。
+     */
+    public function clearRepositoryCache(): void;
+
+    /**
      * 添加扫描路径
      */
     public function addPath(string $path): self;

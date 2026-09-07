@@ -125,8 +125,16 @@ class SeedCommand extends Command
 
         $totalSuccess = 0;
         $totalFail = 0;
+        $totalSkipped = 0;
 
         foreach ($modules as $module) {
+            // 预先判断是否存在 Seeder，区分「跳过（无 Seeder）」与「成功/失败」，
+            // 避免将无 Seeder 的模块静默计入成功数。
+            if (empty($this->discoverSeeders($module))) {
+                $totalSkipped++;
+                continue;
+            }
+
             $result = $this->runAllModuleSeeders($module);
 
             if ($result === Command::SUCCESS) {
@@ -137,7 +145,14 @@ class SeedCommand extends Command
         }
 
         $this->newLine();
-        $this->components->info("数据填充完成：{$totalSuccess} 个模块成功" . ($totalFail > 0 ? "，{$totalFail} 个模块失败" : ''));
+        $summary = "数据填充完成：{$totalSuccess} 个模块成功";
+        if ($totalSkipped > 0) {
+            $summary .= "，{$totalSkipped} 个模块无数据填充器（已跳过）";
+        }
+        if ($totalFail > 0) {
+            $summary .= "，{$totalFail} 个模块失败";
+        }
+        $this->components->info($summary);
 
         return $totalFail === 0 ? Command::SUCCESS : Command::FAILURE;
     }
@@ -269,9 +284,10 @@ class SeedCommand extends Command
         }
 
         try {
-            $this->call('db:seed', $params);
+            $exitCode = $this->call('db:seed', $params);
 
-            return Command::SUCCESS;
+            // 子命令失败（非 0 退出码）必须透传，否则调用方会误判为成功
+            return $exitCode === Command::SUCCESS ? Command::SUCCESS : Command::FAILURE;
         } catch (\Throwable $e) {
             $this->error("运行数据填充器 [{$fullClass}] 失败: " . $e->getMessage());
 

@@ -6,264 +6,328 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
- * MySQL 8.0+ 窗口函数宏集合
+ * MySQL 8.0+ 窗口函数宏
  *
- * 提供丰富的窗口函数支持，包括：
- * - 排名函数: rowNumber, rank, denseRank, percentRank
- * - 偏移函数: lag, lead, firstValue, lastValue, nthValue
- * - 聚合窗口函数: sumOver, avgOver, countOver, minOver, maxOver
- * - 分区分组: partitionBy
- * - 框架窗口: rowsBetween, rangeBetween
- * - 累计统计: cumulativeSum, movingAverage
+ * 提供丰富的窗口函数封装，包括：
+ * - 排序函数：rowNumber, rank, denseRank, ntile, percentRank, cumeDist, rankOver
+ * - 值访问函数：lag, lead, firstValue, lastValue, nthValue
+ * - 聚合窗口函数：sumOver, avgOver, countOver, minOver, maxOver
+ * - 框架窗口函数：rowsBetween, rangeBetween
+ * - 统计函数：cumulativeSum, movingAverage, runningTotal
+ *
+ * 安全性：所有列名 / 别名 / 排序方向 / 聚合函数 / 框架边界均经白名单校验，
+ * 标识符由 grammar wrap 生成（适配 MySQL / PostgreSQL / SQLite），字面值走参数绑定，
+ * 彻底消除原先 `{$column}` 裸插值导致的 SQL 注入风险。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0+
  */
 class WindowFunctionsMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有窗口函数宏
-     *
-     * @return void
      */
     public static function register(): void
     {
         self::registerRankingFunctions();
-        self::registerOffsetFunctions();
+        self::registerValueFunctions();
         self::registerAggregateWindowFunctions();
         self::registerFrameWindowFunctions();
         self::registerStatisticalFunctions();
     }
 
     /**
-     * 注册排名函数
-     *
-     * 包含: rowNumber, rank, denseRank, percentRank, ntile
+     * 注册排名窗口函数
      */
     protected static function registerRankingFunctions(): void
     {
         /**
-         * 为每一行分配唯一的连续整数序号
+         * 为查询结果添加行号（ROW_NUMBER）
          *
-         * 应用场景：生成行号、分页辅助、数据排序编号
+         * 应用场景：分页、排名、去重
          *
-         * @param string|array $partitionBy 分区字段，支持字符串或数组
-         * @param string $orderBy 排序字段，默认主键
-         * @param string $direction 排序方向: asc|desc
-         * @param string $alias 结果列别名，默认 'row_num'
+         * @param string|array|null $partitionBy 分区字段，如 'department_id' 或 ['dept','year']
+         * @param string $orderBy 排序字段
+         * @param string $direction 排序方向（asc/desc）
+         * @param string|null $alias 结果列别名，默认 'row_num'
          * @return Builder
          *
          * @example
-         * // 为每个部门的员工按工资排序编号
-         * Employee::query()->rowNumber('department_id', 'salary', 'desc', 'rank_in_dept')->get();
-         *
-         * // 全局行号
-         * Employee::query()->rowNumber(null, 'created_at', 'desc')->get();
-         *
-         * // 多字段分区
-         * Employee::query()->rowNumber(['dept_id', 'team_id'], 'performance_score', 'desc')->get();
+         * // 按部门分区，按工资降序排名
+         * Employee::query()->rowNumber('department_id', 'salary', 'desc', 'rn')->get();
          */
         Builder::macro('rowNumber', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
-            string $alias = 'row_num'
+            ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'row_num', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "ROW_NUMBER() OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "ROW_NUMBER() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
 
         /**
-         * 为每一行分配排名，相同值会有相同排名，后续排名会跳过
+         * 添加排名（RANK）
          *
-         * 特点：相同值排名相同，下一个排名 = 当前排名 + 相同值数量
-         * 应用场景：竞赛排名（允许并列，下一名次跳过）
+         * 相同值获得相同排名，后续排名会跳过
          *
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
-         * @param string $direction 排序方向: asc|desc
-         * @param string $alias 结果列别名，默认 'rank_num'
+         * @param string $direction 排序方向
+         * @param string|null $alias 结果列别名，默认 'rank_val'
          * @return Builder
          *
          * @example
-         * // 竞赛排名，相同分数并列，下一名次跳过
-         * Competition::query()->rank(null, 'score', 'desc', 'competition_rank')->get();
-         * // 结果: 第一名100分, 第二名99分, 第二名99分, 第四名98分...
+         * // 按分数排名（并列会跳过名次）
+         * Student::query()->rank('class_id', 'score', 'desc', 'rank_pos')->get();
          */
         Builder::macro('rank', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
-            string $alias = 'rank_num'
+            ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'rank_val', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "RANK() OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "RANK() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
 
         /**
-         * 为每一行分配排名，相同值会有相同排名，后续排名不跳过
+         * 添加密集排名（DENSE_RANK）
          *
-         * 特点：相同值排名相同，下一个排名连续
-         * 应用场景：等级评定、连续排名场景
+         * 相同值获得相同排名，后续排名不跳过
          *
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
-         * @param string $direction 排序方向: asc|desc
-         * @param string $alias 结果列别名，默认 'dense_rank_num'
+         * @param string $direction 排序方向
+         * @param string|null $alias 结果列别名，默认 'dense_rank_val'
          * @return Builder
          *
          * @example
-         * // 等级评定，相同分数并列，下一名次连续
-         * Exam::query()->denseRank('class_id', 'total_score', 'desc', 'class_rank')->get();
-         * // 结果: 第1名100分, 第2名99分, 第2名99分, 第3名98分...
+         * // 按销售额密集排名（并列不跳过名次）
+         * Sales::query()->denseRank('region', 'amount', 'desc', 'dense_rank_pos')->get();
          */
         Builder::macro('denseRank', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
-            string $alias = 'dense_rank_num'
+            ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'dense_rank_val', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "DENSE_RANK() OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "DENSE_RANK() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
 
         /**
-         * 计算每行的相对排名百分比
+         * 将分区内的行分为指定数量的桶（NTILE）
          *
-         * 公式：(rank - 1) / (总行数 - 1)
-         * 应用场景：成绩百分比排名、数据分布分析
-         *
+         * @param int $buckets 桶的数量
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
-         * @param string $direction 排序方向: asc|desc
-         * @param string $alias 结果列别名，默认 'percent_rank_val'
+         * @param string $direction 排序方向
+         * @param string|null $alias 结果列别名，默认 'ntile_val'
          * @return Builder
          *
          * @example
-         * // 计算学生在班级成绩的百分比排名
-         * Student::query()->percentRank('class_id', 'exam_score', 'desc', 'percentile')->get();
-         * // 结果: 0=最高, 0.5=中间, 1=最低
-         */
-        Builder::macro('percentRank', function (
-            string|array|null $partitionBy = null,
-            string $orderBy = '',
-            string $direction = 'asc',
-            string $alias = 'percent_rank_val'
-        ): Builder {
-            /** @var Builder $this */
-            $direction = strtoupper($direction);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
-
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "PERCENT_RANK() OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
-
-            return $this->addSelect(DB::raw($windowExpr));
-        });
-
-        /**
-         * 将数据分为N个桶（分位数），返回桶号
-         *
-         * 应用场景：四分位数、十分位数、百分位数分析
-         *
-         * @param int $buckets 桶的数量，必须大于0
-         * @param string|array|null $partitionBy 分区字段
-         * @param string $orderBy 排序字段
-         * @param string $direction 排序方向: asc|desc
-         * @param string $alias 结果列别名，默认 'bucket_num'
-         * @return Builder
-         *
-         * @example
-         * // 四分位数分析
-         * Sales::query()->ntile(4, 'region', 'amount', 'desc', 'quartile')->get();
-         * // 结果: 1=前25%, 2=25-50%, 3=50-75%, 4=后25%
-         *
-         * // 十分位数分析
-         * Performance::query()->ntile(10, null, 'score', 'desc', 'decile')->get();
+         * // 将员工按工资分为4个等级
+         * Employee::query()->ntile(4, 'department_id', 'salary', 'desc', 'salary_grade')->get();
          */
         Builder::macro('ntile', function (
-            int $buckets,
+            int $buckets = 4,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
-            string $alias = 'bucket_num'
+            ?string $alias = null
         ): Builder {
             /** @var Builder $this */
             if ($buckets < 1) {
                 throw new \InvalidArgumentException('NTILE buckets must be greater than 0');
             }
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'ntile_val', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
-            $direction = strtoupper($direction);
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
+            $windowExpr = "NTILE({$buckets}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            $windowExpr = "NTILE({$buckets}) OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            return $this->addSelect(DB::raw($windowExpr));
+        });
+
+        /**
+         * 计算当前行在分区中的百分比排名（PERCENT_RANK）
+         *
+         * 取值范围 0~1，(rank-1)/(rows-1)
+         *
+         * @param string|array|null $partitionBy 分区字段
+         * @param string $orderBy 排序字段
+         * @param string $direction 排序方向
+         * @param string|null $alias 结果列别名，默认 'percent_rank_val'
+         * @return Builder
+         *
+         * @example
+         * // 计算员工工资的百分比排名
+         * Employee::query()->percentRank('department_id', 'salary', 'desc', 'pct_rank')->get();
+         */
+        Builder::macro('percentRank', function (
+            string|array|null $partitionBy = null,
+            string $orderBy = '',
+            string $direction = 'asc',
+            ?string $alias = null
+        ): Builder {
+            /** @var Builder $this */
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'percent_rank_val', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
+            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
+
+            $windowExpr = "PERCENT_RANK() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
+
+            return $this->addSelect(DB::raw($windowExpr));
+        });
+
+        /**
+         * 计算当前行在分区中的累积分布（CUME_DIST）
+         *
+         * 取值范围 0~1，(小于等于当前值的行数)/(总行数)
+         *
+         * @param string|array|null $partitionBy 分区字段
+         * @param string $orderBy 排序字段
+         * @param string $direction 排序方向
+         * @param string|null $alias 结果列别名，默认 'cume_dist_val'
+         * @return Builder
+         *
+         * @example
+         * // 计算产品价格的累积分布
+         * Product::query()->cumeDist('category_id', 'price', 'asc', 'cum_dist')->get();
+         */
+        Builder::macro('cumeDist', function (
+            string|array|null $partitionBy = null,
+            string $orderBy = '',
+            string $direction = 'asc',
+            ?string $alias = null
+        ): Builder {
+            /** @var Builder $this */
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'cume_dist_val', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
+            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
+
+            $windowExpr = "CUME_DIST() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
+
+            return $this->addSelect(DB::raw($windowExpr));
+        });
+
+        /**
+         * 自定义排名函数（RANK OVER）
+         *
+         * 允许自定义聚合函数和框架的排名
+         *
+         * @param string $function 排名函数（RANK/DENSE_RANK/ROW_NUMBER）
+         * @param string|array|null $partitionBy 分区字段
+         * @param string $orderBy 排序字段
+         * @param string $direction 排序方向
+         * @param string|null $alias 结果列别名，默认 'custom_rank'
+         * @return Builder
+         *
+         * @example
+         * // 自定义排名
+         * Employee::query()->rankOver('DENSE_RANK', 'department_id', 'salary', 'desc')->get();
+         */
+        Builder::macro('rankOver', function (
+            string $function = 'RANK',
+            string|array|null $partitionBy = null,
+            string $orderBy = '',
+            string $direction = 'asc',
+            ?string $alias = null
+        ): Builder {
+            /** @var Builder $this */
+            $function = WindowFunctionsMacro::assertWindowFunction($function);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'custom_rank', 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
+            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
+
+            $windowExpr = "{$function}() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
     }
 
     /**
-     * 注册偏移函数
-     *
-     * 包含: lag, lead, firstValue, lastValue, nthValue
+     * 注册值访问窗口函数
      */
-    protected static function registerOffsetFunctions(): void
+    protected static function registerValueFunctions(): void
     {
         /**
-         * 获取当前行之前第N行的值
+         * 访问当前行之前的第N行数据（LAG）
          *
-         * 应用场景：计算环比、与上期比较、趋势分析
-         *
-         * @param string $column 要获取值的列名
-         * @param int $offset 偏移量，默认1（前一行）
-         * @param mixed $default 当偏移行不存在时的默认值
+         * @param string $column 要访问的列名
+         * @param int $offset 偏移量，默认1
+         * @param mixed $default 当无前序行时返回的默认值
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
-         * @param string $alias 结果列别名，默认为 {column}_lag
+         * @param string|null $alias 结果列别名，默认 {column}_lag
          * @return Builder
          *
          * @example
-         * // 计算每日销售额与前一天比较
-         * DailySales::query()
-         *     ->lag('amount', 1, 0, null, 'sale_date', 'asc', 'prev_day_amount')
-         *     ->selectRaw('amount - prev_day_amount as day_over_day')
-         *     ->get();
-         *
-         * // 计算每月与去年同月比较（同比）
-         * MonthlyData::query()
-         *     ->lag('revenue', 12, 0, null, 'year_month', 'asc', 'last_year_same_month')
+         * // 计算月度销售额环比变化
+         * Sales::query()
+         *     ->lag('amount', 1, 0, 'product_id', 'month', 'asc', 'prev_amount')
+         *     ->selectRaw('amount - prev_amount as growth')
          *     ->get();
          */
         Builder::macro('lag', function (
@@ -276,38 +340,43 @@ class WindowFunctionsMacro
             ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: "{$column}_lag", 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
-            $alias = $alias ?: "{$column}_lag";
-            $defaultValue = $default === null ? 'NULL' : (is_string($default) ? "'{$default}'" : $default);
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
+            // 默认值走参数绑定，避免字符串字面量注入
+            $defaultSql = $default === null ? 'NULL' : '?';
+            $bindings = $default === null ? [] : [$default];
 
-            $windowExpr = "LAG(`{$column}`, {$offset}, {$defaultValue}) OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "LAG({$wrappedColumn}, {$offset}, {$defaultSql}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return $this->selectRaw($windowExpr, $bindings);
         });
 
         /**
-         * 获取当前行之后第N行的值
+         * 访问当前行之后的第N行数据（LEAD）
          *
-         * 应用场景：预测下期、未来值比较、目标达成分析
-         *
-         * @param string $column 要获取值的列名
-         * @param int $offset 偏移量，默认1（后一行）
-         * @param mixed $default 当偏移行不存在时的默认值
+         * @param string $column 要访问的列名
+         * @param int $offset 偏移量，默认1
+         * @param mixed $default 当无后序行时返回的默认值
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
-         * @param string $alias 结果列别名，默认为 {column}_lead
+         * @param string|null $alias 结果列别名，默认 {column}_lead
          * @return Builder
          *
          * @example
-         * // 查看每个用户的下一次购买时间
-         * Orders::query()
-         *     ->lead('created_at', 1, null, 'user_id', 'created_at', 'asc', 'next_order_at')
-         *     ->selectRaw('DATEDIFF(next_order_at, created_at) as days_until_next')
+         * // 计算下个月的预测销售额
+         * Sales::query()
+         *     ->lead('amount', 1, 0, 'product_id', 'month', 'asc', 'next_amount')
+         *     ->selectRaw('next_amount - amount as forecast')
          *     ->get();
          */
         Builder::macro('lead', function (
@@ -320,29 +389,33 @@ class WindowFunctionsMacro
             ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: "{$column}_lead", 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
-            $alias = $alias ?: "{$column}_lead";
-            $defaultValue = $default === null ? 'NULL' : (is_string($default) ? "'{$default}'" : $default);
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
+            $defaultSql = $default === null ? 'NULL' : '?';
+            $bindings = $default === null ? [] : [$default];
 
-            $windowExpr = "LEAD(`{$column}`, {$offset}, {$defaultValue}) OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "LEAD({$wrappedColumn}, {$offset}, {$defaultSql}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return $this->selectRaw($windowExpr, $bindings);
         });
 
         /**
-         * 获取窗口框架中第一行的值
-         *
-         * 应用场景：计算与首行的差值、基准值比较
+         * 获取窗口框架中第一行的值（FIRST_VALUE）
          *
          * @param string $column 要获取值的列名
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
-         * @param string $alias 结果列别名，默认为 {column}_first
+         * @param string|null $alias 结果列别名，默认 {column}_first
          * @return Builder
          *
          * @example
@@ -360,28 +433,30 @@ class WindowFunctionsMacro
             ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: "{$column}_first", 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
-            $alias = $alias ?: "{$column}_first";
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "FIRST_VALUE(`{$column}`) OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "FIRST_VALUE({$wrappedColumn}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
 
         /**
-         * 获取窗口框架中最后一行的值
-         *
-         * 应用场景：计算与末行的差值、目标差距分析
+         * 获取窗口框架中最后一行的值（LAST_VALUE）
          *
          * @param string $column 要获取值的列名
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
-         * @param string $alias 结果列别名，默认为 {column}_last
+         * @param string|null $alias 结果列别名，默认 {column}_last
          * @return Builder
          *
          * @example
@@ -399,29 +474,31 @@ class WindowFunctionsMacro
             ?string $alias = null
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: "{$column}_last", 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
-            $alias = $alias ?: "{$column}_last";
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "LAST_VALUE(`{$column}`) OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "LAST_VALUE({$wrappedColumn}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
 
         /**
-         * 获取窗口框架中第N行的值
-         *
-         * 应用场景：获取特定排名的数据、目标位置分析
+         * 获取窗口框架中第N行的值（NTH_VALUE）
          *
          * @param string $column 要获取值的列名
          * @param int $n 行号，从1开始
          * @param string|array|null $partitionBy 分区字段
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
-         * @param string $alias 结果列别名，默认为 {column}_nth
+         * @param string|null $alias 结果列别名，默认 {column}_nth
          * @return Builder
          *
          * @example
@@ -442,15 +519,18 @@ class WindowFunctionsMacro
             if ($n < 1) {
                 throw new \InvalidArgumentException('NTH_VALUE n must be greater than 0');
             }
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: "{$column}_nth", 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
-            $direction = strtoupper($direction);
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
-            $alias = $alias ?: "{$column}_nth";
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "NTH_VALUE(`{$column}`, {$n}) OVER ({$partitionClause} {$orderClause}) AS `{$alias}`";
+            $windowExpr = "NTH_VALUE({$wrappedColumn}, {$n}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
@@ -505,14 +585,21 @@ class WindowFunctionsMacro
                 ?string $alias = null
             ) use ($config): Builder {
                 /** @var Builder $this */
-                $direction = strtoupper($direction);
-                $alias = $alias ?: $config['defaultAlias'];
+                $direction = WindowFunctionsMacro::assertDirection($direction);
+                $function = WindowFunctionsMacro::assertAggregateFunction($config['fn']);
+                $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+                $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+                $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: $config['defaultAlias'], 'alias');
+                $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
-                $partitionClause = self::buildPartitionClause($partitionBy);
-                $orderClause = $orderBy ? "ORDER BY `{$orderBy}` {$direction}" : '';
-                $orderClause = $orderClause ? " {$orderClause}" : '';
+                $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
+                $orderClause = '';
+                if ($orderBy) {
+                    $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderBy, 'order'));
+                    $orderClause = " ORDER BY {$wrappedOrder} {$direction}";
+                }
 
-                $windowExpr = "{$config['fn']}(`{$column}`) OVER ({$partitionClause}{$orderClause}) AS `{$alias}`";
+                $windowExpr = "{$function}({$wrappedColumn}) OVER ({$partitionClause}{$orderClause}) AS {$wrappedAlias}";
 
                 return $this->addSelect(DB::raw($windowExpr));
             });
@@ -563,14 +650,21 @@ class WindowFunctionsMacro
             string $alias = 'frame_result'
         ): Builder {
             /** @var Builder $this */
-            $direction = strtoupper($direction);
-            $function = strtoupper($function);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $function = WindowFunctionsMacro::assertAggregateFunction($function);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+            $start = WindowFunctionsMacro::assertFrameBound($start);
+            $end = WindowFunctionsMacro::assertFrameBound($end);
+
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
             $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = $orderColumn ? "ORDER BY `{$orderColumn}` {$direction}" : '';
-
-            $windowExpr = "{$function}(`{$column}`) OVER ({$partitionClause} {$orderClause} ROWS BETWEEN {$start} AND {$end}) AS `{$alias}`";
+            $windowExpr = "{$function}({$wrappedColumn}) OVER ({$partitionClause} {$orderClause} ROWS BETWEEN {$start} AND {$end}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
@@ -611,13 +705,20 @@ class WindowFunctionsMacro
                 throw new \InvalidArgumentException('RANGE frame requires orderBy parameter');
             }
 
-            $direction = strtoupper($direction);
-            $function = strtoupper($function);
+            $direction = WindowFunctionsMacro::assertDirection($direction);
+            $function = WindowFunctionsMacro::assertAggregateFunction($function);
+            $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
+            $alias = WindowFunctionsMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
+            $start = WindowFunctionsMacro::assertFrameBound($start);
+            $end = WindowFunctionsMacro::assertFrameBound($end);
 
-            $partitionClause = self::buildPartitionClause($partitionBy);
-            $orderClause = "ORDER BY `{$orderBy}` {$direction}";
+            $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
+            $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderBy, 'order'));
+            $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $windowExpr = "{$function}(`{$column}`) OVER ({$partitionClause} {$orderClause} RANGE BETWEEN {$start} AND {$end}) AS `{$alias}`";
+            $windowExpr = "{$function}({$wrappedColumn}) OVER ({$partitionClause} {$orderClause} RANGE BETWEEN {$start} AND {$end}) AS {$wrappedAlias}";
 
             return $this->addSelect(DB::raw($windowExpr));
         });
@@ -724,29 +825,5 @@ class WindowFunctionsMacro
             /** @var Builder $this */
             return $this->cumulativeSum($column, $partitionBy, $orderBy, $direction, $alias);
         });
-    }
-
-    /**
-     * 构建 PARTITION BY 子句
-     *
-     * @param string|array|null $partitionBy 分区字段
-     * @return string
-     */
-    public static function buildPartitionClause(string|array|null $partitionBy): string
-    {
-        if (empty($partitionBy)) {
-            return '';
-        }
-
-        if (is_string($partitionBy)) {
-            return "PARTITION BY `{$partitionBy}`";
-        }
-
-        if (is_array($partitionBy)) {
-            $columns = array_map(fn ($col) => "`{$col}`", $partitionBy);
-            return 'PARTITION BY ' . implode(', ', $columns);
-        }
-
-        return '';
     }
 }

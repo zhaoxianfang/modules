@@ -1,0 +1,37 @@
+<?php
+
+namespace {{MODULE_NAMESPACE}}\Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+use {{MODULE_NAMESPACE}}\Models\{{MODEL_CLASS}};
+
+/**
+ * {{MODEL_CLASS}} 数据工厂
+ *
+ * 由 `php artisan module:make-model {{NAME}} {{MODEL_CLASS}} --factory` 生成。
+ *
+ * @extends Factory<{{MODEL_CLASS}}>
+ */
+class {{CLASS}} extends Factory
+{
+    /**
+     * 关联的模型类名
+     *
+     * @var class-string<{{MODEL_CLASS}}>
+     */
+    protected $model = {{MODEL_CLASS}}::class;
+
+    /**
+     * 定义模型的默认状态
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            // TODO: 为各字段补充假数据，例如：
+            // 'title' => fake()->sentence(),
+            // 'status' => fake()->randomElement(['draft', 'published']),
+        ];
+    }
+}

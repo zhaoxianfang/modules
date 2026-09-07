@@ -203,6 +203,33 @@ interface ModuleInterface
      */
     public function getServiceProviderClass(): ?string;
 
+    /**
+     * 获取模块 Laravel 服务提供者类列表
+     *
+     * 供 ModuleAutoDiscovery / ModuleInfo 注册到 Laravel 容器，
+     * 任何自定义 ModuleInterface 实现类都必须提供此方法。
+     *
+     * @return array<string>
+     */
+    public function getLaravelProviders(): array;
+
+    /**
+     * 获取模块 Laravel 类别名映射
+     *
+     * 键为别名、值为完整类名，供 ModuleAutoDiscovery 注册到容器。
+     *
+     * @return array<string, string>
+     */
+    public function getLaravelAliases(): array;
+
+    /**
+     * 模块初始化钩子
+     *
+     * 在模块被加载（loadModule）时调用一次，用于执行模块级引导逻辑。
+     * 自定义 ModuleInterface 实现类可在此做自己的初始化，不实现则跳过。
+     */
+    public function initialize(): void;
+
     // ========================================================================
     //  缓存
     // ========================================================================

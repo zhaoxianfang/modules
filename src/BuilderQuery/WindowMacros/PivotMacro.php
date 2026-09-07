@@ -6,6 +6,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0+ 行列转换（PIVOT/UNPIVOT）宏
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\DB;
  */
 class PivotMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有透视宏
      *
@@ -71,23 +74,33 @@ class PivotMacro
             string|array|null $groupBy = null
         ): Builder {
             /** @var Builder $this */
-            $function = strtoupper($function);
+            PivotMacro::assertMysql($this, 'pivot');
+            $function = PivotMacro::assertAggregateFunction($function);
+            $pivotColumn = PivotMacro::assertValidIdentifier($pivotColumn, 'pivot');
+            $aggregateColumn = PivotMacro::assertValidIdentifier($aggregateColumn, 'aggregate');
             $model = $this->getModel();
             $table = $model->getTable();
+            $wrappedPivot = PivotMacro::wrapIdentifier($this, $pivotColumn);
+            $wrappedAggregate = PivotMacro::wrapIdentifier($this, $aggregateColumn);
 
             // 确保分组列被选中
             $groupColumns = is_array($groupBy) ? $groupBy : ($groupBy ? [$groupBy] : []);
-            $selectColumns = array_map(fn ($col) => "`{$table}`.`{$col}`", $groupColumns);
+            $selectColumns = array_map(function ($col) use ($table, $model) {
+                $col = PivotMacro::assertValidIdentifier($col, 'group');
+                return PivotMacro::wrapIdentifier($model->newQuery(), "{$table}.{$col}");
+            }, $groupColumns);
             $bindings = [];
 
-            // 构建 CASE WHEN 聚合表达式（使用参数绑定防止SQL注入）
+            // 构建 CASE WHEN 聚合表达式（值使用参数绑定防止SQL注入；列名/函数名已白名单校验）
             foreach ($values as $value) {
                 $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $value);
                 $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_' . $safeAlias : $safeAlias;
+                $safeAlias = PivotMacro::assertValidIdentifier($safeAlias, 'alias');
+                $wrappedAlias = PivotMacro::wrapIdentifier($this, $safeAlias);
                 if (is_null($value)) {
-                    $selectColumns[] = "{$function}(CASE WHEN `{$pivotColumn}` IS NULL THEN `{$aggregateColumn}` ELSE NULL END) AS `{$safeAlias}`";
+                    $selectColumns[] = "{$function}(CASE WHEN {$wrappedPivot} IS NULL THEN {$wrappedAggregate} ELSE NULL END) AS {$wrappedAlias}";
                 } else {
-                    $selectColumns[] = "{$function}(CASE WHEN `{$pivotColumn}` = ? THEN `{$aggregateColumn}` ELSE NULL END) AS `{$safeAlias}`";
+                    $selectColumns[] = "{$function}(CASE WHEN {$wrappedPivot} = ? THEN {$wrappedAggregate} ELSE NULL END) AS {$wrappedAlias}";
                     $bindings[] = $value;
                 }
             }
@@ -183,26 +196,33 @@ class PivotMacro
             string $valueColumn = 'value'
         ): Builder {
             /** @var Builder $this */
+            PivotMacro::assertMysql($this, 'unpivot');
             $model = $this->getModel();
             $table = $model->getTable();
-            $primaryKey = $model->getKeyName();
+            $primaryKey = PivotMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = PivotMacro::wrapIdentifier($this, $primaryKey);
+            $nameColumn = PivotMacro::assertValidIdentifier($nameColumn, 'name');
+            $valueColumn = PivotMacro::assertValidIdentifier($valueColumn, 'value');
+            $wrappedName = PivotMacro::wrapIdentifier($this, $nameColumn);
+            $wrappedValue = PivotMacro::wrapIdentifier($this, $valueColumn);
+            $wrappedTable = PivotMacro::wrapIdentifier($this, $table);
 
             // 构建 UNION ALL 查询
             $unionParts = [];
             $bindings = [];
 
             foreach ($columns as $index => $colConfig) {
-                $column = $colConfig['column'];
-                $alias = $colConfig['alias'] ?? $column;
+                $column = PivotMacro::assertValidIdentifier((string) $colConfig['column'], 'column');
+                $alias = $colConfig['alias'] ?? $colConfig['column'];
                 $bindings[] = $alias;
 
                 $selectColumns = [
-                    "`{$primaryKey}`",
-                    "? AS `{$nameColumn}`",
-                    "`{$column}` AS `{$valueColumn}`",
+                    $wrappedPk,
+                    "? AS {$wrappedName}",
+                    PivotMacro::wrapIdentifier($this, $column) . " AS {$wrappedValue}",
                 ];
 
-                $unionParts[] = "SELECT " . implode(', ', $selectColumns) . " FROM `{$table}`";
+                $unionParts[] = "SELECT " . implode(', ', $selectColumns) . " FROM {$wrappedTable}";
             }
 
             $unionSql = implode(' UNION ALL ', $unionParts);
@@ -244,9 +264,16 @@ class PivotMacro
             ?array $colValues = null
         ): Builder {
             /** @var Builder $this */
-            $function = strtoupper($function);
+            PivotMacro::assertMysql($this, 'crossTab');
+            $function = PivotMacro::assertAggregateFunction($function);
+            $rowColumn = PivotMacro::assertValidIdentifier($rowColumn, 'row');
+            $colColumn = PivotMacro::assertValidIdentifier($colColumn, 'col');
+            $aggregateColumn = PivotMacro::assertValidIdentifier($aggregateColumn, 'aggregate');
             $model = $this->getModel();
             $table = $model->getTable();
+            $wrappedRow = PivotMacro::wrapIdentifier($this, $rowColumn);
+            $wrappedCol = PivotMacro::wrapIdentifier($this, $colColumn);
+            $wrappedAgg = PivotMacro::wrapIdentifier($this, $aggregateColumn);
 
             // 如果没有指定列值，使用 DISTINCT 查询（需要额外查询，这里简化处理）
             if ($colValues === null) {
@@ -256,23 +283,25 @@ class PivotMacro
                     ->toArray();
             }
 
-            $selectColumns = ["`{$rowColumn}`"];
-            $groupByColumns = ["`{$rowColumn}`"];
+            $selectColumns = [$wrappedRow];
+            $groupByColumns = [$wrappedRow];
             $bindings = [];
 
             foreach ($colValues as $value) {
                 $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $value);
                 $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_' . $safeAlias : $safeAlias;
+                $safeAlias = PivotMacro::assertValidIdentifier($safeAlias, 'alias');
+                $wrappedAlias = PivotMacro::wrapIdentifier($this, $safeAlias);
                 if (is_null($value)) {
-                    $selectColumns[] = "{$function}(CASE WHEN `{$colColumn}` IS NULL THEN `{$aggregateColumn}` ELSE NULL END) AS `{$safeAlias}`";
+                    $selectColumns[] = "{$function}(CASE WHEN {$wrappedCol} IS NULL THEN {$wrappedAgg} ELSE NULL END) AS {$wrappedAlias}";
                 } else {
-                    $selectColumns[] = "{$function}(CASE WHEN `{$colColumn}` = ? THEN `{$aggregateColumn}` ELSE NULL END) AS `{$safeAlias}`";
+                    $selectColumns[] = "{$function}(CASE WHEN {$wrappedCol} = ? THEN {$wrappedAgg} ELSE NULL END) AS {$wrappedAlias}";
                     $bindings[] = $value;
                 }
             }
 
             // 添加总计列
-            $selectColumns[] = "{$function}(`{$aggregateColumn}`) AS `total`";
+            $selectColumns[] = "{$function}({$wrappedAgg}) AS " . PivotMacro::wrapIdentifier($this, 'total');
 
             // 复制原始 WHERE 条件
             $baseQuery = $this->clone();

@@ -6,6 +6,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0.14+ LATERAL JOIN 宏
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\DB;
  */
 class LateralJoinMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有 LATERAL JOIN 宏
      *
@@ -71,8 +74,11 @@ class LateralJoinMacro
          */
         Builder::macro('lateralJoin', function (\Closure $callback, string $alias): Builder {
             /** @var Builder $this */
+            LateralJoinMacro::assertMysql($this, 'lateralJoin');
             $model = $this->getModel();
             $table = $model->getTable();
+            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
 
             // 构建子查询
             $subQuery = $model->newQuery();
@@ -82,7 +88,7 @@ class LateralJoinMacro
             $subBindings = $subQuery->getBindings();
 
             // 构建 LATERAL JOIN
-            $lateralSql = "LATERAL ({$subSql}) AS `{$alias}`";
+            $lateralSql = "LATERAL ({$subSql}) AS {$wrappedAlias}";
 
             return $this->join(DB::raw($lateralSql), function ($join) {
                 // LATERAL JOIN 不需要 ON 条件，子查询已通过 whereColumn 关联
@@ -118,7 +124,10 @@ class LateralJoinMacro
          */
         Builder::macro('lateralLeftJoin', function (\Closure $callback, string $alias): Builder {
             /** @var Builder $this */
+            LateralJoinMacro::assertMysql($this, 'lateralLeftJoin');
             $model = $this->getModel();
+            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
 
             // 构建子查询
             $subQuery = $model->newQuery();
@@ -127,7 +136,7 @@ class LateralJoinMacro
             $subSql = $subQuery->toSql();
             $subBindings = $subQuery->getBindings();
 
-            $lateralSql = "LATERAL ({$subSql}) AS `{$alias}`";
+            $lateralSql = "LATERAL ({$subSql}) AS {$wrappedAlias}";
 
             return $this->leftJoin(DB::raw($lateralSql), function ($join) {
                 $join->onRaw('1=1');
@@ -171,9 +180,14 @@ class LateralJoinMacro
             string $alias = 'lateral_limit'
         ): Builder {
             /** @var Builder $this */
+            LateralJoinMacro::assertMysql($this, 'lateralLimit');
             $model = $this->getModel();
             $table = $model->getTable();
-            $direction = strtoupper($direction);
+            $direction = LateralJoinMacro::assertDirection($direction);
+            $partitionColumn = LateralJoinMacro::assertValidIdentifier($partitionColumn, 'partition');
+            $orderColumn = LateralJoinMacro::assertValidIdentifier($orderColumn, 'order');
+            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
 
             // 构建关联子查询
             $subQuery = $model->newQuery()
@@ -186,7 +200,7 @@ class LateralJoinMacro
             $subSql = $subQuery->toSql();
             $subBindings = $subQuery->getBindings();
 
-            $lateralSql = "LATERAL ({$subSql}) AS `{$alias}`";
+            $lateralSql = "LATERAL ({$subSql}) AS {$wrappedAlias}";
 
             return $this->join(DB::raw($lateralSql), function ($join) {
                 $join->onRaw('1=1');
@@ -229,14 +243,19 @@ class LateralJoinMacro
             string $alias = 'agg_result'
         ): Builder {
             /** @var Builder $this */
+            LateralJoinMacro::assertMysql($this, 'lateralAggregate');
             $model = $this->getModel();
             $table = $model->getTable();
+            $relationColumn = LateralJoinMacro::assertValidIdentifier($relationColumn, 'relation');
+            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
 
             $selectParts = [];
             foreach ($aggregates as $agg) {
-                $function = strtoupper($agg['function']);
-                $column = $agg['column'] === '*' ? '*' : "`{$agg['column']}`";
-                $selectParts[] = "{$function}({$column}) AS `{$agg['alias']}`";
+                $function = LateralJoinMacro::assertAggregateFunction((string) $agg['function']);
+                $column = $agg['column'] === '*' ? '*' : LateralJoinMacro::wrapIdentifier($this, LateralJoinMacro::assertValidIdentifier((string) $agg['column'], 'column'));
+                $aggAlias = LateralJoinMacro::assertValidIdentifier((string) $agg['alias'], 'alias');
+                $selectParts[] = "{$function}({$column}) AS " . LateralJoinMacro::wrapIdentifier($this, $aggAlias);
             }
 
             $subQuery = $model->newQuery()
@@ -245,13 +264,14 @@ class LateralJoinMacro
                 ->whereRaw("t2.{$relationColumn} = {$table}.{$relationColumn}");
 
             if ($whereColumn !== null && $whereValue !== null) {
+                $whereColumn = LateralJoinMacro::assertValidIdentifier($whereColumn, 'where');
                 $subQuery->where("t2.{$whereColumn}", $whereValue);
             }
 
             $subSql = $subQuery->toSql();
             $subBindings = $subQuery->getBindings();
 
-            $lateralSql = "LATERAL ({$subSql}) AS `{$alias}`";
+            $lateralSql = "LATERAL ({$subSql}) AS {$wrappedAlias}";
 
             return $this->join(DB::raw($lateralSql), function ($join) {
                 $join->onRaw('1=1');

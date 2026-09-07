@@ -7,7 +7,6 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -16,7 +15,7 @@ use zxf\Modules\Support\StubGenerator;
  * 在指定模块中创建迁移文件，支持智能命名解析
  * 按照 Laravel 标准只使用三个模板：create（创建表）、update（修改表）、migration（空白迁移）
  */
-class MigrationMakeCommand extends Command
+class MigrationMakeCommand extends AbstractMakeCommand
 {
     /**
      * 命令签名
@@ -46,18 +45,16 @@ class MigrationMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
         $migrationName = $this->argument('name');
         $createTable = $this->option('create');
         $updateTable = $this->option('update');
 
-        $module = Module::find($moduleName);
-
+        $module = $this->resolveModule();
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-
             return Command::FAILURE;
         }
+
+        $moduleName = $module->getName();
 
         // 解析迁移名称和确定模板类型
         $migrationInfo = $this->parseMigrationName($migrationName, $createTable, $updateTable);
@@ -260,7 +257,7 @@ class MigrationMakeCommand extends Command
         $stubGenerator->addReplacement('{{CLASS}}', $className);
 
         // 添加命名空间和名称变量
-        $namespace = config('modules.namespace', 'Modules');
+        $namespace = $this->module->getNamespace();
         $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
         $stubGenerator->addReplacement('{{NAME}}', $moduleName);
         $stubGenerator->addReplacement('{{LOWER_NAME}}', strtolower($moduleName));

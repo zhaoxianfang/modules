@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0.33+ QUALIFY 子句宏
@@ -18,6 +19,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class QualifyMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有 QUALIFY 宏
      *
@@ -83,9 +86,13 @@ class QualifyMacro
 
             $method = $boolean === 'or' ? 'orHavingRaw' : 'havingRaw';
 
+            // 校验窗口函数结果列名与运算符，防止 SQL 注入
+            $wrappedColumn = QualifyMacro::wrapIdentifier($this, QualifyMacro::assertValidIdentifier($column, 'column'));
+            $operator = QualifyMacro::assertOperator((string) $operator);
+
             // 使用 HAVING 模拟 QUALIFY（MySQL 8.0.33+ 原生支持 QUALIFY）
             // 这里使用 HAVING 以兼容更多版本，同时语义上更接近 QUALIFY
-            return $this->{$method}("`{$column}` {$operator} ?", [$value]);
+            return $this->{$method}("{$wrappedColumn} {$operator} ?", [$value]);
         });
 
         /**

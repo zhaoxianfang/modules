@@ -103,4 +103,22 @@ trait MigrationPathHelper
 
         return \zxf\Modules\Facades\Module::find(\Illuminate\Support\Str::studly($moduleName));
     }
+
+    /**
+     * 全模块模式下对 --seeder 选项的提示
+     *
+     * 全模块迁移/刷新/清空时无法为所有模块共用同一个 Seeder 类名，
+     * 因此忽略 --seeder 并提示用户改为针对单个模块运行 module:seed。
+     *
+     * @param string|null $seeder 用户传入的 --seeder 值
+     */
+    protected function warnSeederIgnoredForAllModules(?string $seeder): void
+    {
+        if (! $seeder) {
+            return;
+        }
+
+        $this->components->warn('⚠ 全模块模式不支持 --seeder 选项，已忽略。');
+        $this->components->warn('  提示: 使用 module:seed <ModuleName> --class=' . $seeder . ' 单独运行指定 Seeder。');
+    }
 }

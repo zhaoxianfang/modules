@@ -102,20 +102,27 @@ class ModuleInfo
     /**
      * 统计模块文件数量
      *
+     * 递归遍历模块目录计数，自动跳过 node_modules / vendor 等大目录，
+     * 避免模块含前端依赖时统计极慢。
+     *
      * @param ModuleInterface $module
      * @return int
      */
     public static function countFiles(ModuleInterface $module): int
     {
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($module->getPath(), \RecursiveDirectoryIterator::SKIP_DOTS)
-        );
+        $count = 0;
+        foreach (self::walkModule($module) as $file) {
+            $count++;
+        }
 
-        return iterator_count($iterator);
+        return $count;
     }
 
     /**
      * 获取模块大小
+     *
+     * 递归遍历模块目录累计文件体积，自动跳过 node_modules / vendor 等大目录，
+     * 并对不可读目录做异常保护。
      *
      * @param ModuleInterface $module
      * @return string
@@ -123,17 +130,53 @@ class ModuleInfo
     public static function getSize(ModuleInterface $module): string
     {
         $size = 0;
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($module->getPath(), \RecursiveDirectoryIterator::SKIP_DOTS)
-        );
 
-        foreach ($iterator as $file) {
-            if ($file->isFile()) {
-                $size += $file->getSize();
+        try {
+            foreach (self::walkModule($module) as $file) {
+                if ($file->isFile()) {
+                    $size += $file->getSize();
+                }
             }
+        } catch (\Throwable $e) {
+            // 目录不可读时降级为 0
+            $size = 0;
         }
 
         return self::formatSize($size);
+    }
+
+    /**
+     * 遍历模块目录（一次遍历，跳过体积庞大且与业务无关的依赖目录）
+     *
+     * 关键点：必须用 RecursiveFilterIterator 在「递归进入（descend）」前就拒绝
+     * node_modules / vendor 等目录，否则 RecursiveIteratorIterator 仍会深入其
+     * 内部遍历（仅在叶子节点检查无法阻止递归进入，会导致大目录被完整统计）。
+     *
+     * 同时承担异常保护：模块根目录不可读时返回空遍历器。
+     *
+     * @return \Iterator<\SplFileInfo>
+     */
+    protected static function walkModule(ModuleInterface $module): \Iterator
+    {
+        try {
+            $inner = new \RecursiveDirectoryIterator($module->getPath(), \RecursiveDirectoryIterator::SKIP_DOTS);
+        } catch (\Throwable $e) {
+            return new \ArrayIterator();
+        }
+
+        $filter = new class($inner) extends \RecursiveFilterIterator {
+            public function accept(): bool
+            {
+                if (! $this->current()->isDir()) {
+                    return true;
+                }
+
+                // 在 descend 前拒绝大依赖目录，避免其被递归进入
+                return ! in_array($this->current()->getFilename(), ['node_modules', 'vendor'], true);
+            }
+        };
+
+        return new \RecursiveIteratorIterator($filter, \RecursiveIteratorIterator::SELF_FIRST);
     }
 
     /**

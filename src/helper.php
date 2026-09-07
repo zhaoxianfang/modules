@@ -255,6 +255,31 @@ if (! function_exists('module_trans_path')) {
     }
 }
 
+if (! function_exists('module_resources_path')) {
+    /**
+     * 获取模块资源目录路径（默认 Resources/assets）
+     *
+     * @param string      $path   资源子路径（如 'js'、'css/app.css'）
+     * @param string|null $module 模块名称
+     *
+     * @example
+     * module_resources_path();        // Modules/Blog/Resources/assets
+     * module_resources_path('js');    // Modules/Blog/Resources/assets/js
+     */
+    function module_resources_path(string $path = '', ?string $module = null): string
+    {
+        $module ??= module_name(false, false);
+
+        if (empty($module)) {
+            throw new RuntimeException('Cannot determine module name.');
+        }
+
+        $base = module_path('Resources/assets', $module);
+
+        return $path !== '' ? $base.'/'.ltrim($path, '/\\') : $base;
+    }
+}
+
 // ============================================================================
 //  三、模块配置管理
 // ============================================================================
@@ -270,8 +295,6 @@ if (! function_exists('module_config')) {
      */
     function module_config(string $key, mixed $default = null, ?string $module = null): mixed
     {
-        static $cache = [];
-        static $hitCount = 0;
         $useModule = $module ?? module_name(false, false);
 
         if (empty($useModule)) {
@@ -283,22 +306,11 @@ if (! function_exists('module_config')) {
             throw new RuntimeException("Module '{$module}' does not exist.");
         }
 
-        $cacheKey = "{$useModule}:{$key}";
-
-        if (array_key_exists($cacheKey, $cache)) {
-            return $cache[$cacheKey];
-        }
-
-        // 限制缓存大小防止内存泄漏（每隔 100 次调用清理一次）
-        if (++$hitCount > 100 && count($cache) > 200) {
-            $cache = array_slice($cache, -50, null, true);
-            $hitCount = 0;
-        }
-
+        // 缓存存于 ModuleContext，便于 module_set_config 等写入操作精确失效
+        $cacheKey = strtolower($useModule) . ':' . $key;
         $fullKey = strtolower($useModule) . '.' . $key;
-        $value = ModuleContext::getConfig($fullKey, $default);
 
-        return $cache[$cacheKey] = $value;
+        return ModuleContext::getModuleConfigCached($cacheKey, fn () => ModuleContext::getConfig($fullKey, $default));
     }
 }
 
@@ -341,6 +353,9 @@ if (! function_exists('module_set_config')) {
         }
 
         ModuleContext::setConfig(strtolower($module) . '.' . $configFile . '.' . $key, $value);
+
+        // 使 module_config 静态缓存失效，保证后续读取能拿到新值
+        ModuleContext::clearModuleConfigCache($module);
     }
 }
 
@@ -506,6 +521,24 @@ if (! function_exists('module_route')) {
     {
         $module ??= module_name(false, false) ?: 'default';
         return route(strtolower($module) . '.' . $route, $params);
+    }
+}
+
+if (! function_exists('module_has_route')) {
+    /**
+     * 检查模块路由是否已注册
+     *
+     * @param string      $route  路由名称（不含模块前缀）
+     * @param string|null $module 模块名称
+     *
+     * @example
+     * module_has_route('index', 'Blog');  // 检查 blog.index 是否存在
+     */
+    function module_has_route(string $route = '', ?string $module = null): bool
+    {
+        $module ??= module_name(false, false) ?: 'default';
+
+        return \Illuminate\Support\Facades\Route::has(strtolower($module).'.'.$route);
     }
 }
 
@@ -832,9 +865,11 @@ if (! function_exists('source_local_website')) {
             $isLocal = false;
             if (! empty($referer)) {
                 $refererHost = parse_url($referer, PHP_URL_HOST) ?? '';
-                $appHost = parse_url(ModuleContext::getConfig('app.url', ''), PHP_URL_HOST) ?? '';
-                $isLocal = $refererHost === $appHost
-                    || str_ends_with('.' . $refererHost, '.' . $appHost);
+                $appHost = parse_url((string) ModuleContext::getConfig('app.url', ''), PHP_URL_HOST) ?? '';
+                // 两个 host 都必须非空，否则 '.' . '' 会使 str_ends_with 恒为 true，
+                // 导致任意外部来源都被误判为本地请求。
+                $isLocal = $refererHost !== '' && $appHost !== ''
+                    && ($refererHost === $appHost || str_ends_with('.' . $refererHost, '.' . $appHost));
             }
 
             $uri = $uriPrefix = '';
@@ -895,8 +930,8 @@ if (! function_exists('after_class_calling')) {
 
                 $argIndex = $index + 1;
 
-                // 使用传入的值
-                if (! empty($paramsArgs[$index])) {
+                // 使用传入的值（必须用 array_key_exists 判断，否则 0/false/'' 等合法值会被忽略）
+                if (array_key_exists($index, $paramsArgs)) {
                     if (empty($paramName) || (function_exists('is_' . $paramName)
                         && call_user_func('is_' . $paramName, $paramsArgs[$index]))) {
                         return $paramsArgs[$index];

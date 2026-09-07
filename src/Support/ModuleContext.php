@@ -34,6 +34,51 @@ class ModuleContext
     protected static ?string $cachedModuleName = null;
 
     /**
+     * 模块配置值静态缓存（{小写模块名}:{key} => value）
+     *
+     * 存于此而非 helper 函数内的 static，是为了让 module_set_config 等写入
+     * 操作能定位并清除对应模块的缓存项，避免读到过期值。
+     *
+     * @var array<string, mixed>
+     */
+    protected static array $moduleConfigCache = [];
+
+    /**
+     * 从模块配置缓存取值，未命中时通过加载器计算并缓存
+     *
+     * @param string   $cacheKey 缓存键（{小写模块名}:{key}）
+     * @param \Closure $loader   未命中时的取值加载器
+     */
+    public static function getModuleConfigCached(string $cacheKey, \Closure $loader): mixed
+    {
+        if (array_key_exists($cacheKey, self::$moduleConfigCache)) {
+            return self::$moduleConfigCache[$cacheKey];
+        }
+
+        return self::$moduleConfigCache[$cacheKey] = $loader();
+    }
+
+    /**
+     * 清除模块配置缓存
+     *
+     * @param string|null $module 模块名（null 清除全部）
+     */
+    public static function clearModuleConfigCache(?string $module = null): void
+    {
+        if ($module === null) {
+            self::$moduleConfigCache = [];
+            return;
+        }
+
+        $prefix = strtolower($module) . ':';
+        foreach (array_keys(self::$moduleConfigCache) as $key) {
+            if (str_starts_with($key, $prefix)) {
+                unset(self::$moduleConfigCache[$key]);
+            }
+        }
+    }
+
+    /**
      * 获取模块仓库实例
      */
     public static function getRepository(): RepositoryInterface
@@ -231,7 +276,9 @@ class ModuleContext
      */
     protected static function detectByFile(bool $toLower): string
     {
-        $modulePath = rtrim(str_replace('\\', '/', self::getConfig('modules.path', base_path('Modules'))), '/') . '/';
+        $configured = self::getConfig('modules.path', base_path('Modules'));
+        $real = realpath($configured);
+        $modulePath = rtrim(str_replace('\\', '/', $real !== false ? $real : $configured), '/') . '/';
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15);
         $result = 'App';
 
@@ -247,7 +294,16 @@ class ModuleContext
             }
 
             $dir = strtok(substr($file, strlen($modulePath)), '/');
-            if ($dir && self::getRepository()->has($dir)) {
+
+            // getRepository() 在框架不可用时会抛出异常，需降级处理：
+            // 无法判断仓库时视为「非已知模块」，继续往后查找。
+            try {
+                $known = self::getRepository()->has($dir);
+            } catch (\Throwable $e) {
+                $known = false;
+            }
+
+            if ($dir && $known) {
                 $result = $dir;
                 break;
             }
@@ -283,5 +339,6 @@ class ModuleContext
     {
         self::$repository = null;
         self::$cachedModuleName = null;
+        self::$moduleConfigCache = [];
     }
 }

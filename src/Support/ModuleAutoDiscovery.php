@@ -6,6 +6,7 @@ namespace zxf\Modules\Support;
 
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 
 /**
@@ -29,7 +30,7 @@ use zxf\Modules\Contracts\ModuleInterface;
  *
  * 性能说明（v5.x）：
  * - 当 modules.cache.enabled=true 时，扫描得到的「发现清单」会被持久化到
- *   storage/framework/cache/modules/discovery.php。
+ *   storage/framework/cache/modules/discovery.json（JSON 格式，原子写入）。
  * - 后续每个请求/命令直接读取清单并「注册」，跳过 File::files() 目录扫描、
  *   class_exists() 自动加载探测与 ReflectionClass 反射，显著降低 IO 与 CPU 开销。
  * - 清单与模块元数据缓存同生命周期：module:cache 重建、module:clear 清除。
@@ -456,30 +457,16 @@ class ModuleAutoDiscovery
 
         $routesPath = $this->module->getRoutesPath();
 
-        if (! is_dir($routesPath)) {
-            return;
-        }
+        $this->scanPhpFiles($routesPath, function (\SplFileInfo $routeFile) {
+            $filename = $routeFile->getBasename('.php');
 
-        try {
-            $files = File::files($routesPath);
-
-            foreach ($files as $routeFile) {
-                if ($routeFile->getExtension() !== 'php') {
-                    continue;
-                }
-
-                $filename = $routeFile->getBasename('.php');
-
-                if (str_starts_with($filename, '.')) {
-                    continue;
-                }
-
-                $this->discovered['routes'][] = $filename;
-                $this->cache["route.{$filename}"] = true;
+            if (str_starts_with($filename, '.')) {
+                return;
             }
-        } catch (\Throwable $e) {
-            $this->log("Route discovery error: {$e->getMessage()}");
-        }
+
+            $this->discovered['routes'][] = $filename;
+            $this->cache["route.{$filename}"] = true;
+        }, 'Route discovery');
     }
 
     protected function registerRoutes(): void
@@ -521,6 +508,26 @@ class ModuleAutoDiscovery
 
                 $this->log("Loaded route: {$filename}");
                 $this->cache["route.{$filename}"] = true;
+            }
+
+            // Laravel 13 属性路由支持（#[Get] / #[Post] / #[Middleware] 等 PHP 属性）
+            // 约定：模块 Routes/Attributes/ 目录下的控制器使用 PHP 属性声明路由
+            $attributesPath = $routesPath . DIRECTORY_SEPARATOR . 'Attributes';
+            if (is_dir($attributesPath)) {
+                /** @var \Illuminate\Routing\Router $router */
+                $router = app('router');
+                $prefix = Str::snake($this->module->getName());
+
+                try {
+                    $router->attribute($prefix)->group(function () use ($attributesPath) {
+                        foreach (glob($attributesPath . DIRECTORY_SEPARATOR . '*.php') ?: [] as $attrFile) {
+                            require $attrFile;
+                        }
+                    });
+                    $this->log("Loaded attribute routes for module: {$this->module->getName()}");
+                } catch (\Throwable $e) {
+                    $this->log("Attribute route load failed: {$e->getMessage()}");
+                }
             }
         } catch (\Throwable $e) {
             $this->log("Route discovery error: {$e->getMessage()}");
@@ -718,35 +725,26 @@ class ModuleAutoDiscovery
 
         foreach ($possiblePaths as $pathInfo) {
             $commandsPath = $pathInfo['path'];
+            $ns = $pathInfo['ns'];
 
             if (! is_dir($commandsPath)) {
                 continue;
             }
 
-            try {
-                $files = File::files($commandsPath);
+            $this->scanPhpFiles($commandsPath, function (\SplFileInfo $file) use ($ns) {
+                $className = $file->getBasename('.php');
+                $commandClass = $this->module->getClassNamespace() . $ns . '\\' . $className;
 
-                foreach ($files as $file) {
-                    if ($file->getExtension() !== 'php') {
-                        continue;
-                    }
-
-                    $className = $file->getBasename('.php');
-                    $commandClass = $this->module->getClassNamespace() . $pathInfo['ns'] . '\\' . $className;
-
-                    if (! class_exists($commandClass)) {
-                        continue;
-                    }
-
-                    $reflection = new \ReflectionClass($commandClass);
-
-                    if ($reflection->isSubclassOf(\Illuminate\Console\Command::class) && ! $reflection->isAbstract()) {
-                        $this->discovered['commands'][] = $commandClass;
-                    }
+                if (! class_exists($commandClass)) {
+                    return;
                 }
-            } catch (\Throwable $e) {
-                $this->log("Command scan error: {$e->getMessage()}");
-            }
+
+                $reflection = new \ReflectionClass($commandClass);
+
+                if ($reflection->isSubclassOf(\Illuminate\Console\Command::class) && ! $reflection->isAbstract()) {
+                    $this->discovered['commands'][] = $commandClass;
+                }
+            }, 'Command scan');
         }
     }
 
@@ -799,29 +797,15 @@ class ModuleAutoDiscovery
 
         $eventsPath = $this->module->getPath('Events');
 
-        if (! is_dir($eventsPath)) {
-            return;
-        }
+        $this->scanPhpFiles($eventsPath, function (\SplFileInfo $file) {
+            $className = $file->getBasename('.php');
+            $eventClass = $this->module->getClassNamespace() . '\\Events\\' . $className;
 
-        try {
-            $files = File::files($eventsPath);
-
-            foreach ($files as $file) {
-                if ($file->getExtension() !== 'php') {
-                    continue;
-                }
-
-                $className = $file->getBasename('.php');
-                $eventClass = $this->module->getClassNamespace() . '\\Events\\' . $className;
-
-                if (class_exists($eventClass)) {
-                    $this->discovered['events'][] = $eventClass;
-                    $this->cache["event.{$className}"] = $eventClass;
-                }
+            if (class_exists($eventClass)) {
+                $this->discovered['events'][] = $eventClass;
+                $this->cache["event.{$className}"] = $eventClass;
             }
-        } catch (\Throwable $e) {
-            $this->log("Event discovery error: {$e->getMessage()}");
-        }
+        }, 'Event discovery');
     }
 
     // ========================================================================
@@ -992,11 +976,16 @@ class ModuleAutoDiscovery
     {
         $dir = ModuleContext::getConfig('modules.cache.path', storage_path('framework/cache/modules'));
 
-        return rtrim((string) $dir, '/\\') . '/discovery.php';
+        return rtrim((string) $dir, '/\\') . '/discovery.json';
     }
 
     /**
      * 从文件加载清单缓存（进程内仅加载一次）
+     *
+     * 过期校验：清单写入时记录了各模块 Config 目录的 mtime 快照（__meta__ 键）。
+     * 若任一个 Config 目录的 mtime 发生变化（例如修改了模块 Config 下的
+     * providers/routes/aliases 等），说明清单已不能反映磁盘真实状态，直接丢弃
+     * 并回退到实时扫描，避免“改了模块配置却不生效 / 已删组件仍被注册”。
      */
     protected static function loadManifestCache(): void
     {
@@ -1013,14 +1002,78 @@ class ModuleAutoDiscovery
         }
 
         try {
-            $data = require $file;
+            // JSON 读取：避免 require 带来的 OPcache 缓存与任意代码执行风险
+            $data = ModuleCacheStore::read($file);
 
-            if (is_array($data)) {
-                self::$manifestCache = $data;
+            if ($data === null) {
+                return;
             }
+
+            $meta = $data['__meta__'] ?? [];
+            unset($data['__meta__']);
+
+            if (isset($meta['config_mtimes']) && ! self::configMtimesUnchanged($meta['config_mtimes'])) {
+                @unlink($file);
+
+                return;
+            }
+
+            self::$manifestCache = $data;
         } catch (\Throwable) {
             self::$manifestCache = [];
         }
+    }
+
+    /**
+     * 判断清单中记录的组件目录 mtime 是否与磁盘当前一致
+     *
+     * @param array<string, int|null> $stored
+     */
+    protected static function configMtimesUnchanged(array $stored): bool
+    {
+        foreach ($stored as $dir => $storedMtime) {
+            $currentMtime = is_dir($dir) ? @filemtime($dir) : null;
+
+            if ($storedMtime !== $currentMtime) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 记录模块关键组件目录的 mtime 快照，供 loadManifestCache 做过期校验
+     *
+     * 仅记录 Config 目录不够：组件文件（Providers/Events/Observers 等）的增删
+     * 只改变所在目录的 mtime，不会改变 Config 目录 mtime。因此将各组件目录
+     * 一并纳入快照，保证「新增/删除组件文件」后清单必然失效并回退实时扫描。
+     *
+     * @return array<string, int|null> 目录绝对路径 => mtime（目录不存在时为 null）
+     */
+    protected function snapshotComponentMtimes(): array
+    {
+        $module = $this->module;
+        $directories = [
+            $module->getConfigPath(),
+            $module->getProvidersPath(),
+            $module->getRoutesPath(),
+            $module->getCommandsPath(),
+            $module->getPath('Events'),
+            $module->getPath('Observers'),
+            $module->getPath('Policies'),
+            $module->getPath('Repositories'),
+            $module->getPath('Http/Middleware'),
+            $module->getPath('Http/Filters'),
+        ];
+
+        $snapshot = [];
+        foreach ($directories as $dir) {
+            $dir = rtrim((string) $dir, '/\\');
+            $snapshot[$dir] = is_dir($dir) ? @filemtime($dir) : null;
+        }
+
+        return $snapshot;
     }
 
     /**
@@ -1030,6 +1083,12 @@ class ModuleAutoDiscovery
     {
         $name = $this->module->getName();
         self::$manifestCache[$name] = $this->discovered;
+
+        // 记录各组件目录的 mtime 快照，供 loadManifestCache 做过期校验
+        foreach ($this->snapshotComponentMtimes() as $dir => $mtime) {
+            self::$manifestCache['__meta__']['config_mtimes'][$dir] = $mtime;
+        }
+
         self::$manifestDirty = true;
 
         $this->saveManifestCache();
@@ -1048,13 +1107,7 @@ class ModuleAutoDiscovery
         self::$manifestDirty = false;
 
         try {
-            $dir = dirname($file);
-            if (! is_dir($dir)) {
-                @mkdir($dir, 0755, true);
-            }
-
-            $content = '<?php return ' . var_export(self::$manifestCache, true) . ';';
-            file_put_contents($file, $content, LOCK_EX);
+            ModuleCacheStore::write($file, self::$manifestCache);
         } catch (\Throwable) {
             // 缓存写入失败不中断
         }
@@ -1125,11 +1178,19 @@ class ModuleAutoDiscovery
     //  公开方法
     // ========================================================================
 
+    /**
+     * 获取本次发现的缓存结果
+     *
+     * @return array
+     */
     public function getCache(): array
     {
         return $this->cache;
     }
 
+    /**
+     * 清空发现结果与已发现项
+     */
     public function clearCache(): void
     {
         $this->cache = [];
@@ -1140,21 +1201,42 @@ class ModuleAutoDiscovery
         ];
     }
 
+    /**
+     * 获取发现过程中的日志
+     *
+     * @return array
+     */
     public function getLogs(): array
     {
         return $this->logs;
     }
 
+    /**
+     * 获取所有模块累积注册到全局的命令列表
+     *
+     * @return array
+     */
     public static function getGlobalCommands(): array
     {
         return self::$globalCommands;
     }
 
+    /**
+     * 清空全局命令列表
+     */
     public static function clearGlobalCommands(): void
     {
         self::$globalCommands = [];
     }
 
+    /**
+     * 获取当前模块的发现结果摘要
+     *
+     * 用于调试或展示各模块的 providers / routes / views / migrations 等
+     * 自动发现数量统计。
+     *
+     * @return array
+     */
     public function getDiscoverySummary(): array
     {
         return [
@@ -1172,5 +1254,35 @@ class ModuleAutoDiscovery
             'policies' => count($this->discovered['policies']),
             'repositories' => count($this->discovered['repositories']),
         ];
+    }
+
+    /**
+     * 通用 PHP 文件扫描器
+     *
+     * 统一处理「遍历模块子目录中的 .php 文件」这一高度重复的模式：
+     * 目录存在性检查、File::files 遍历、.php 扩展名过滤、异常捕获与日志
+     * 均在此完成，调用方只需通过 $callback 关注单个文件的实际业务逻辑。
+     *
+     * @param string   $path     待扫描的目录绝对路径
+     * @param callable $callback 处理单个文件的回调，签名为 (SplFileInfo $file): void
+     * @param string   $label    日志标签（用于错误定位）
+     */
+    protected function scanPhpFiles(string $path, callable $callback, string $label = 'scan'): void
+    {
+        if (! is_dir($path)) {
+            return;
+        }
+
+        try {
+            foreach (File::files($path) as $file) {
+                if ($file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $callback($file);
+            }
+        } catch (\Throwable $e) {
+            $this->log("{$label} error: {$e->getMessage()}");
+        }
     }
 }

@@ -86,7 +86,7 @@ class MigrateFreshCommand extends Command
             return $this->freshModule($moduleName, $database, $force, $seed, $seeder, $dropViews, $dropTypes);
         }
 
-        return $this->freshAllModules($database, $force, $seed, $dropViews, $dropTypes);
+        return $this->freshAllModules($database, $force, $seed, $seeder, $dropViews, $dropTypes);
     }
 
     /**
@@ -146,7 +146,11 @@ class MigrateFreshCommand extends Command
             $freshParams['--drop-types'] = true;
         }
 
-        $this->call('migrate:fresh', $freshParams);
+        $exitCode = $this->call('migrate:fresh', $freshParams);
+
+        if ($exitCode !== Command::SUCCESS) {
+            return Command::FAILURE;
+        }
 
         // Step 2: 运行数据填充（委托给 module:seed）
         if ($seed || $seeder) {
@@ -169,7 +173,11 @@ class MigrateFreshCommand extends Command
                 $seedParams['--force'] = true;
             }
 
-            $this->call('module:seed', $seedParams);
+            $seedExit = $this->call('module:seed', $seedParams);
+
+            if ($seedExit !== Command::SUCCESS) {
+                return Command::FAILURE;
+            }
         }
 
         return Command::SUCCESS;
@@ -181,6 +189,7 @@ class MigrateFreshCommand extends Command
      * @param string|null $database
      * @param bool $force
      * @param bool $seed
+     * @param string|null $seeder
      * @param bool $dropViews
      * @param bool $dropTypes
      * @return int
@@ -189,6 +198,7 @@ class MigrateFreshCommand extends Command
         ?string $database,
         bool $force,
         bool $seed,
+        ?string $seeder,
         bool $dropViews,
         bool $dropTypes
     ): int {
@@ -201,27 +211,73 @@ class MigrateFreshCommand extends Command
         }
 
         // 全模块模式 + --seeder：警告用户不会传递
-        if ($seeder) {
-            $this->components->warn('⚠ 全模块模式不支持 --seeder 选项，已忽略。');
-            $this->components->warn('  提示: 使用 module:seed <ModuleName> --class=' . $seeder . ' 单独运行指定 Seeder。');
+        $this->warnSeederIgnoredForAllModules($seeder);
+
+        // 全模块模式不可对每个模块分别执行 migrate:fresh——每次 fresh 都会先 DROP
+        // 全库所有表，导致后一个模块删除前一个模块刚建的表，最终只剩最后模块的表。
+        // 正确做法：先统一清空全库一次，再逐个模块迁移、填充。
+        $this->components->info('正在清空数据库...');
+
+        $dropParams = [
+            '--force' => $force,
+        ];
+
+        if ($database) {
+            $dropParams['--database'] = $database;
+        }
+
+        if ($dropViews) {
+            $dropParams['--drop-views'] = true;
+        }
+
+        if ($dropTypes) {
+            $dropParams['--drop-types'] = true;
+        }
+
+        if ($this->call('migrate:fresh', $dropParams) !== Command::SUCCESS) {
+            $this->components->error('清空数据库失败。');
+
+            return Command::FAILURE;
         }
 
         $hasFailures = false;
 
         foreach ($modules as $module) {
-            $result = $this->freshModule(
-                $module->getName(),
-                $database,
-                $force,
-                $seed,
-                // 全模块模式不传递 --seeder（避免在所有模块运行同一个 Seeder）
-                null,
-                $dropViews,
-                $dropTypes
-            );
+            $moduleName = $module->getName();
+            $this->components->info("正在迁移模块 [{$moduleName}]...");
 
-            if ($result === Command::FAILURE) {
+            $migrateParams = [
+                '--path' => $this->getRelativePath($module->getMigrationsPath()),
+                '--force' => $force,
+            ];
+
+            if ($database) {
+                $migrateParams['--database'] = $database;
+            }
+
+            if ($this->call('migrate', $migrateParams) !== Command::SUCCESS) {
                 $hasFailures = true;
+                continue;
+            }
+
+            // 运行模块数据填充
+            if ($seed) {
+                $this->newLine();
+                $this->components->info("正在填充模块 [{$moduleName}] 数据...");
+
+                $seedParams = ['module' => $moduleName];
+
+                if ($database) {
+                    $seedParams['--database'] = $database;
+                }
+
+                if ($force) {
+                    $seedParams['--force'] = true;
+                }
+
+                if ($this->call('module:seed', $seedParams) !== Command::SUCCESS) {
+                    $hasFailures = true;
+                }
             }
         }
 

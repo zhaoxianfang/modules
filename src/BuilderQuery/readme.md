@@ -4,24 +4,27 @@
 
 ## 功能概览
 
-本扩展包提供 14 大类宏功能：
+本扩展包提供 17 个系列宏功能：
 
-| 类别 | 功能数量 | 说明 |
+| 系列 | 功能数量 | 说明 |
 |------|---------|------|
-| whereHas 优化 | 10+ | 解决关联查询全表扫描问题 |
-| 随机查询 | 2 | 高效随机数据获取 |
-| 窗口函数 | 25+ | MySQL 8.4+ 窗口函数支持 |
-| 递归查询 | 16+ | 树形结构数据处理（层级/路径/关系/树构建） |
-| 分页优化 | 5 | 超大表快速分页 |
-| JSON 操作 | 20+ | 高级 JSON 查询和操作 |
-| 正则表达式 | 15+ | 强大的文本匹配功能 |
-| 主表字段 | 8 | 自动表前缀避免歧义 |
-| 集合操作 | 3 | INTERSECT/EXCEPT 集合运算 |
-| QUALIFY 过滤 | 4 | 窗口函数结果过滤（类似 HAVING） |
-| LATERAL JOIN | 4 | 横向连接，高效 Top-N 查询 |
-| 行列转换 | 8 | PIVOT/UNPIVOT 数据透视表 |
-| 数据抽样 | 4 | 随机/分层/系统抽样 |
-| VALUES 构造 | 4 | 批量插入和 UPSERT 优化 |
+| 1. whereHas 优化 | 10+ | 解决关联查询全表扫描问题 |
+| 2. 主表字段 | 8 | 自动表前缀避免歧义 |
+| 3. 随机查询 | 2 | 高效随机数据获取 |
+| 4. 分组排序 | 1 | 窗口函数分组排名查询 |
+| 5. 窗口函数 | 25+ | MySQL 8.0+ 窗口函数支持 |
+| 6. 递归查询 | 16+ | 树形结构数据处理（层级/路径/关系/树构建） |
+| 7. 分页优化 | 5 | 超大表快速分页 |
+| 8. JSON 操作 | 20+ | 高级 JSON 查询和操作 |
+| 9. 正则表达式 | 15+ | 强大的文本匹配功能 |
+| 10. 集合操作 | 3 | INTERSECT/EXCEPT 集合运算 |
+| 11. QUALIFY 过滤 | 4 | 窗口函数结果过滤（类似 HAVING） |
+| 12. LATERAL JOIN | 4 | 横向连接，高效 Top-N 查询 |
+| 13. 行列转换 | 8 | PIVOT/UNPIVOT 数据透视表 |
+| 14. 数据抽样 | 4 | 随机/分层/系统抽样 |
+| 15. VALUES 构造 | 4 | 批量插入和 UPSERT 优化 |
+| 16. 向量相似度 | 2 | Laravel 13+ 原生向量/语义检索 |
+| 17. 字符串函数 | 30+ | LOCATE 分词 / CHAR_LENGTH 排序 / 全文检索等 |
 
 ---
 
@@ -74,6 +77,12 @@ User::query()->whereHasIn('posts.comments', function ($query) {
 ```php
 // 查找没有订单的用户
 User::query()->whereHasNotIn('orders')->get();
+
+// orWhereHasNotIn - OR 条件组合
+User::query()
+    ->whereHasIn('posts')
+    ->orWhereHasNotIn('comments')
+    ->get();
 ```
 
 ### 关联 Join 方法
@@ -134,7 +143,26 @@ $students = Student::query()->groupRandom('class_id', 2, 'student_no')->get();
 
 ---
 
-## 3. 窗口函数系列
+## 3. 分组排序系列
+
+### groupSort
+
+分组排序查询，使用窗口函数获取每组指定排名的记录。
+
+```php
+// 每个分类阅读量最高的前 3 篇文章
+$topPosts = Post::query()->groupSort('category_id', 3, 'read', 'desc')->get();
+
+// 获取多个排名（每个部门工资第 1 和第 2 高的员工）
+$topEmployees = Employee::query()->groupSort('department_id', [1, 2], 'salary', 'desc')->get();
+
+// 自定义排序字段与主键
+$topSales = Sales::query()->groupSort('region', 5, 'amount', 'desc', 'id')->get();
+```
+
+---
+
+## 4. 窗口函数系列
 
 ### 排名函数
 
@@ -237,7 +265,7 @@ Orders::query()->runningTotal('amount', 'customer_id', 'created_at', 'asc')->get
 
 ---
 
-## 4. 递归查询系列
+## 5. 递归查询系列
 
 ### 基础递归查询
 
@@ -354,11 +382,14 @@ $custom = Category::recursiveQuery(
 
 // 设置根节点值（默认为0，可设为null）
 WithRecursiveMacro::setRootValue(null); // 使用NULL作为根节点标识
+
+// resetRecursive - 重置递归查询条件，清除递归状态与绑定
+Category::query()->recursiveQuery(...)->resetRecursive()->where('id', 1)->get();
 ```
 
 ---
 
-## 5. 分页优化系列
+## 6. 分页优化系列
 
 ### fastPaginate
 
@@ -435,7 +466,7 @@ $logs = Log::query()->partitionPaginate(100, 1, 'created_date');
 
 ---
 
-## 6. JSON 操作系列
+## 7. JSON 操作系列
 
 ### JSON 路径查询
 
@@ -481,6 +512,41 @@ Article::query()->jsonArrayLength('tags', null, 'tag_count')->get();
 // 按数组长度筛选
 Article::query()->whereJsonArrayLength('tags', 3)->get();      // 恰好3个
 Article::query()->whereJsonArrayLength('tags', 5, '>=')->get(); // 至少5个
+
+// 追加值到数组（返回受影响行数）
+Article::query()->where('id', 1)->appendToJsonArray('tags', 'php')->get();
+
+// 从数组移除值
+Article::query()->where('id', 1)->removeFromJsonArray('tags', 'php')->get();
+```
+
+### JSON 对象修改
+
+```php
+// setJsonValue - 设置/插入 JSON 键值
+User::query()->where('id', 1)->setJsonValue('settings', '$.notifications.email', true)->get();
+User::query()->where('id', 1)->setJsonValue('settings', '$.theme', 'dark', true)->get(); // insert=true 键不存在则插入
+
+// removeJsonKey - 删除 JSON 键（支持多路径）
+User::query()->where('id', 1)->removeJsonKey('settings', '$.theme')->get();
+User::query()->where('id', 1)->removeJsonKey('settings', ['$.a', '$.b'])->get();
+
+// mergeJson - 合并 JSON 对象
+User::query()->where('id', 1)->mergeJson('settings', ['lang' => 'zh-CN', 'timezone' => 'Asia/Shanghai'])->get();
+
+// jsonKeys - 获取 JSON 对象的所有键
+User::query()->jsonKeys('settings', null, 'setting_keys')->first();
+```
+
+### JSON 搜索
+
+```php
+// jsonSearch - 在 JSON 中搜索值，返回匹配路径
+// mode: one 返回第一个匹配路径 | all 返回所有匹配路径
+Product::query()->jsonSearch('metadata', 'iphone', 'all', '$', 'matches')->get();
+
+// whereJsonLike - 按 JSON 值模糊匹配筛选
+User::query()->whereJsonLike('settings', 'zh%', '$.lang')->get();
 ```
 
 ### JSON 聚合
@@ -506,7 +572,7 @@ Order::query()
 
 ---
 
-## 7. 正则表达式系列
+## 8. 正则表达式系列
 
 ### 正则匹配
 
@@ -572,11 +638,15 @@ Article::query()
 
 // 按匹配次数筛选
 Article::query()->whereRegexpCount('content', 'https?://', 3, '>=', 'i')->get();
+
+// regexpPosition - 查找正则匹配位置（1-based）
+// returnOption: 0 返回匹配起点 | 1 返回匹配终点之后的位置
+User::query()->regexpPosition('email', '@', 1, 'c', 0, 'at_pos')->get();
 ```
 
 ---
 
-## 8. 主表字段系列
+## 9. 主表字段系列
 
 自动添加表前缀，避免关联查询时的字段歧义。
 
@@ -606,7 +676,7 @@ User::query()->mainSelect(['id', 'name', 'email']);
 
 ---
 
-## 9. 集合操作系列（MySQL 8.0.31+）
+## 10. 集合操作系列（MySQL 8.0.31+）
 
 INTERSECT 和 EXCEPT 集合运算。
 
@@ -637,7 +707,7 @@ User::query()->where('role', 'admin')
 
 ---
 
-## 10. QUALIFY 过滤系列（MySQL 8.0.33+）
+## 11. QUALIFY 过滤系列（MySQL 8.0.33+）
 
 过滤窗口函数结果，无需子查询或 CTE。
 
@@ -661,11 +731,25 @@ Employee::query()
     ->selectRaw('DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY score DESC) as dr')
     ->qualifyRaw('dr BETWEEN ? AND ?', [1, 5])
     ->get();
+
+// orQualify - OR 条件
+Employee::query()
+    ->selectRaw('RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) as rk')
+    ->qualify('rk', '<=', 3)
+    ->orQualify('rk', '=', 10)
+    ->get();
+
+// orQualifyRaw - OR 条件的原始 SQL
+Employee::query()
+    ->selectRaw('SUM(salary) OVER (PARTITION BY dept_id) as dept_sum')
+    ->qualifyRaw('dept_sum > 10000')
+    ->orQualifyRaw('dept_id = ?', [1])
+    ->get();
 ```
 
 ---
 
-## 11. LATERAL JOIN 系列（MySQL 8.0.14+）
+## 12. LATERAL JOIN 系列（MySQL 8.0.14+）
 
 横向连接，子查询可引用主查询列。
 
@@ -678,6 +762,16 @@ User::query()
             ->orderBy('created_at', 'desc')
             ->limit(3);
     }, 'recent_orders')
+    ->get();
+
+// lateralLeftJoin - LATERAL LEFT JOIN，保留主表所有记录（无匹配时子查询列为 NULL）
+User::query()
+    ->lateralLeftJoin(function ($subQuery) {
+        $subQuery->select('*')->from('orders')
+            ->whereColumn('user_id', 'users.id')
+            ->orderBy('created_at', 'desc')
+            ->limit(1);
+    }, 'latest_order')
     ->get();
 
 // 高效 Top-N：每个分类销量最高的5个商品
@@ -696,7 +790,7 @@ Order::query()
 
 ---
 
-## 12. 行列转换（PIVOT）系列
+## 13. 行列转换（PIVOT）系列
 
 数据透视表功能。
 
@@ -710,6 +804,11 @@ Order::query()
 // 快捷聚合透视
 Order::query()->pivotCount('status', ['pending', 'paid'], 'id', 'region')->get();
 Order::query()->pivotSum('category', ['A', 'B', 'C'], 'amount', 'month')->get();
+
+// 更多聚合快捷方法
+Order::query()->pivotAvg('category', ['A', 'B', 'C'], 'amount', 'month')->get(); // 平均金额
+Order::query()->pivotMax('category', ['A', 'B', 'C'], 'amount', 'month')->get(); // 最大金额
+Order::query()->pivotMin('category', ['A', 'B', 'C'], 'amount', 'month')->get(); // 最小金额
 
 // UNPIVOT - 列转行
 MonthlySales::query()
@@ -728,7 +827,7 @@ Sales::query()
 
 ---
 
-## 13. 数据抽样系列
+## 14. 数据抽样系列
 
 高效数据抽样，适合大数据分析和统计估算。
 
@@ -751,11 +850,21 @@ Log::query()->systematicSample(10)->get();
 
 ---
 
-## 14. VALUES 构造系列
+## 15. VALUES 构造系列
 
 批量操作优化，使用 VALUES ROW 语法。
 
 ```php
+// valuesQuery - 直接查询 VALUES 构造的内存表（无需物理表）
+$rows = [
+    ['id' => 1, 'name' => '张三'],
+    ['id' => 2, 'name' => '李四'],
+];
+User::query()
+    ->valuesQuery($rows, 'tmp_users')
+    ->where('tmp_users.id', '>', 1)
+    ->get();
+
 // 使用 VALUES 作为临时表 JOIN
 $statusMap = [
     ['id' => 1, 'status' => 'active'],
@@ -781,6 +890,202 @@ User::query()->batchUpsert([
 // 大批量插入自动分块
 $data = array_map(fn ($i) => ['name' => "Item {$i}", 'sort' => $i], range(1, 10000));
 Item::query()->valuesInsert($data, 1000);
+```
+
+---
+
+## 16. 向量相似度搜索系列（Laravel 13+）
+
+基于 Laravel 13 的原生向量/语义检索能力，需数据库提供向量索引支持。
+
+```php
+// 按向量相似度筛选（相似度阈值 0.8 以上才返回）
+$related = Article::query()
+    ->whereVectorSimilarTo('embedding', $embeddingVector, 0.8)
+    ->get();
+
+// 按向量距离排序（最近邻检索，默认升序：最相似在前）
+$nearest = Article::query()
+    ->orderByVectorDistance('embedding', $embeddingVector)
+    ->limit(10)
+    ->get();
+```
+
+**注意**：向量列需要数据库（如 MySQL HeatWave / PostgreSQL pgvector 等）提供向量索引与距离函数支持，否则无法使用。
+
+---
+
+## 17. 字符串函数系列（MySQL 8.0+ 高效字符串处理）
+
+基于 MySQL 8.0 内置字符串函数封装的高性能查询能力：
+- **LOCATE**：查找子字符串首次出现的位置，天然支持分词查询匹配
+- **CHAR_LENGTH**：多字节安全的字符数计算（中英文均按 1 字符计）
+- **FIELD / FIND_IN_SET**：自定义排序与逗号分隔列表成员查找
+- **CONCAT_WS / SUBSTRING_INDEX / GROUP_CONCAT**：拼接搜索、字段提取、行转字符串聚合
+- **MATCH...AGAINST**：全文检索（自然语言 / 布尔模式 / 查询扩展）
+- **SOUNDEX**：英文发音相似匹配
+- **REPLACE / TRIM / LOWER / UPPER / REVERSE / LPAD / RPAD**：字符串变换
+
+### 17.1 子串位置查找（分词查询匹配）
+
+```php
+// whereLocate - 查找描述中包含 "Laravel" 的记录
+Post::query()->whereLocate('description', 'Laravel')->get();
+
+// 分词查询：包含 "高级" 或 "查询" 任意一词（空格分隔自动分词）
+Article::query()->whereLocate('content', '高级 查询')->get();
+
+// orWhereLocate - OR 条件组合
+Post::query()
+    ->whereLocate('title', 'MySQL')
+    ->orWhereLocate('description', '数据库')
+    ->get();
+
+// whereLocateAll - 多关键词全命中（AND）：内容必须同时包含 Laravel 与 MySQL
+Article::query()->whereLocateAll('content', ['Laravel', 'MySQL'])->get();
+
+// 搜索框多关键词（全部命中才返回）
+$keywords = explode(' ', trim($request->input('q')));
+Post::query()->whereLocateAll('title', $keywords)->get();
+
+// whereLocateAny - 多关键词任一命中（OR）：包含任意一个即返回
+Article::query()->whereLocateAny('content', ['Laravel', 'MySQL'])->get();
+```
+
+### 17.2 字符长度排序与筛选
+
+```php
+// orderByCharLength - 按字符数升序（多字节安全）
+User::query()->orderByCharLength('name')->get();
+
+// orderByDescCharLength - 内容最长的文章排在最前
+Post::query()->orderByDescCharLength('body')->get();
+
+// whereCharLength - 用户名长度大于等于 4 的账号
+User::query()->whereCharLength('name', '>=', 4)->get();
+
+// orWhereCharLength - OR 条件的长度筛选
+Product::query()
+    ->whereCharLength('name', '=', 3)
+    ->orWhereCharLength('description', '>', 50)
+    ->get();
+
+// orderByNatural - 自然排序：v1, v2, ..., v10 而非字典序 v1, v10, v2
+Version::query()->orderByNatural('tag')->get();
+```
+
+### 17.3 自定义排序与列表查找
+
+```php
+// fieldOrderBy - 按状态优先级自定义排序：待支付 -> 待发货 -> 已发货 -> 已完成
+Order::query()->fieldOrderBy('status', ['pending', 'shipped', 'delivered', 'completed'])->get();
+
+// whereFindInSet - 逗号分隔标签列包含 "php"
+Article::query()->whereFindInSet('tags', 'php')->get();
+
+// orWhereFindInSet - OR 条件
+Post::query()
+    ->whereFindInSet('categories', 'news')
+    ->orWhereFindInSet('tags', 'hot')
+    ->get();
+
+// whereFindInSetAny - 包含任意指定值
+Article::query()->whereFindInSetAny('tags', ['php', 'go'])->get();
+
+// whereFindInSetAll - 必须同时包含全部指定值
+Article::query()->whereFindInSetAll('tags', ['php', 'mysql'])->get();
+```
+
+### 17.4 多列拼接搜索与提取
+
+```php
+// whereConcatLike - 在 姓名/手机号/邮箱 三字段中一站式搜索 "张"
+User::query()->whereConcatLike(['name', 'phone', 'email'], '张')->get();
+
+// orWhereConcatLike - OR 条件
+Order::query()
+    ->whereLocate('remark', '加急')
+    ->orWhereConcatLike(['title', 'content'], '催单')
+    ->get();
+
+// substringIndex - 提取邮箱用户名部分（"a@b.com" -> "a"）
+User::query()->substringIndex('email', '@', 1, 'username_part')->get();
+
+// 提取 IPv4 最后一段（"192.168.1.10" -> "10"），count 为负数表示从右提取
+Log::query()->substringIndex('ip', '.', -1, 'last_segment')->get();
+```
+
+### 17.5 字符串聚合
+
+```php
+// groupConcat - 每个分类下所有文章标题（逗号分隔）
+Post::query()
+    ->groupBy('category_id')
+    ->groupConcat('title', 'titles')
+    ->get();
+
+// 订单关联商品名列表（竖线分隔、去重）
+OrderItem::query()
+    ->where('order_id', 100)
+    ->groupConcat('product_name', 'names', '|', true)
+    ->first();
+```
+
+### 17.6 全文检索（MATCH...AGAINST）
+
+参与全文检索的列必须先建立 FULLTEXT 索引：
+
+```sql
+ALTER TABLE articles ADD FULLTEXT INDEX ft_title_body (title, body);
+```
+
+```php
+// 自然语言全文搜索（最常用）
+Article::query()->whereFullText(['title', 'body'], 'Laravel 查询构造器')->get();
+
+// 查询扩展模式（自动补充同义词，召回率更高）
+Article::query()->whereFullText('body', '数据库优化', 'expansion')->get();
+
+// whereFullTextBoolean - 布尔模式，支持分词语法：
+//   +word 必须包含   -word 必须排除   "短语" 精确匹配   word* 前缀匹配
+Post::query()->whereFullTextBoolean('title', '+Laravel -Vue')->get();
+Post::query()->whereFullTextBoolean('body', '"query builder"')->get();
+Post::query()->whereFullTextBoolean('tags', 'php*')->get();
+
+// orderByFullTextRelevance - 按相关度从高到低排序（需与 whereFullText 配合）
+Article::query()
+    ->whereFullText(['title', 'body'], 'Laravel')
+    ->orderByFullTextRelevance(['title', 'body'], 'Laravel')
+    ->get();
+```
+
+### 17.7 发音匹配与字符串变换
+
+```php
+// whereSoundex - 英文发音相似匹配（"Smith" 与 "Smyth"）
+Contact::query()->whereSoundex('last_name', 'Smith')->get();
+
+// orWhereSoundex - OR 条件
+Contact::query()
+    ->whereSoundex('first_name', 'John')
+    ->orWhereSoundex('last_name', 'Jonson')
+    ->get();
+
+// replaceString - 手机号脱敏
+User::query()->replaceString('phone', substr($phone, 0, 3), '***', 'masked_phone')->get();
+
+// trimString - 去除首尾空格
+User::query()->trimString('name', 'clean_name')->get();
+
+// lowerString / upperString - 大小写转换
+User::query()->lowerString('email', 'email_lower')->get();
+Country::query()->upperString('code', 'code_upper')->get();
+
+// reverseString - 反转字符串
+User::query()->reverseString('phone', 'reversed_phone')->get();
+
+// padString - 订单号左侧补零到 8 位（"123" -> "00000123"）
+Order::query()->padString('order_no', 8, '0', 'left', 'padded_no')->get();
 ```
 
 ---
@@ -827,7 +1132,7 @@ BigTable::query()->rowNumber(null, 'id', 'asc')->get(); // 全表排序，性能
 
 - **PHP**: 8.3+
 - **Laravel**: 11+ / 12+ / 13+
-- **MySQL**: 8.4+
+- **MySQL**: 8.0+（窗口函数/字符串函数需 8.0+，LATERAL JOIN 需 8.0.14+，INTERSECT/EXCEPT 需 8.0.31+，QUALIFY 需 8.0.33+，全文检索需建 FULLTEXT 索引）
 - **无需缓存扩展**: 所有宏均为纯 SQL 优化
 
 ---

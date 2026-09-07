@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -16,7 +14,7 @@ use zxf\Modules\Support\StubGenerator;
  * 在指定模块中创建 Laravel 13 风格的队列任务类（Queue Job），
  * 默认演示 #[Tries] / #[Backoff] 等基于 PHP 属性的声明式任务配置。
  */
-class JobMakeCommand extends Command
+class JobMakeCommand extends AbstractMakeCommand
 {
     /**
      * 命令签名
@@ -42,62 +40,29 @@ class JobMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $jobName = Str::studly($this->argument('name'));
         $force = $this->option('force');
 
-        $module = Module::find($moduleName);
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacement('{{CLASS}}', $jobName);
+        $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
+        $generator->addReplacement('{{NAME}}', $module->getName());
 
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-            $this->line("提示：请先创建模块，使用 php artisan module:make {$moduleName}");
-            return Command::FAILURE;
-        }
+        $result = $this->writeStub($generator, 'job.stub', 'Jobs/' . $jobName . '.php', '任务类', $force);
 
-        $jobPath = $module->getPath('Jobs/' . $jobName . '.php');
-
-        if (File::exists($jobPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在任务类 [{$jobName}]");
-            $this->line("文件位置: {$jobPath}");
-            $this->line("提示：使用 --force 选项覆盖已存在的任务类");
-            return Command::FAILURE;
-        }
-
-        if (File::exists($jobPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的任务类 [{$jobName}]");
-        }
-
-        $namespace = config('modules.namespace', 'Modules');
-
-        // 确保任务目录存在
-        $jobDir = $module->getPath('Jobs');
-        if (! is_dir($jobDir)) {
-            File::makeDirectory($jobDir, 0755, true);
-        }
-
-        $stubGenerator = new StubGenerator($moduleName);
-        $stubGenerator->addReplacement('{{CLASS}}', $jobName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
-        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
-
-        $result = $stubGenerator->generate(
-            'job.stub',
-            'Jobs/' . $jobName . '.php',
-            $force
-        );
-
-        if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建队列任务类 [{$jobName}]");
-            $this->line("任务位置: {$jobPath}");
+        if ($result === Command::SUCCESS) {
+            $namespace = $this->module->getNamespace();
+            $this->line("任务位置: " . $this->targetPath('Jobs/' . $jobName . '.php'));
             $this->line("");
             $this->line("调度任务示例:");
-            $this->line("  \\{$namespace}\\{$moduleName}\\Jobs\\{$jobName}::dispatch();");
-            return Command::SUCCESS;
+            $this->line("  \\{$namespace}\\{$module->getName()}\\Jobs\\{$jobName}::dispatch();");
         }
 
-        $this->error("创建任务类 [{$jobName}] 失败");
-        $this->line("提示：检查文件权限和磁盘空间");
-
-        return Command::FAILURE;
+        return $result;
     }
 }

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -15,7 +13,7 @@ use zxf\Modules\Support\StubGenerator;
  *
  * 在指定模块中创建数据填充器
  */
-class SeederMakeCommand extends Command
+class SeederMakeCommand extends AbstractMakeCommand
 {
     /**
      * 命令签名
@@ -41,58 +39,19 @@ class SeederMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $seederName = Str::studly($this->argument('name'));
         $force = $this->option('force');
 
-        $module = Module::find($moduleName);
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacement('{{CLASS}}', $seederName);
+        $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
+        $generator->addReplacement('{{NAME}}', $module->getName());
 
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-
-            return Command::FAILURE;
-        }
-
-        $seederPath = $module->getPath('Database/Seeders/' . $seederName . '.php');
-
-        if (File::exists($seederPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在填充器 [{$seederName}]");
-            $this->line("提示：使用 --force 选项覆盖已存在的填充器");
-
-            return Command::FAILURE;
-        }
-
-        if (File::exists($seederPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的填充器 [{$seederName}]");
-        }
-
-        $namespace = config('modules.namespace', 'Modules');
-
-        $stubGenerator = new StubGenerator($moduleName);
-        $stubGenerator->addReplacement('{{CLASS}}', $seederName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
-        $stubGenerator->addReplacement('{{NAME}}', $moduleName);
-
-        // 确保填充器目录存在
-        $seederDir = $module->getPath('Database/Seeders');
-        if (! is_dir($seederDir)) {
-            File::makeDirectory($seederDir, 0755, true);
-        }
-
-        $result = $stubGenerator->generate(
-            'seeder.stub',
-            'Database/Seeders/' . $seederName . '.php',
-            $force
-        );
-
-        if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建填充器 [{$seederName}]");
-
-            return Command::SUCCESS;
-        }
-
-        $this->error("创建填充器 [{$seederName}] 失败");
-
-        return Command::FAILURE;
+        return $this->writeStub($generator, 'seeder.stub', 'Database/Seeders/' . $seederName . '.php', '填充器', $force);
     }
 }

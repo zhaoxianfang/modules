@@ -4,32 +4,49 @@
 
 ### 1. 命令功能
 
-| 命令                       | 说明       | 参数/选项                                                                      | 示例                                                                              |
-|--------------------------|----------|----------------------------------------------------------------------------|---------------------------------------------------------------------------------|
-| `module:make`            | 创建新模块    | `{name}` `{--force}` `{--full}`                                            | `php artisan module:make Blog`                                                  |
-| `module:list`            | 列出所有模块   | 无                                                                          | `php artisan module:list`                                                       |
-| `module:info`            | 显示模块详细信息 | `{module}`                                                                 | `php artisan module:info Blog`                                                  |
-| `module:validate`        | 验证模块完整性  | `{module?}`                                                                | `php artisan module:validate Blog`                                              |
-| `module:delete`          | 删除模块     | `{module}` `{--force}`                                                     | `php artisan module:delete Blog`                                                |
-| `module:publish`         | 发布模块资源   | `{--guide}` `{--config}`                                                   | `php artisan module:publish --config`                                           |
-| `module:make-controller` | 创建控制器    | `{module} {name} {--type} {--force} {--plain}`                             | `php artisan module:make-controller Blog Post --type=web`                       |
-| `module:make-model`      | 创建模型     | `{module} {name} {--table} {--migration} {--factory} {--force}`            | `php artisan module:make-model Blog Post`                                       |
-| `module:make-migration`  | 创建迁移     | `{module} {name} {--create} {--update} {--path} {--realpath} {--fullpath}` | `php artisan module:make-migration Blog create_posts_table`                     |
-| `module:make-request`    | 创建表单请求   | `{module} {name} {--force}`                                                | `php artisan module:make-request Blog StorePost`                                |
-| `module:make-command`    | 创建命令     | `{module} {name} {--command} {--force}`                                    | `php artisan module:make-command Blog SendEmail`                                |
-| `module:make-event`      | 创建事件     | `{module} {name} {--force}`                                                | `php artisan module:make-event Blog UserRegistered`                             |
-| `module:make-listener`   | 创建监听器    | `{module} {name} {--event} {--force}`                                      | `php artisan module:make-listener Blog SendWelcomeEmail --event=UserRegistered` |
-| `module:make-middleware` | 创建中间件    | `{module} {name} {--force}`                                                | `php artisan module:make-middleware Blog CheckAuth`                             |
-| `module:make-provider`   | 创建服务提供者  | `{module} {name} {--force}`                                                | `php artisan module:make-provider Blog BlogServiceProvider`                     |
-| `module:make-route`      | 创建路由文件   | `{module} {name} {--type} {--force}`                                       | `php artisan module:make-route Blog mobile --type=web`                          |
-| `module:make-seeder`     | 创建数据填充器  | `{module} {name} {--force}`                                                | `php artisan module:make-seeder Blog UserSeeder`                                |
-| `module:make-config`     | 创建配置文件   | `{module} {name} {--force}`                                                | `php artisan module:make-config Blog settings`                                  |
-| `module:check-lang`      | 检查本地化文件  | `{name?}` `{--path}`                                                       | `php artisan module:check-lang Blog`                                            |
-| `module:debug-commands`  | 调试命令注册   | `{--module}`                                                               | `php artisan module:debug-commands --module=Blog`                               |
-| `module:migrate`         | 运行模块迁移   | `{module?}` `{--force}` `{--path}` `{--seed}` `{--seeder}`                 | `php artisan module:migrate Blog`                                               |
-| `module:migrate:refresh` | 刷新模块迁移   | `{module?}` `{--force}` `{--seed}` `{--seeder}`                            | `php artisan module:migrate:refresh Blog`                                       |
-| `module:migrate:reset`   | 回滚模块迁移   | `{module?}` `{--force}` `{--path}`                                         | `php artisan module:migrate:reset Blog`                                         |
-| `module:migrate-status`  | 查看迁移状态   | `{module?}` `{--path}` `{--pending}` `{--ran}` `{--no-stats}`              | `php artisan module:migrate-status`                                             |
+| 命令 | 说明 | 参数/选项 | 示例 |
+|---|---|---|---|
+| `module:make` | 创建新模块 | `{name}` `{--force}` `{--full}` | `php artisan module:make Blog` |
+| `module:list` | 列出所有模块 | — | `php artisan module:list` |
+| `module:info` | 显示模块详情 | `{name}` | `php artisan module:info Blog` |
+| `module:validate` | 验证模块完整性 | `{name?}` | `php artisan module:validate Blog` |
+| `module:delete` | 删除模块 | `{name}` `{--force}` | `php artisan module:delete Blog` |
+| `module:publish` | 发布指南/配置文件 | `{--guide}` `{--config}` `{--force}` | `php artisan module:publish --config` |
+| `module:cache` | 重建模块缓存 | — | `php artisan module:cache` |
+| `module:clear` | 清除模块缓存 | — | `php artisan module:clear` |
+| `module:seed` | 运行模块数据填充 | `{module?}` `{--class=}` `{--database=}` `{--force}` | `php artisan module:seed Blog` |
+| `module:make-controller` | 创建控制器 | `{module}` `{name}` `{--type=web}` `{--force}` `{--plain}` `{--attributes}` | `php artisan module:make-controller Blog Post --type=api` |
+| `module:make-model` | 创建模型 | `{module}` `{name}` `{--table=}` `{--migration}` `{--force}` | `php artisan module:make-model Blog Post --migration` |
+| `module:make-migration` | 创建迁移 | `{module}` `{name}` `{--create=}` `{--update=}` `{--path=}` `{--realpath}` `{--fullpath}` | `php artisan module:make-migration Blog create_posts_table --create=posts` |
+| `module:make-request` | 创建表单请求 | `{module}` `{name}` `{--force}` | `php artisan module:make-request Blog StorePost` |
+| `module:make-resource` | 创建 API 资源 | `{module}` `{name}` `{--collection}` `{--json-api}` `{--force}` | `php artisan module:make-resource Blog PostResource` |
+| `module:make-repository` | 创建仓库类 | `{module}` `{name}` `{--force}` | `php artisan module:make-repository Blog PostRepository` |
+| `module:make-observer` | 创建模型观察者 | `{module}` `{name}` `{--model=}` `{--force}` | `php artisan module:make-observer Blog PostObserver` |
+| `module:make-policy` | 创建授权策略 | `{module}` `{name}` `{--model=}` `{--force}` | `php artisan module:make-policy Blog PostPolicy` |
+| `module:make-provider` | 创建服务提供者 | `{module}` `{name}` `{--force}` | `php artisan module:make-provider Blog BlogServiceProvider` |
+| `module:make-middleware` | 创建中间件 | `{module}` `{name}` `{--force}` | `php artisan module:make-middleware Blog CheckAuth` |
+| `module:make-command` | 创建 Artisan 命令 | `{module}` `{name}` `{--command=}` `{--force}` | `php artisan module:make-command Blog SendEmail` |
+| `module:make-event` | 创建事件类 | `{module}` `{name}` `{--force}` | `php artisan module:make-event Blog UserRegistered` |
+| `module:make-listener` | 创建监听器 | `{module}` `{name}` `{--event=}` `{--force}` | `php artisan module:make-listener Blog SendWelcome --event=UserRegistered` |
+| `module:make-job` | 创建队列任务 | `{module}` `{name}` `{--force}` | `php artisan module:make-job Blog SendEmail` |
+| `module:make-seeder` | 创建数据填充器 | `{module}` `{name}` `{--force}` | `php artisan module:make-seeder Blog UserSeeder` |
+| `module:make-config` | 创建配置文件 | `{module}` `{name}` `{--force}` | `php artisan module:make-config Blog settings` |
+| `module:make-route` | 创建路由文件 | `{module}` `{name}` `{--type=web}` `{--force}` | `php artisan module:make-route Blog mobile --type=web` |
+| `module:make-view` | 创建视图文件 | `{module}` `{name}` `{--force}` | `php artisan module:make-view Blog posts.index` |
+| `module:make-test` | 创建测试类 | `{module}` `{name}` `{--feature}` `{--force}` | `php artisan module:make-test Blog PostTest --feature` |
+| `module:check-lang` | 检查本地化文件 | `{name?}` `{--path=}` | `php artisan module:check-lang Blog` |
+| `module:debug-commands` | 调试命令注册 | `{--module=}` | `php artisan module:debug-commands --module=Blog` |
+| `module:migrate` | 运行模块迁移 | `{module?}` `{--force}` `{--path=}` `{--seed}` `{--seeder=}` | `php artisan module:migrate Blog` |
+| `module:migrate-fresh` | 清空并重建迁移 | `{module?}` `{--database=}` `{--force}` `{--seed}` `{--seeder=}` `{--drop-views}` `{--drop-types}` | `php artisan module:migrate-fresh Blog` |
+| `module:migrate-refresh` | 回滚并重跑迁移 | `{module?}` `{--force}` `{--seed}` `{--seeder=}` | `php artisan module:migrate-refresh Blog` |
+| `module:migrate-reset` | 回滚全部迁移 | `{module?}` `{--force}` `{--path=}` | `php artisan module:migrate-reset Blog` |
+| `module:migrate-rollback` | 回滚上一步迁移 | `{module?}` `{--database=}` `{--force}` `{--step=}` `{--path=}` | `php artisan module:migrate-rollback Blog` |
+| `module:migrate-status` | 查看迁移状态 | `{module?}` `{--path=}` `{--pending}` `{--ran}` `{--no-stats}` | `php artisan module:migrate-status` |
+
+> ⚠️ **命名约定**：迁移相关命令统一使用**连字符**（`module:migrate-refresh`、
+> `module:migrate-reset`），而非 `module:migrate:refresh` 这类冒号写法——后者会报
+> “Command not found”。此外，模块级管理命令的参数名为 `{name}`，
+> 而生成器类命令使用 `{module}` + `{name}` 两个参数。
 
 ### 2. 配置功能
 
@@ -80,54 +97,67 @@
 
 #### 核心函数
 
-| 函数                                                                | 说明       | 返回值      | 示例                                            |
-|-------------------------------------------------------------------|----------|----------|-----------------------------------------------|
-| `module_name(?string $module)`                                    | 获取模块名称   | `string` | `module_name()` → `'Blog'`                    |
-| `module_enabled(?string $module)`                                 | 检查模块是否启用 | `bool`   | `module_enabled('Blog')` → `true`             |
-| `module_path(?string $module, ?string $path)`                     | 获取模块路径   | `string` | `module_path('Blog', 'Models')`               |
-| `module_config_path(?string $file)`                               | 获取配置文件路径 | `string` | `module_config_path('common.php')`            |
-| `module_config(string $key, $default, ?string $module)`           | 读取模块配置   | `mixed`  | `module_config('common.name', 'hello')`       |
-| `module_get_config(?string $module, string $file)`                | 获取完整配置   | `array`  | `module_get_config('Blog', 'common')`         |
-| `module_has_config(?string $module, ?string $file, ?string $key)` | 检查配置是否存在 | `bool`   | `module_has_config('Blog', 'common', 'name')` |
-| `module_config_files(?string $module)`                            | 获取所有配置文件 | `array`  | `module_config_files('Blog')`                 |
+> ⚠️ 统一约定：**业务参数在前，模块名 `$module` 在最后且可选**。
+> 省略 `$module` 时自动从当前请求推断（详见 [Helper 函数详解](05-helper-functions.md)）。
+
+| 函数                                                                     | 说明       | 返回值      | 示例                                      |
+|------------------------------------------------------------------------|----------|----------|-----------------------------------------|
+| `module_name(bool $toLower = false, bool $requestModule = true)`        | 获取模块名称   | `string` | `module_name()` → `'Blog'`              |
+| `module(?string $module = null)`                                       | 获取模块实例或仓库 | `Module/Repository/null` | `module('Blog')` |
+| `modules()`                                                            | 获取所有模块   | `array`  | `modules()`                             |
+| `module_exists(string $module)`                                        | 检查模块是否存在 | `bool`   | `module_exists('Blog')` → `true`        |
+| `module_enabled(?string $module = null)`                               | 检查模块是否启用 | `bool`   | `module_enabled('Blog')` → `true`       |
+| `module_enabled_modules()`                                             | 获取已启用模块  | `array`  | `module_enabled_modules()`              |
+| `module_disabled_modules()`                                            | 获取已禁用模块  | `array`  | `module_disabled_modules()`             |
+| `module_path(string $path = '', ?string $module = null)`               | 获取模块路径   | `string` | `module_path('Models', 'Blog')`         |
+| `module_namespace(?string $module = null)`                             | 获取模块命名空间 | `string` | `module_namespace('Blog')`              |
+| `module_class(string $class = '', ?string $module = null)`             | 解析模块类全名  | `string` | `module_class('Models\\Post', 'Blog')`  |
 
 #### 路径函数
 
-| 函数                                         | 说明        | 返回值      | 示例                                             |
-|--------------------------------------------|-----------|----------|------------------------------------------------|
-| `module_routes_path(?string $file)`        | 获取路由文件路径  | `string` | `module_routes_path('web')`                    |
-| `module_views_path(?string $path)`         | 获取视图路径    | `string` | `module_views_path('post')`                    |
-| `module_migrations_path()`                 | 获取迁移路径    | `string` | `module_migrations_path()`                     |
-| `module_models_path(?string $model)`       | 获取模型路径    | `string` | `module_models_path('Post')`                   |
-| `module_controllers_path(?string $type)`   | 获取控制器路径   | `string` | `module_controllers_path('Web')`               |
-| `module_commands_path(?string $command)`   | 获取命令路径    | `string` | `module_commands_path('SendEmail')`            |
-| `module_providers_path(?string $provider)` | 获取服务提供者路径 | `string` | `module_providers_path('BlogServiceProvider')` |
-| `module_lang_path(?string $file)`          | 获取语言文件路径  | `string` | `module_lang_path('zh-CN')`                    |
+| 函数                                                              | 说明        | 返回值      | 示例                                      |
+|-----------------------------------------------------------------|-----------|----------|-----------------------------------------|
+| `module_config_path(string $configFile = 'config.php', ?string $module = null)` | 获取配置文件路径  | `string` | `module_config_path('common.php', 'Blog')` |
+| `module_routes_path(string $route = 'web', ?string $module = null)`            | 获取路由文件路径  | `string` | `module_routes_path('web', 'Blog')`     |
+| `module_migrations_path(?string $module = null)`                | 获取迁移目录路径  | `string` | `module_migrations_path('Blog')`        |
+| `module_models_path(?string $module = null)`                    | 获取模型目录路径  | `string` | `module_models_path('Blog')`            |
+| `module_controllers_path(string $controller = 'Web', ?string $module = null)`  | 获取控制器目录路径 | `string` | `module_controllers_path('Web', 'Blog')` |
+| `module_views_path(?string $module = null)`                     | 获取视图目录路径  | `string` | `module_views_path('Blog')`             |
+| `module_trans_path(?string $module = null)`                     | 获取语言目录路径  | `string` | `module_trans_path('Blog')`             |
+| `module_resources_path(string $path = '', ?string $module = null)`             | 获取资源目录路径  | `string` | `module_resources_path('js', 'Blog')`   |
 
 #### 路由函数
 
 | 函数                                                            | 说明           | 返回值      | 示例                                 |
 |---------------------------------------------------------------|--------------|----------|------------------------------------|
-| `module_route(?string $module, string $route, array $params)` | 生成路由 URL     | `string` | `module_route('posts.index')`      |
-| `module_url(?string $module, string $path)`                   | 生成模块 URL     | `string` | `module_url('posts/1')`            |
-| `module_route_path(?string $module, string $route)`           | 获取路由名称       | `string` | `module_route_path('posts.index')` |
-| `current_module()`                                            | 从 URL 获取当前模块 | `string  | null`                              | `current_module()` → `'Blog'` |
+| `module_route(string $route = '', array $params = [], ?string $module = null)` | 生成模块路由 URL | `string` | `module_route('posts.index', [], 'Blog')` |
+| `module_route_path(string $route = '', ?string $module = null)`       | 获取带前缀的路由名称  | `string` | `module_route_path('posts.index', 'Blog')` → `blog.posts.index` |
+| `module_has_route(string $route = '', ?string $module = null)`        | 检查模块路由是否存在  | `bool`  | `module_has_route('posts.index', 'Blog')` |
+| `module_route_files(?string $module = null)`                          | 获取模块路由文件列表 | `array` | `module_route_files('Blog')`       |
+| `module_url(string $path = '', ?string $module = null)`               | 生成模块 URL     | `string` | `module_url('posts/1', 'Blog')`    |
+| `module_asset(string $asset = '', ?string $module = null)`            | 生成模块资源 URL  | `string` | `module_asset('css/app.css', 'Blog')` |
 
 #### 视图函数
 
 | 函数                                                        | 说明       | 返回值    | 示例                                               |
 |-----------------------------------------------------------|----------|--------|--------------------------------------------------|
-| `module_view(?string $module, string $view, array $data)` | 返回模块视图   | `View` | `module_view('post.index', ['posts' => $posts])` |
-| `module_has_view(?string $module, string $view)`          | 检查视图是否存在 | `bool` | `module_has_view('post.index')`                  |
+| `module_view(string $view = '', array $data = [], ?string $module = null)` | 返回模块视图 | `View` | `module_view('post.index', ['posts' => $posts], 'Blog')` |
+| `module_view_path(string $view = '', ?string $module = null)`             | 获取视图文件路径 | `string` | `module_view_path('post.index', 'Blog')` |
+| `module_has_view(string $view = '', ?string $module = null)`              | 检查视图是否存在 | `bool` | `module_has_view('post.index', 'Blog')` |
+| `module_lang(string $key = '', array $replace = [], ?string $locale = null, ?string $module = null)` | 获取模块翻译 | `string/array` | `module_lang('title', [], null, 'Blog')` |
 
-#### 模块信息函数
+#### 配置与迁移函数
 
-| 函数                              | 说明       | 返回值     | 示例                       |
-|---------------------------------|----------|---------|--------------------------|
-| `modules()`                     | 获取所有模块   | `array` | `modules()`              |
-| `module(?string $name)`         | 获取模块实例   | `Module | null`                    | `module('Blog')` |
-| `module_exists(?string $name)`  | 检查模块是否存在 | `bool`  | `module_exists('Blog')`  |
-| `module_enabled(?string $name)` | 检查模块是否启用 | `bool`  | `module_enabled('Blog')` |
+| 函数                                                                             | 说明          | 返回值             | 示例                                    |
+|--------------------------------------------------------------------------------|-------------|-----------------|---------------------------------------|
+| `module_config(string $key, mixed $default = null, ?string $module = null)`      | 读取模块配置（支持点号） | `mixed`         | `module_config('common.name', 'x', 'Blog')` |
+| `module_get_config(string $configFile = '', ?string $module = null)`             | 获取配置文件全部内容 | `array`         | `module_get_config('common', 'Blog')` |
+| `module_has_config(string $configFile = '', string $key = '', ?string $module = null)` | 检查配置键是否存在（**key 为单层键，不支持点号嵌套**） | `bool` | `module_has_config('common', 'name', 'Blog')` |
+| `module_set_config(string $configFile = '', string $key = '', mixed $value = null, ?string $module = null)` | 运行时设置配置值 | `void` | `module_set_config('common', 'name', 'x', 'Blog')` |
+| `module_config_files(?string $module = null)`                                    | 获取模块所有配置文件 | `array`         | `module_config_files('Blog')`         |
+| `module_has_migration(string $migrationName = '', ?string $module = null)`       | 检查迁移是否存在   | `bool`          | `module_has_migration('create_posts_table', 'Blog')` |
+| `module_all_migrations(?string $module = null)`                                  | 获取模块所有迁移   | `array`         | `module_all_migrations('Blog')`       |
+| `module_stub(string $module)`                                                    | 获取模块 stub 生成器 | `StubGenerator` | `module_stub('Blog')`                |
 
 ### 4. Stub 替换变量
 

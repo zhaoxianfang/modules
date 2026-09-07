@@ -163,7 +163,12 @@ class ModuleCheckLangCommand extends Command
                 continue;
             }
 
-            $totalMissing = array_sum(array_map(fn ($item) => array_sum(array_map('count', $item)), $result['missing_keys']));
+            // $result['missing_keys'] 结构为 [语言 => [文件 => [键...]]]
+            // 需对每个语言的「各文件缺失键数组」求和，而非对文件数组 count（后者统计的是文件数）。
+            $totalMissing = 0;
+            foreach ($result['missing_keys'] as $files) {
+                $totalMissing += array_sum(array_map('count', $files));
+            }
 
             $results[$moduleName] = [
                 'status' => 'issues',

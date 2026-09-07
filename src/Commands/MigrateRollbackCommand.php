@@ -140,9 +140,9 @@ class MigrateRollbackCommand extends Command
             $params['--step'] = (int) $step;
         }
 
-        $this->call('migrate:rollback', $params);
+        $exitCode = $this->call('migrate:rollback', $params);
 
-        return Command::SUCCESS;
+        return $exitCode === Command::SUCCESS ? Command::SUCCESS : Command::FAILURE;
     }
 
     /**

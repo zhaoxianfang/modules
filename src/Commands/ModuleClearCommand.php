@@ -7,6 +7,11 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use zxf\Modules\Facades\Module;
 
+/**
+ * 模块缓存清除命令
+ *
+ * 删除模块清单缓存文件，使下一次请求重新扫描模块。
+ */
 class ModuleClearCommand extends Command
 {
     /**
@@ -35,7 +40,7 @@ class ModuleClearCommand extends Command
     public function handle(): int
     {
         try {
-            Module::clearCache();
+            Module::clearRepositoryCache();
 
             $this->info('✓ 模块缓存已清除，下次访问将重新扫描磁盘。');
 

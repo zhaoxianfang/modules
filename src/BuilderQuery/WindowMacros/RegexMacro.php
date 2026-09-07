@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0+ 正则表达式匹配宏
@@ -16,12 +17,17 @@ use Illuminate\Database\Eloquent\Builder;
  * - REGEXP_INSTR: 定位匹配位置
  * - REGEXP_COUNT: 计数匹配
  *
+ * 安全性：列名 / 别名经白名单校验并由 grammar wrap；正则模式、替换文本、
+ * 匹配模式一律走参数绑定（?），彻底消除原先将模式裸拼进 SQL 导致的注入风险。
+ *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0+
  */
 class RegexMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有正则表达式宏
      *
@@ -59,9 +65,6 @@ class RegexMacro
          * // 匹配手机号（不区分大小写）
          * User::query()->whereRegexp('phone', '^1[3-9]\d{9}$', 'i')->get();
          *
-         * // 匹配中文字符
-         * Article::query()->whereRegexp('content', '[\x{4e00}-\x{9fa5}]', 'u')->get();
-         *
          * // 不匹配正则
          * User::query()->whereNotRegexp('username', '^admin', 'i')->get();
          */
@@ -72,13 +75,14 @@ class RegexMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            RegexMacro::assertMysql($this, 'whereRegexp');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
-            // 转义正则中的单引号
-            $escapedPattern = str_replace("'", "''", $pattern);
-
             return $this->{$method}(
-                "REGEXP_LIKE(`{$column}`, '{$escapedPattern}', '{$mode}')"
+                "REGEXP_LIKE({$wrappedColumn}, ?, ?)",
+                [$pattern, $mode]
             );
         });
 
@@ -98,12 +102,14 @@ class RegexMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            RegexMacro::assertMysql($this, 'whereNotRegexp');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
-            $escapedPattern = str_replace("'", "''", $pattern);
-
             return $this->{$method}(
-                "NOT REGEXP_LIKE(`{$column}`, '{$escapedPattern}', '{$mode}')"
+                "NOT REGEXP_LIKE({$wrappedColumn}, ?, ?)",
+                [$pattern, $mode]
             );
         });
 
@@ -131,16 +137,23 @@ class RegexMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            RegexMacro::assertMysql($this, 'whereRegexpAny');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhere' : 'where';
 
-            $conditions = array_map(function ($pattern) use ($column, $mode) {
-                $escapedPattern = str_replace("'", "''", $pattern);
-                return "REGEXP_LIKE(`{$column}`, '{$escapedPattern}', '{$mode}')";
+            $conditions = array_map(function ($pattern) use ($wrappedColumn, $mode) {
+                return "REGEXP_LIKE({$wrappedColumn}, ?, ?)";
             }, $patterns);
 
             $sql = '(' . implode(' OR ', $conditions) . ')';
+            $bindings = [];
+            foreach ($patterns as $pattern) {
+                $bindings[] = $pattern;
+                $bindings[] = $mode;
+            }
 
-            return $this->{$method}(\Illuminate\Support\Facades\DB::raw($sql));
+            return $this->{$method.'Raw'}($sql, $bindings);
         });
     }
 
@@ -159,16 +172,6 @@ class RegexMacro
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
          * @return Builder
-         *
-         * @example
-         * // 提取邮箱域名
-         * User::query()->regexpExtract('email', '@([^@]+)$', 1, 1, 'i', 'domain')->get();
-         *
-         * // 提取区号
-         * User::query()->regexpExtract('phone', '^(\d{3,4})-', 1, 1, 'c', 'area_code')->get();
-         *
-         * // 提取所有数字
-         * Order::query()->regexpExtract('order_no', '\d+', 0, 1, 'c', 'order_number')->get();
          */
         Builder::macro('regexpExtract', function (
             string $column,
@@ -179,11 +182,15 @@ class RegexMacro
             string $alias = 'extracted'
         ): Builder {
             /** @var Builder $this */
-            $escapedPattern = str_replace("'", "''", $pattern);
+            RegexMacro::assertMysql($this, 'regexpExtract');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
+            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_SUBSTR(`{$column}`, '{$escapedPattern}', 1, {$occurrence}, '{$mode}', {$group})";
+            $expr = "REGEXP_SUBSTR({$wrappedColumn}, ?, 1, ?, ?, ?)";
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $occurrence, $mode, $group]);
         });
 
         /**
@@ -194,10 +201,6 @@ class RegexMacro
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
          * @return Builder
-         *
-         * @example
-         * // 提取文本中所有邮箱
-         * Article::query()->regexpExtractAll('content', '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', 'i', 'emails')->get();
          */
         Builder::macro('regexpExtractAll', function (
             string $column,
@@ -206,13 +209,16 @@ class RegexMacro
             string $alias = 'all_matches'
         ): Builder {
             /** @var Builder $this */
-            $escapedPattern = str_replace("'", "''", $pattern);
+            RegexMacro::assertMysql($this, 'regexpExtractAll');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
+            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
 
-            // 使用 JSON_ARRAYAGG 收集所有匹配
             $expr = "(
                 SELECT JSON_ARRAYAGG(m.match_text)
                 FROM (
-                    SELECT REGEXP_SUBSTR(`{$column}`, '{$escapedPattern}', 1, n.n, '{$mode}', 0) as match_text
+                    SELECT REGEXP_SUBSTR({$wrappedColumn}, ?, 1, n.n, ?, 0) as match_text
                     FROM (
                         SELECT a.N + b.N * 10 + 1 n
                         FROM 
@@ -220,13 +226,13 @@ class RegexMacro
                             (SELECT 0 AS N UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) b
                         ORDER BY n
                     ) n
-                    WHERE REGEXP_SUBSTR(`{$column}`, '{$escapedPattern}', 1, n.n, '{$mode}', 0) IS NOT NULL
+                    WHERE REGEXP_SUBSTR({$wrappedColumn}, ?, 1, n.n, ?, 0) IS NOT NULL
                       AND n.n <= 100
                 ) m
                 WHERE m.match_text IS NOT NULL
             )";
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $mode, $pattern, $mode]);
         });
     }
 
@@ -245,16 +251,6 @@ class RegexMacro
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
          * @return Builder
-         *
-         * @example
-         * // 隐藏手机号中间四位
-         * User::query()->regexpReplace('phone', '(\d{3})\d{4}(\d{4})', '$1****$2', 0, 'c', 'masked_phone')->get();
-         *
-         * // 格式化日期
-         * Log::query()->regexpReplace('raw_date', '(\d{4})(\d{2})(\d{2})', '$1-$2-$3', 0, 'c', 'formatted_date')->get();
-         *
-         * // 移除所有HTML标签
-         * Article::query()->regexpReplace('content', '<[^>]+>', '', 0, 'i', 'plain_text')->get();
          */
         Builder::macro('regexpReplace', function (
             string $column,
@@ -265,12 +261,15 @@ class RegexMacro
             string $alias = 'replaced'
         ): Builder {
             /** @var Builder $this */
-            $escapedPattern = str_replace("'", "''", $pattern);
-            $escapedReplacement = str_replace("'", "''", $replacement);
+            RegexMacro::assertMysql($this, 'regexpReplace');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
+            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_REPLACE(`{$column}`, '{$escapedPattern}', '{$escapedReplacement}', 1, {$occurrence}, '{$mode}')";
+            $expr = "REGEXP_REPLACE({$wrappedColumn}, ?, ?, 1, ?, ?)";
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $replacement, $occurrence, $mode]);
         });
 
         /**
@@ -281,14 +280,6 @@ class RegexMacro
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
          * @return Builder
-         *
-         * @example
-         * // 多重替换
-         * Article::query()->regexpReplaceBatch('content', [
-         *     ['pattern' => '<script[^>]*>.*?</script>', 'replacement' => ''],
-         *     ['pattern' => '<[^>]+>', 'replacement' => ''],
-         *     ['pattern' => '\s+', 'replacement' => ' ']
-         * ], 'i', 'clean_content')->get();
          */
         Builder::macro('regexpReplaceBatch', function (
             string $column,
@@ -297,15 +288,23 @@ class RegexMacro
             string $alias = 'replaced'
         ): Builder {
             /** @var Builder $this */
-            $expr = "`{$column}`";
+            RegexMacro::assertMysql($this, 'regexpReplaceBatch');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
+            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+
+            $expr = $wrappedColumn;
+            $bindings = [];
 
             foreach ($replacements as $rule) {
-                $pattern = str_replace("'", "''", $rule['pattern']);
-                $replacement = str_replace("'", "''", $rule['replacement']);
-                $expr = "REGEXP_REPLACE({$expr}, '{$pattern}', '{$replacement}', 1, 0, '{$mode}')";
+                $expr = "REGEXP_REPLACE({$expr}, ?, ?, 1, 0, ?)";
+                $bindings[] = $rule['pattern'];
+                $bindings[] = $rule['replacement'];
+                $bindings[] = $mode;
             }
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
     }
 
@@ -324,13 +323,6 @@ class RegexMacro
          * @param int $returnOption 返回选项: 0=位置, 1=匹配后位置
          * @param string $alias 结果列别名
          * @return Builder
-         *
-         * @example
-         * // 查找第一个数字的位置
-         * Product::query()->regexpPosition('sku', '\d', 1, 'c', 0, 'num_pos')->get();
-         *
-         * // 查找域名开始位置
-         * User::query()->regexpPosition('email', '@', 1, 'c', 1, 'domain_start')->get();
          */
         Builder::macro('regexpPosition', function (
             string $column,
@@ -341,11 +333,15 @@ class RegexMacro
             string $alias = 'position'
         ): Builder {
             /** @var Builder $this */
-            $escapedPattern = str_replace("'", "''", $pattern);
+            RegexMacro::assertMysql($this, 'regexpPosition');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
+            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_INSTR(`{$column}`, '{$escapedPattern}', 1, {$occurrence}, {$returnOption}, '{$mode}')";
+            $expr = "REGEXP_INSTR({$wrappedColumn}, ?, 1, ?, ?, ?)";
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $occurrence, $returnOption, $mode]);
         });
     }
 
@@ -362,16 +358,6 @@ class RegexMacro
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
          * @return Builder
-         *
-         * @example
-         * // 统计文章中的链接数量
-         * Article::query()->regexpCount('content', 'https?://[^\s<>"\']+', 'i', 'link_count')->get();
-         *
-         * // 统计单词数量（简单估算）
-         * Article::query()->regexpCount('content', '\b\w+\b', 'c', 'word_count')->get();
-         *
-         * // 统计换行次数
-         * Document::query()->regexpCount('text', '\n', 'c', 'newline_count')->get();
          */
         Builder::macro('regexpCount', function (
             string $column,
@@ -380,11 +366,15 @@ class RegexMacro
             string $alias = 'match_count'
         ): Builder {
             /** @var Builder $this */
-            $escapedPattern = str_replace("'", "''", $pattern);
+            RegexMacro::assertMysql($this, 'regexpCount');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $mode = RegexMacro::assertRegexMode($mode);
+            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_COUNT(`{$column}`, '{$escapedPattern}', 1, '{$mode}')";
+            $expr = "REGEXP_COUNT({$wrappedColumn}, ?, 1, ?)";
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $mode]);
         });
 
         /**
@@ -397,13 +387,6 @@ class RegexMacro
          * @param string $mode 匹配模式
          * @param string $boolean 连接条件
          * @return Builder
-         *
-         * @example
-         * // 查找包含至少3个链接的文章
-         * Article::query()->whereRegexpCount('content', 'https?://', 3, '>=', 'i')->get();
-         *
-         * // 查找没有邮箱的文本
-         * Document::query()->whereRegexpCount('content', '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', 0, '=', 'i')->get();
          */
         Builder::macro('whereRegexpCount', function (
             string $column,
@@ -414,11 +397,15 @@ class RegexMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            RegexMacro::assertMysql($this, 'whereRegexpCount');
+            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
+            $operator = RegexMacro::assertOperator($operator);
+            $mode = RegexMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
-            $escapedPattern = str_replace("'", "''", $pattern);
 
             return $this->{$method}(
-                "REGEXP_COUNT(`{$column}`, '{$escapedPattern}', 1, '{$mode}') {$operator} {$count}"
+                "REGEXP_COUNT({$wrappedColumn}, ?, 1, ?) {$operator} {$count}",
+                [$pattern, $mode]
             );
         });
     }

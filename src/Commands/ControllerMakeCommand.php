@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -15,7 +13,7 @@ use zxf\Modules\Support\StubGenerator;
  *
  * 在指定模块中创建控制器
  */
-class ControllerMakeCommand extends Command
+class ControllerMakeCommand extends AbstractMakeCommand
 {
     /**
      * 命令签名
@@ -44,49 +42,26 @@ class ControllerMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $controllerName = Str::studly($this->argument('name'));
-        $type = strtolower($this->option('type'));
+        $type = Str::studly($this->option('type'));
         $force = $this->option('force');
         $plain = $this->option('plain');
         $useAttributes = $this->option('attributes');
 
-        $module = Module::find($moduleName);
+        // 类型不再限制，允许任意自定义类型（作为子命名空间目录）
+        $subDir = $type !== 'Web' ? $type . '/' : '';
+        $relativePath = 'Http/Controllers/' . $subDir . $controllerName . '.php';
 
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-
-            return Command::FAILURE;
-        }
-
-        // 类型不再限制，允许任意自定义类型
-
-        $controllerPath = $module->getPath('Http/Controllers/' . Str::studly($type) . '/' . $controllerName . '.php');
-
-        if (File::exists($controllerPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在控制器 [{$controllerName}]");
-            $this->line("提示：使用 --force 选项覆盖已存在的控制器");
-
-            return Command::FAILURE;
-        }
-
-        if (File::exists($controllerPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的控制器 [{$controllerName}]");
-        }
-
-        $namespace = config('modules.namespace', 'Modules');
-        $stubGenerator = new StubGenerator($moduleName);
-
-        $stubGenerator->addReplacement('{{CLASS}}', $controllerName);
-        $stubGenerator->addReplacement('{{NAMESPACE}}', $namespace);
-        $stubGenerator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', '\\' . Str::studly($type));
-        $stubGenerator->addReplacement('{{BASE_CLASS}}', $moduleName.'BaseController');
-
-        // 确保控制器目录存在
-        $controllerDir = $module->getPath('Http/Controllers/' . Str::studly($type));
-        if (! is_dir($controllerDir)) {
-            File::makeDirectory($controllerDir, 0755, true);
-        }
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacement('{{CLASS}}', $controllerName);
+        $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
+        $generator->addReplacement('{{CONTROLLER_SUBNAMESPACE}}', $type !== 'Web' ? '\\' . $type : '');
+        $generator->addReplacement('{{BASE_CLASS}}', $module->getName() . 'BaseController');
 
         // 选择 stub 文件
         if ($plain) {
@@ -97,20 +72,6 @@ class ControllerMakeCommand extends Command
             $stubFile = 'controller.stub';
         }
 
-        $result = $stubGenerator->generate(
-            $stubFile,
-            'Http/Controllers/' . Str::studly($type) . '/' . $controllerName . '.php',
-            $force
-        );
-
-        if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建控制器 [{$controllerName}]");
-
-            return Command::SUCCESS;
-        }
-
-        $this->error("创建控制器 [{$controllerName}] 失败");
-
-        return Command::FAILURE;
+        return $this->writeStub($generator, $stubFile, $relativePath, '控制器', $force);
     }
 }

@@ -128,10 +128,14 @@ class MigrateCommand extends Command
 
         $relativePath = $this->getRelativePath($migrationPath);
 
-        $this->call('migrate', [
+        $exitCode = $this->call('migrate', [
             '--path' => $relativePath,
             '--force' => $force,
         ]);
+
+        if ($exitCode !== Command::SUCCESS) {
+            return Command::FAILURE;
+        }
 
         // 运行数据填充（委托给 module:seed 命令，参照 nWidart 设计）
         if ($seed || $seeder) {
@@ -150,7 +154,11 @@ class MigrateCommand extends Command
                 $seedParams['--force'] = true;
             }
 
-            $this->call('module:seed', $seedParams);
+            $seedExit = $this->call('module:seed', $seedParams);
+
+            if ($seedExit !== Command::SUCCESS) {
+                return Command::FAILURE;
+            }
         }
 
         return Command::SUCCESS;
@@ -180,10 +188,7 @@ class MigrateCommand extends Command
         }
 
         // 全模块模式 + --seeder：警告用户不会传递
-        if ($seeder) {
-            $this->components->warn('⚠ 全模块模式不支持 --seeder 选项，已忽略。');
-            $this->components->warn('  提示: 使用 module:seed <ModuleName> --class=' . $seeder . ' 单独运行指定 Seeder。');
-        }
+        $this->warnSeederIgnoredForAllModules($seeder);
 
         $hasFailures = false;
 

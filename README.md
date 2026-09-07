@@ -499,7 +499,7 @@ module_views_path();              // 当前模块的 Resources/views
 module_resources_path('assets');  // 当前模块的 Resources/assets
 
 // 语言目录路径
-module_lang_path();              // 当前模块的 Resources/lang
+module_trans_path();              // 当前模块的 Resources/lang
 ```
 
 ### 4. 命令自动注册
@@ -554,7 +554,7 @@ module_models_path();          // 模型路径
 module_controllers_path();      // 控制器路径
 module_views_path();           // 视图路径
 module_resources_path();       // 资源路径
-module_lang_path();           // 语言文件路径
+module_trans_path();           // 语言文件路径
 ```
 
 ### 视图相关函数
@@ -682,6 +682,28 @@ php artisan module:migrate-fresh Blog --seed --drop-views
 php artisan module:seed Blog
 php artisan module:seed Blog --class=PostSeeder
 ```
+
+## 🧪 回归测试
+
+本包提供统一回归入口，串联「PHP 语法检查 + 运行时 SQL 生成验证」：
+
+```bash
+# 使用默认宿主项目（/Users/aha/www/wsf）
+bash tests/run.sh
+
+# 指定其他已安装 Laravel 的宿主项目
+bash tests/run.sh /path/to/laravel-project
+```
+
+| 验证脚本                              | 覆盖内容                                                                                          | 断言数 |
+|-----------------------------------|-----------------------------------------------------------------------------------------------|-----|
+| `tests/verify_string_macros.php`  | 字符串函数宏（LOCATE 分词 / CHAR_LENGTH 排序 / FIELD / FIND_IN_SET / 全文检索 / SOUNDEX 等）的 SQL 生成、参数绑定与注入守卫 | 58  |
+| `tests/verify_recursive_macros.php` | 递归 CTE 宏的占位符与绑定数量一致性、调用方 where 条件保留；JSON / 正则宏的 `whereRaw` 语义与 UPDATE 绑定顺序            | 44  |
+| `tests/verify_cache_store.php`    | 模块缓存存储：JSON 原子写、损坏内容容错、旧版 PHP 缓存清理、并发写入完整性                                                  | 12  |
+
+> **说明**：本包是库，自身不含 `vendor/`。运行时验证需要借助一个已安装 Laravel 的
+> 宿主项目提供 `vendor/autoload.php`；默认使用 `/Users/aha/www/wsf`，
+> 也可用环境变量 `WSF_PATH` 或脚本第一个参数覆盖。宿主不可用时仅执行语法检查。
 
 ## 🤝 贡献
 

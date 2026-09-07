@@ -137,9 +137,13 @@ class ModuleDebugCommandsCommand extends Command
                     // 检查命令签名
                     try {
                         if (class_exists($commandClass)) {
-                            // 过滤掉 Laravel 内核类
-                            if (in_array($commandClass, ['artisan', 'Illuminate\\Foundation\\Console\\Kernel'])) {
-                                $this->line("      <comment>Laravel 内核类，跳过签名检查</comment>");
+                            // 过滤掉 Laravel/Symfony 等第三方内核类（按命名空间前缀），
+                            // 避免对框架内部命令做无意义的签名反射。
+                            if (str_starts_with($commandClass, 'Illuminate\\')
+                                || str_starts_with($commandClass, 'Laravel\\')
+                                || str_starts_with($commandClass, 'Symfony\\')
+                            ) {
+                                $this->line("      <comment>框架内核类，跳过签名检查</comment>");
                                 continue;
                             }
 

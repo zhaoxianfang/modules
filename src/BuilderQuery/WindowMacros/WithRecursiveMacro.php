@@ -9,6 +9,7 @@ use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * 递归查询宏类 - 树形结构数据处理的完整解决方案
@@ -20,11 +21,13 @@ use InvalidArgumentException;
  * - 树形构建（withTree/withRoot/withLeafNodes）
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
+ * @version 2.1.0
  * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
  */
 class WithRecursiveMacro
 {
+    use SqlSecurity;
+
     /** @var mixed 根节点值，默认0，可设为null表示根节点parent_id为NULL */
     protected static mixed $rootValue = 0;
 
@@ -200,11 +203,11 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $withTable = self::generateWithTableName();
 
         // 保存当前查询状态以便恢复
-        [$originalColumns, $originalBindings, $columns] = self::saveQueryState($query);
-        $columnList = self::buildColumnList($columns, $table);
 
         // 构建递归连接条件：向下=子节点.parent_id = 父节点.id，向上=父节点.id = 子节点.parent_id
         $joinCondition = $direction === 'children'
@@ -214,14 +217,14 @@ class WithRecursiveMacro
         // 构建递归CTE查询
         $recursiveQuery = "WITH RECURSIVE `{$withTable}` AS (
             -- 锚定成员：起始节点
-            SELECT {$columnList}, 0 AS depth
+            SELECT *, 0 AS depth
             FROM `{$table}`
             WHERE `{$primaryKey}` = ?
 
             UNION ALL
 
             -- 递归成员：根据方向向上或向下递归
-            SELECT " . self::buildColumnList($columns, 't', 't') . ", r.depth + 1
+            SELECT t.*, r.depth + 1
             FROM `{$table}` t
             JOIN `{$withTable}` r ON {$joinCondition}
             WHERE r.depth < ?
@@ -229,17 +232,16 @@ class WithRecursiveMacro
         SELECT * FROM `{$withTable}`" . ($includeSelf ? '' : " WHERE `{$primaryKey}` != ?");
 
         // 创建新查询
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
-
         // 绑定参数
         $bindings = $includeSelf ? [$id, $maxDepth] : [$id, $maxDepth, $id];
-        $newQuery->addBinding($bindings, 'from');
 
-        // 恢复原始查询状态
-        self::restoreQueryState($newQuery, $originalColumns, $originalBindings);
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        $query->addBinding($bindings, 'from');
 
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -261,31 +263,30 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $withTable = self::generateWithTableName();
 
-        [$originalColumns, $originalBindings, $columns] = self::saveQueryState($query);
-        $columnList = self::buildColumnList($columns, $table);
 
         $joinCondition = $direction === 'children'
             ? "t.`{$pidColumn}` = r.`{$primaryKey}`"
             : "t.`{$primaryKey}` = r.`{$pidColumn}`";
 
         $recursiveQuery = "WITH RECURSIVE `{$withTable}` AS (
-            SELECT {$columnList}, 0 AS relative_level FROM `{$table}` WHERE `{$primaryKey}` = ?
+            SELECT *, 0 AS relative_level FROM `{$table}` WHERE `{$primaryKey}` = ?
             UNION ALL
-            SELECT " . self::buildColumnList($columns, 't', 't') . ", r.relative_level + 1
+            SELECT t.*, r.relative_level + 1
             FROM `{$table}` t JOIN `{$withTable}` r ON {$joinCondition}
             WHERE r.relative_level < ?
         ) SELECT * FROM `{$withTable}` WHERE relative_level = ?";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveQuery}) as `{$withTable}`"))
-            ->addBinding([$id, $n, $n], 'from');
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        $query->addBinding([$id, $n, $n], 'from');
 
-        self::restoreQueryState($newQuery, $originalColumns, $originalBindings);
-
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -311,10 +312,12 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
+        $nameColumn = WithRecursiveMacro::assertValidIdentifier($nameColumn, 'nameColumn');
+        $pathSeparator = addcslashes($pathSeparator, "'\\");
         $withTable = self::generateWithTableName();
 
-        [$originalColumns, $originalBindings, $columns] = self::saveQueryState($query);
-        $columnList = self::buildColumnList($columns, $table);
 
         // 构建额外筛选条件
         $whereConditions = '';
@@ -324,6 +327,7 @@ class WithRecursiveMacro
             $whereParts = [];
             $tempBindings = [];
             foreach ($conditions as $key => $value) {
+                $key = WithRecursiveMacro::assertValidIdentifier((string) $key, 'condition');
                 $whereParts[] = "`{$table}`.`{$key}` = ?";
                 $tempBindings[] = $value;
             }
@@ -346,7 +350,7 @@ class WithRecursiveMacro
         // 构建递归CTE查询
         $recursiveQuery = "WITH RECURSIVE `{$withTable}` AS (
             -- 锚定成员：从根节点开始
-            SELECT {$columnList},
+            SELECT *,
                    `{$table}`.`{$nameColumn}` AS absolute_path,
                    CAST(`{$table}`.`{$primaryKey}` AS CHAR(200)) AS path_ids,
                    0 AS depth
@@ -368,17 +372,14 @@ class WithRecursiveMacro
         SELECT `{$withTable}`.* FROM `{$withTable}` {$idCondition}
         ORDER BY path_ids";
 
-        // 创建新查询
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        // 复用原查询对象（保留调用方条件），仅替换数据源为递归 CTE 派生表
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
 
         if (!empty($bindings)) {
-            $newQuery->addBinding($bindings, 'from');
+            $query->addBinding($bindings, 'from');
         }
 
-        self::restoreQueryState($newQuery, $originalColumns, $originalBindings);
-
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -398,6 +399,8 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $withTable = self::generateWithTableName();
 
         // 向上递归直到根节点，然后按depth降序排列（从根到当前）
@@ -408,12 +411,13 @@ class WithRecursiveMacro
             FROM `{$table}` t JOIN `{$withTable}` r ON t.`{$primaryKey}` = r.`{$pidColumn}`
         ) SELECT * FROM `{$withTable}` ORDER BY depth DESC";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveQuery}) as `{$withTable}`"))
-            ->addBinding([$id], 'from');
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        $query->addBinding([$id], 'from');
 
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -431,6 +435,8 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $withTable = self::generateWithTableName();
 
         $recursiveQuery = "WITH RECURSIVE `{$withTable}` AS (
@@ -440,12 +446,13 @@ class WithRecursiveMacro
             FROM `{$table}` t JOIN `{$withTable}` r ON t.`{$primaryKey}` = r.`{$pidColumn}`
         ) SELECT path_length FROM `{$withTable}` ORDER BY path_length DESC LIMIT 1";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveQuery}) as `{$withTable}`"))
-            ->addBinding([$id], 'from');
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        $query->addBinding([$id], 'from');
 
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -467,6 +474,8 @@ class WithRecursiveMacro
     ): bool {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
 
         // 严格模式：只检查直接父节点
         if ($strict) {
@@ -511,6 +520,8 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $wt1 = self::generateWithTableName();
         $wt2 = self::generateWithTableName();
 
@@ -529,12 +540,13 @@ class WithRecursiveMacro
         FROM `{$wt1}` a JOIN `{$wt2}` b ON a.`{$primaryKey}` = b.`{$primaryKey}`
         ORDER BY total_distance ASC LIMIT 1";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveQuery}) as `ancestor`"))
-            ->addBinding([$id1, $id2], 'from');
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `ancestor`"));
+        $query->addBinding([$id1, $id2], 'from');
 
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -554,13 +566,14 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
 
-        [$originalColumns, $originalBindings] = self::saveQueryState($query);
-
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->where(function ($q) use ($pidColumn, $id, $primaryKey, $table) {
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 条件，
+        // 并在其基础上叠加兄弟节点筛选。注意：原查询的 where 绑定由查询构造器自行维护，
+        // 绝不可手动 addBinding 追加，否则会出现占位符与绑定数量不匹配。
+        $query->where(function ($q) use ($pidColumn, $id, $primaryKey, $table) {
             // 方式1：具有相同的父ID
-            $q->where($pidColumn, function ($sub) use ($id, $primaryKey, $table) {
+            $q->where($pidColumn, function ($sub) use ($id, $primaryKey, $table, $pidColumn) {
                 $sub->select($pidColumn)->from($table)->where($primaryKey, $id);
             })
             // 方式2：或者两者都是根节点（parent_id为null）
@@ -577,16 +590,10 @@ class WithRecursiveMacro
         });
 
         if (!$includeSelf) {
-            $newQuery->where($primaryKey, '!=', $id);
+            $query->where($primaryKey, '!=', $id);
         }
 
-        if (!empty($originalColumns)) {
-            $newQuery->select($originalColumns);
-        }
-
-        $newQuery->addBinding($originalBindings['where'] ?? [], 'where');
-
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -610,10 +617,12 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
+        $nameColumn = WithRecursiveMacro::assertValidIdentifier($nameColumn, 'nameColumn');
+        $pathSeparator = addcslashes($pathSeparator, "'\\");
         $withTable = self::generateWithTableName();
 
-        [$originalColumns, $originalBindings, $columns] = self::saveQueryState($query);
-        $columnList = self::buildColumnList($columns, $table);
         $rootCondition = self::buildRootCondition($table, $pidColumn, $primaryKey);
 
         // 确定锚定查询条件
@@ -627,7 +636,7 @@ class WithRecursiveMacro
 
         // 构建递归CTE，返回完整树路径
         $recursiveQuery = "WITH RECURSIVE `{$withTable}` AS (
-            SELECT {$columnList},
+            SELECT *,
                    CAST(`{$table}`.`{$primaryKey}` AS CHAR(200)) AS path_ids,
                    CAST(`{$table}`.`{$nameColumn}` AS CHAR(1000)) AS tree_path,
                    0 AS depth
@@ -642,14 +651,13 @@ class WithRecursiveMacro
             WHERE r.depth < ?
         ) SELECT *, tree_path AS absolute_path FROM `{$withTable}` ORDER BY path_ids";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveQuery}) as `{$withTable}`"))
-            ->addBinding($bindings, 'from');
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        $query->addBinding($bindings, 'from');
 
-        self::restoreQueryState($newQuery, $originalColumns, $originalBindings);
-
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -667,6 +675,8 @@ class WithRecursiveMacro
     ): Builder {
         $table = $query->getModel()->getTable();
         $primaryKey = $query->getModel()->getKeyName();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $withTable = self::generateWithTableName();
 
         // 递归获取所有后代（含自身），然后计数减1
@@ -677,12 +687,13 @@ class WithRecursiveMacro
             FROM `{$table}` t JOIN `{$withTable}` r ON t.`{$pidColumn}` = r.`{$primaryKey}`
         ) SELECT COUNT(*) - 1 AS descendants_count FROM `{$withTable}`";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveQuery}) as `{$withTable}`"))
-            ->addBinding([$id], 'from');
+        $query->getQuery()->from(new Expression("({$recursiveQuery}) as `{$withTable}`"));
+        $query->addBinding([$id], 'from');
 
-        return $newQuery;
+        // 计数聚合：覆盖调用方可能存在的 select 列
+        $query->selectRaw('COUNT(*) - 1 AS descendants_count');
+
+        return $query;
     }
 
     /**
@@ -706,6 +717,8 @@ class WithRecursiveMacro
         string $depthColumn = 'depth'
     ): Builder {
         $table = $query->getModel()->getTable();
+        WithRecursiveMacro::assertMysql($query, 'withRecursive');
+        $depthColumn = WithRecursiveMacro::assertValidIdentifier($depthColumn, 'depthColumn');
         $withTable = self::generateWithTableName();
 
         // 验证回调
@@ -713,8 +726,14 @@ class WithRecursiveMacro
             throw new InvalidArgumentException('基础查询和递归查询必须是可调用的回调函数');
         }
 
-        [$originalColumns, $originalBindings] = self::saveQueryState($query);
-        $columnList = self::buildColumnList($columns, $withTable);
+        // 构建 CTE 输出列列表：默认 '*'，确保外层原查询的 where / select 可引用任意列；
+        // 显式指定列时逐项走白名单校验，防止注入。
+        $columnList = ($columns === [] || $columns === ['*'])
+            ? '*'
+            : implode(', ', array_map(
+                static fn ($col): string => '`'.WithRecursiveMacro::assertValidIdentifier((string) $col, 'column').'`',
+                $columns
+            ));
 
         // 执行回调获取SQL
         $baseQuerySql = call_user_func($baseQuery, $query, $withTable);
@@ -743,14 +762,14 @@ class WithRecursiveMacro
             WHERE r.`{$depthColumn}` < ?
         ) SELECT {$columnList} FROM `{$withTable}`";
 
-        $newQuery = $query->getModel()->newQuery();
-        $newQuery->getQuery()
-            ->from(new Expression("({$recursiveCte}) as `{$withTable}`"))
-            ->addBinding([$maxDepth], 'from');
+        // 复用原查询对象：保留调用方已设置的 select / where / order / limit 等全部条件，
+        // 仅将数据源替换为递归 CTE 派生表。绑定顺序 select → from → where 与编译后 SQL 顺序一致，
+        // 因此 CTE 内部的占位符绑定统一走 from 通道。
+        // 注意：本方法的 CTE 变量名为 $recursiveCte（$recursiveQuery 是回调参数，不可混用）。
+        $query->getQuery()->from(new Expression("({$recursiveCte}) as `{$withTable}`"));
+        $query->addBinding([$maxDepth], 'from');
 
-        self::restoreQueryState($newQuery, $originalColumns, $originalBindings);
-
-        return $newQuery;
+        return $query;
     }
 
     /**
@@ -794,6 +813,8 @@ class WithRecursiveMacro
      */
     protected static function buildRootCondition(string $table, string $pidColumn, string $primaryKey): string
     {
+        $pidColumn = WithRecursiveMacro::assertValidIdentifier($pidColumn, 'pidColumn');
+        $primaryKey = WithRecursiveMacro::assertValidIdentifier($primaryKey, 'primaryKey');
         $rootValue = self::$rootValue;
 
         if ($rootValue === null) {
@@ -808,61 +829,4 @@ class WithRecursiveMacro
         );
     }
 
-    /**
-     * 构建列列表字符串
-     *
-     * @param array       $columns  列名数组
-     * @param string      $table    表名
-     * @param string|null $alias    别名
-     * @return string
-     */
-    protected static function buildColumnList(array $columns, string $table, ?string $alias = null): string
-    {
-        $alias = $alias ?? $table;
-
-        return implode(', ', array_map(function ($col) use ($table, $alias) {
-            if ($col === '*') {
-                return $alias === 't' ? 't.*' : "`{$table}`.*";
-            }
-            return "`{$alias}`.`{$col}`";
-        }, $columns));
-    }
-
-    /**
-     * 保存查询状态
-     *
-     * 在进行递归查询前保存当前查询的列和绑定
-     *
-     * @param Builder $query  查询构建器实例
-     * @return array [原始列, 原始绑定, 处理后的列]
-     */
-    protected static function saveQueryState(Builder $query): array
-    {
-        $originalColumns = $query->getQuery()->columns;
-        $originalBindings = $query->getQuery()->bindings;
-        $columns = empty($originalColumns) ? ['*'] : $originalColumns;
-
-        return [$originalColumns, $originalBindings, $columns];
-    }
-
-    /**
-     * 恢复查询状态
-     *
-     * 在递归查询后恢复原始的列选择和绑定
-     *
-     * @param Builder     $newQuery          新查询构建器
-     * @param array|null  $originalColumns   原始列选择
-     * @param array       $originalBindings  原始绑定
-     * @return void
-     */
-    protected static function restoreQueryState(
-        Builder $newQuery,
-        ?array $originalColumns,
-        array $originalBindings
-    ): void {
-        if ($originalColumns) {
-            $newQuery->select($originalColumns);
-        }
-        $newQuery->addBinding($originalBindings['where'] ?? [], 'where');
-    }
 }

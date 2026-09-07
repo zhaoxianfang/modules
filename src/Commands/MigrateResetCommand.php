@@ -117,12 +117,12 @@ class MigrateResetCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->call('migrate:rollback', [
+        $exitCode = $this->call('migrate:rollback', [
             '--path' => $this->getRelativePath($migrationPath),
             '--force' => $force,
         ]);
 
-        return Command::SUCCESS;
+        return $exitCode === Command::SUCCESS ? Command::SUCCESS : Command::FAILURE;
     }
 
     /**

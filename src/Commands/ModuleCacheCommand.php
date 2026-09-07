@@ -7,6 +7,12 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use zxf\Modules\Facades\Module;
 
+/**
+ * 模块缓存命令
+ *
+ * 将模块清单（启用的模块列表、配置快照等）写入缓存文件，
+ * 提升运行时模块发现性能。
+ */
 class ModuleCacheCommand extends Command
 {
     /**

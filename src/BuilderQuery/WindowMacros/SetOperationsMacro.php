@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0.31+ 集合操作宏
@@ -15,11 +16,13 @@ use Illuminate\Database\Eloquent\Builder;
  * - unionDistinct: UNION DISTINCT 显式去重
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0.31+
  */
 class SetOperationsMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有集合操作宏
      *
@@ -67,6 +70,7 @@ class SetOperationsMacro
          */
         Builder::macro('intersect', function ($query, bool $all = false): Builder {
             /** @var Builder $this */
+            SetOperationsMacro::assertMysql($this, 'intersect');
             $sql = $this->toSql();
             $bindings = $this->getBindings();
 
@@ -117,6 +121,7 @@ class SetOperationsMacro
          */
         Builder::macro('except', function ($query, bool $all = false): Builder {
             /** @var Builder $this */
+            SetOperationsMacro::assertMysql($this, 'except');
             $sql = $this->toSql();
             $bindings = $this->getBindings();
 

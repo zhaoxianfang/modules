@@ -9,6 +9,12 @@ use Illuminate\Support\Str;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\ModuleValidator;
 
+/**
+ * 模块校验命令
+ *
+ * 校验指定（或全部）模块的目录结构、服务提供者、配置文件完整性，
+ * 并输出错误与警告信息。
+ */
 class ModuleValidateCommand extends Command
 {
     /**

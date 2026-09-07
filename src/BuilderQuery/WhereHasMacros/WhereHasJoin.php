@@ -142,10 +142,7 @@ class WhereHasJoin
 
             $relation = Relations\Relation::noConstraints(function () use ($currentRelationMethod) {
                 return $this->builder->getRelation($currentRelationMethod);
-
-                //                return $this->builder->getModel()->$method();
             });
-            //            dd($relation->getRelated());
         }
 
         return $relation;

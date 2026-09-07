@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Commands;
 
-use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -23,7 +22,7 @@ use zxf\Modules\Support\StubGenerator;
  *
  * @package zxf\Modules\Commands
  */
-class ObserverMakeCommand extends Command
+class ObserverMakeCommand extends AbstractMakeCommand
 {
     /**
      * @var string
@@ -44,68 +43,40 @@ class ObserverMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
         $observerName = Str::studly($this->argument('name'));
         $force = $this->option('force');
 
-        $module = Module::find($moduleName);
-
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-            return Command::FAILURE;
-        }
-
-        $observerPath = $module->getPath('Observers/' . $observerName . '.php');
-
-        if (File::exists($observerPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在观察者 [{$observerName}]");
-            $this->line('提示：使用 --force 选项覆盖已存在的观察者');
-            return Command::FAILURE;
-        }
-
-        if (File::exists($observerPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的观察者 [{$observerName}]");
-        }
-
         // 推导模型名称
-        $modelName = $this->option('model') ?: preg_replace('/Observer$/i', '', $observerName);
-        $namespace = config('modules.namespace', 'Modules');
+        $modelName = Str::studly($this->option('model') ?: preg_replace('/Observer$/i', '', $observerName));
+        $namespace = $this->module->getNamespace();
 
-        $stubGenerator = new StubGenerator($moduleName);
-        $stubGenerator->addReplacements([
+        $generator = $this->makeStubGenerator();
+        $generator->addReplacements([
             '{{CLASS}}' => $observerName,
             '{{NAMESPACE}}' => $namespace,
-            '{{NAME}}' => $moduleName,
+            // {{NAME}} 在 observer.stub 中代表「模型类名」（如 Models\{{NAME}}、{{NAME}} $model），
+            // 必须替换为模型名而非模块名，否则生成的类型提示会引用错误的类。
+            '{{NAME}}' => $modelName,
             '{{MODEL}}' => $modelName,
-            '{{MODEL_NAMESPACE}}' => $namespace . '\\' . $moduleName . '\\Models',
+            '{{MODEL_NAMESPACE}}' => $namespace . '\\' . $module->getName() . '\\Models',
         ]);
 
-        // 确保目录存在
-        $observerDir = $module->getPath('Observers');
-        if (! is_dir($observerDir)) {
-            File::makeDirectory($observerDir, 0755, true);
-        }
+        $result = $this->writeStub($generator, 'observer.stub', 'Observers/' . $observerName . '.php', '观察者', $force);
 
-        $result = $stubGenerator->generate(
-            'observer.stub',
-            'Observers/' . $observerName . '.php',
-            $force
-        );
-
-        if ($result) {
-            $this->info("✓ 成功在模块 [{$moduleName}] 中创建观察者 [{$observerName}]");
-
+        if ($result === Command::SUCCESS) {
             // 检查对应模型是否存在
-            $modelPath = $module->getPath('Models/' . $modelName . '.php');
+            $modelPath = $this->targetPath('Models/' . $modelName . '.php');
             if (! File::exists($modelPath)) {
                 $this->warn("提示：对应的模型 [{$modelName}] 尚未创建");
-                $this->line("      可使用 php artisan module:make-model {$moduleName} {$modelName} 创建");
+                $this->line("      可使用 php artisan module:make-model {$module->getName()} {$modelName} 创建");
             }
-
-            return Command::SUCCESS;
         }
 
-        $this->error("创建观察者 [{$observerName}] 失败");
-        return Command::FAILURE;
+        return $result;
     }
 }

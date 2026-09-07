@@ -32,7 +32,7 @@ trait ControllerTrait
         return redirect()->back()->withInput()->with(['success' => $info]);
     }
 
-    public function json(array $data = [], int $status = 200, string $jumpUrl = '', $wait = 3): JsonResponse
+    public function json(array $data = [], int $status = 200, string $jumpUrl = '', int $wait = 3): JsonResponse
     {
         $data['code'] = empty($data['code']) ? $status : $data['code'];
         $data['message'] = empty($data['message']) ? '操作成功' : $data['message'];
@@ -45,7 +45,7 @@ trait ControllerTrait
         return response()->json($data, $status);
     }
 
-    public function api_json($data = [], $code = 200, $message = '成功', $status = 200): \Illuminate\Http\JsonResponse
+    public function api_json(array $data = [], int $code = 200, string $message = '成功', int $status = 200): JsonResponse
     {
         return $this->json(compact('code', 'message', 'data'), $status);
     }
@@ -67,13 +67,6 @@ trait ControllerTrait
 
         // DataTables 渲染数据放在 data 或 list 或 rows 里面
         return $this->json(['rows' => $list, 'total' => $total, 'draw' => $draw]);
-        // return $this->json([
-        //     'list'            => $list, // 数据列表
-        //     'recordsTotal'    => $total,// 数据总条数
-        //     "draw"            => $draw, // (int)响应计数器
-        //     "recordsFiltered" => $total, // (int)筛选后的总记录数
-        //     'error'           => $errorMsg, // 注意：仅有错误信息时才返回error字段，请不要返回此字段
-        // ]);
     }
 
     public function success(string|array $resp = '', string $jumpUrl = '')
@@ -99,7 +92,7 @@ trait ControllerTrait
         }
         // 不是来自本站，没有上一个页面，直接返回提示页面
         if (! source_local_website('status')) {
-            return $request->view('modules::error', [
+            return view('modules::error', [
                 'title' => '提示',
                 'message' => $data['message'],
             ]);
@@ -110,10 +103,10 @@ trait ControllerTrait
 
     public function error(string|array|Validator|Throwable $resp = '', string $jumpUrl = '')
     {
-        if($resp instanceof Validator){
+        if ($resp instanceof Validator) {
             $resp = $resp->errors()->first();
         }
-        if($resp instanceof Throwable){
+        if ($resp instanceof Throwable) {
             $resp = $resp->getMessage();
         }
         $request = request();
@@ -136,7 +129,7 @@ trait ControllerTrait
         }
         // 不是来自本站，没有上一个页面，直接返回错误页面
         if (! source_local_website('status')) {
-            return $request->view('modules::error', [
+            return view('modules::error', [
                 'title' => '出错啦',
                 'message' => $data['message'],
             ]);

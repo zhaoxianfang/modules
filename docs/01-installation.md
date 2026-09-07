@@ -195,11 +195,20 @@ MODULES_CACHE_ENABLED=true
 ],
 ```
 
-### 发布模块静态资源
+### 发布配置文件与用户指南
 
 ```bash
-php artisan module:publish Blog
+# 发布包内配置文件到 config/modules.php
+php artisan module:publish --config
+
+# 发布多模块用户指南到 Modules 目录
+php artisan module:publish --guide
+
+# 目标文件已存在时强制覆盖
+php artisan module:publish --config --force
 ```
+
+> 注：`module:publish` **不接受模块名参数**，仅发布上述两类文件。
 
 ### Laravel 性能优化
 

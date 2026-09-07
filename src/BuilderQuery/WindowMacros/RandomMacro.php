@@ -7,9 +7,12 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 class RandomMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册 random() 宏函数，用于随机查询记录
      *
@@ -79,80 +82,98 @@ class RandomMacro
          * @param  QueryBuilder  $dest  目标查询
          */
         Builder::macro('replicateWheres', function (QueryBuilder $source, QueryBuilder $dest) {
-            foreach ($source->wheres as $where) {
-                $method = $where['type'] ?? 'Basic';
-                $boolean = $where['boolean'] ?? 'and';
+            RandomMacro::copyWheres($source, $dest);
 
-                switch ($method) {
-                    case 'Basic':
-                        $dest->where($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    case 'In':
-                        $dest->whereIn($where['column'], $where['values'], $boolean, $where['not'] ?? false);
-                        break;
-                    case 'NotIn':
-                        $dest->whereNotIn($where['column'], $where['values'], $boolean);
-                        break;
-                    case 'Null':
-                        $dest->whereNull($where['column'], $boolean, $where['not'] ?? false);
-                        break;
-                    case 'NotNull':
-                        $dest->whereNotNull($where['column'], $boolean);
-                        break;
-                    case 'Between':
-                        $dest->whereBetween($where['column'], $where['values'], $boolean, $where['not'] ?? false);
-                        break;
-                    case 'NotBetween':
-                        $dest->whereNotBetween($where['column'], $where['values'], $boolean);
-                        break;
-                    case 'Exists':
-                        $dest->whereExists($where['query'], $boolean, $where['not'] ?? false);
-                        break;
-                    case 'NotExists':
-                        $dest->whereNotExists($where['query'], $boolean);
-                        break;
-                    case 'Raw':
-                        $dest->whereRaw($where['sql'], (array) ($where['bindings'] ?? []), $boolean);
-                        break;
-                    case 'Nested':
-                        $dest->whereNested(function ($query) use ($where) {
-                            self::replicateWheres($where['query'], $query, $where['boolean'] ?? 'and');
-                        }, $boolean);
-                        break;
-                    case 'Column':
-                        $dest->whereColumn(
-                            $where['first'],
-                            $where['operator'],
-                            $where['second'] ?? null,
-                            $boolean
-                        );
-                        break;
-                    case 'Date':
-                        $dest->whereDate($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    case 'Time':
-                        $dest->whereTime($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    case 'Day':
-                        $dest->whereDay($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    case 'Month':
-                        $dest->whereMonth($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    case 'Year':
-                        $dest->whereYear($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    case 'JsonContains':
-                        $dest->whereJsonContains($where['column'], $where['value'], $boolean, $where['not'] ?? false);
-                        break;
-                    case 'JsonLength':
-                        $dest->whereJsonLength($where['column'], $where['operator'], $where['value'], $boolean);
-                        break;
-                    default:
-                        throw new \InvalidArgumentException("不支持的where类型: {$method}");
-                }
-            }
+            return $dest;
         });
+    }
+
+    /**
+     * 复制源查询的全部 where 条件到目标查询
+     *
+     * 注意：Laravel Macroable 会将宏闭包重绑到 Builder 作用域，闭包内 `self::` 会解析为
+     * Builder 而非本类，因此复制逻辑必须抽为 public static 方法，供宏闭包与 Nested
+     * 分支递归调用共用。
+     *
+     * @param Builder|QueryBuilder $source 源查询（宏调用者实际为 Eloquent Builder）
+     * @param QueryBuilder $dest 目标查询
+     * @return void
+     */
+    public static function copyWheres(Builder|QueryBuilder $source, QueryBuilder $dest): void
+    {
+        foreach ($source->wheres as $where) {
+            $method = $where['type'] ?? 'Basic';
+            $boolean = $where['boolean'] ?? 'and';
+
+            switch ($method) {
+                case 'Basic':
+                    $dest->where($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                case 'In':
+                    $dest->whereIn($where['column'], $where['values'], $boolean, $where['not'] ?? false);
+                    break;
+                case 'NotIn':
+                    $dest->whereNotIn($where['column'], $where['values'], $boolean);
+                    break;
+                case 'Null':
+                    $dest->whereNull($where['column'], $boolean, $where['not'] ?? false);
+                    break;
+                case 'NotNull':
+                    $dest->whereNotNull($where['column'], $boolean);
+                    break;
+                case 'Between':
+                    $dest->whereBetween($where['column'], $where['values'], $boolean, $where['not'] ?? false);
+                    break;
+                case 'NotBetween':
+                    $dest->whereNotBetween($where['column'], $where['values'], $boolean);
+                    break;
+                case 'Exists':
+                    $dest->whereExists($where['query'], $boolean, $where['not'] ?? false);
+                    break;
+                case 'NotExists':
+                    $dest->whereNotExists($where['query'], $boolean);
+                    break;
+                case 'Raw':
+                    $dest->whereRaw($where['sql'], (array) ($where['bindings'] ?? []), $boolean);
+                    break;
+                case 'Nested':
+                    $dest->whereNested(function ($query) use ($where) {
+                        self::copyWheres($where['query'], $query);
+                    }, $boolean);
+                    break;
+                case 'Column':
+                    $dest->whereColumn(
+                        $where['first'],
+                        $where['operator'],
+                        $where['second'] ?? null,
+                        $boolean
+                    );
+                    break;
+                case 'Date':
+                    $dest->whereDate($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                case 'Time':
+                    $dest->whereTime($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                case 'Day':
+                    $dest->whereDay($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                case 'Month':
+                    $dest->whereMonth($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                case 'Year':
+                    $dest->whereYear($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                case 'JsonContains':
+                    $dest->whereJsonContains($where['column'], $where['value'], $boolean, $where['not'] ?? false);
+                    break;
+                case 'JsonLength':
+                    $dest->whereJsonLength($where['column'], $where['operator'], $where['value'], $boolean);
+                    break;
+                default:
+                    throw new \InvalidArgumentException("不支持的where类型: {$method}");
+            }
+        }
     }
 
     // 另一种实现方式
@@ -172,6 +193,8 @@ class RandomMacro
             /** @var Builder $this */
             $model = $this->getModel();
             $table = $model->getTable();
+            $primaryKey = RandomMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+            $wrappedPk = RandomMacro::wrapIdentifier($this, $primaryKey);
 
             // 构建窗口函数子查询：使用 ROW_NUMBER() + RAND() 实现高效随机
             $subQuery = DB::table($table)
@@ -188,7 +211,7 @@ class RandomMacro
                 ->when(!empty($this->getQuery()->columns), function ($query) {
                     $query->select($this->getQuery()->columns);
                 })
-                ->whereIn("$table.$primaryKey", function ($query) use ($subQuery, $limit, $primaryKey) {
+                ->whereIn("{$table}.{$primaryKey}", function ($query) use ($subQuery, $limit, $primaryKey) {
                     $query->select($primaryKey)
                         ->from(DB::raw("({$subQuery->toSql()}) AS ranked"))
                         ->mergeBindings($subQuery)
@@ -215,13 +238,16 @@ class RandomMacro
             /** @var Builder $this */
             $model = $this->getModel();
             $table = $model->getTable();
+            $primaryKey = RandomMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+            $groupColumn = RandomMacro::assertValidIdentifier($groupColumn, 'group');
+            $wrappedGroup = RandomMacro::wrapIdentifier($this, $groupColumn);
 
             // 构建窗口函数子查询 - 按分组随机排序
             $subQuery = DB::table($table)
                 ->select(
                     $primaryKey,
                     $groupColumn,
-                    DB::raw("ROW_NUMBER() OVER (PARTITION BY {$groupColumn} ORDER BY RAND()) AS group_rnd_rank")
+                    DB::raw("ROW_NUMBER() OVER (PARTITION BY {$wrappedGroup} ORDER BY RAND()) AS group_rnd_rank")
                 );
 
             // 复制所有where条件到子查询
@@ -232,7 +258,7 @@ class RandomMacro
                 ->when(!empty($this->getQuery()->columns), function ($query) {
                     $query->select($this->getQuery()->columns);
                 })
-                ->whereIn("$table.$primaryKey", function ($query) use ($subQuery, $limit, $primaryKey) {
+                ->whereIn("{$table}.{$primaryKey}", function ($query) use ($subQuery, $limit, $primaryKey) {
                     $query->select($primaryKey)
                         ->from(DB::raw("({$subQuery->toSql()}) AS grouped_ranked"))
                         ->mergeBindings($subQuery)

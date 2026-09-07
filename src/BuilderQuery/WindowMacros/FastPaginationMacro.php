@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * 超大表快速分页查询宏
@@ -21,12 +22,16 @@ use Illuminate\Support\Facades\DB;
  *
  * 不使用缓存机制，完全基于 SQL 优化
  *
+ * 安全性：排序列名 / 主键经白名单校验并由 grammar wrap。
+ *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0+
  */
 class FastPaginationMacro
 {
+    use SqlSecurity;
+
     /**
      * 大表阈值（行数超过此值视为大表）
      */
@@ -103,7 +108,7 @@ class FastPaginationMacro
             array $options = []
         ): LengthAwarePaginator {
             /** @var Builder $this */
-            $page = $page ?: request()->input('page', 1);
+            $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
             $primaryKey = $primaryKey ?: $this->getModel()->getKeyName();
             $strategy = $options['strategy'] ?? 'auto';
@@ -114,10 +119,10 @@ class FastPaginationMacro
             $table = $this->getModel()->getTable();
 
             // 判断是否需要使用优化策略
-            $needsOptimization = self::shouldOptimize($this, $page, $perPage, $strategy);
+            $needsOptimization = FastPaginationMacro::shouldOptimize($this, $page, $perPage, $strategy);
 
             // 获取总数
-            $total = self::getTotalCount($this, $countStrategy);
+            $total = FastPaginationMacro::getTotalCount($this, $countStrategy);
 
             // 如果没有数据，返回空分页
             if ($total === 0) {
@@ -126,7 +131,7 @@ class FastPaginationMacro
 
             // 根据策略执行分页
             if ($needsOptimization && $strategy !== 'offset') {
-                $results = self::executeOptimizedPaginate(
+                $results = FastPaginationMacro::executeOptimizedPaginate(
                     $this,
                     $table,
                     $primaryKey,
@@ -145,7 +150,7 @@ class FastPaginationMacro
                 $total,
                 $perPage,
                 $page,
-                ['path' => request()->url()]
+                ['path' => optional(request())->url() ?? '']
             );
         });
     }
@@ -182,17 +187,16 @@ class FastPaginationMacro
             array $options = []
         ): \Illuminate\Pagination\Paginator {
             /** @var Builder $this */
-            $page = $page ?: request()->input('page', 1);
+            $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
             $primaryKey = $primaryKey ?: $this->getModel()->getKeyName();
             $columns = $options['columns'] ?? ['*'];
 
             $table = $this->getModel()->getTable();
-            $offset = ($page - 1) * $perPage;
 
             // 使用延迟关联策略优化
-            if ($page > self::DEEP_PAGE_THRESHOLD) {
-                $results = self::executeDeferredPaginate(
+            if ($page > FastPaginationMacro::DEEP_PAGE_THRESHOLD) {
+                $results = FastPaginationMacro::executeDeferredPaginate(
                     $this,
                     $table,
                     $primaryKey,
@@ -214,7 +218,7 @@ class FastPaginationMacro
                 $results,
                 $perPage,
                 $page,
-                ['path' => request()->url()]
+                ['path' => optional(request())->url() ?? '']
             )->hasMorePagesWhen($hasMore);
         });
     }
@@ -407,7 +411,7 @@ class FastPaginationMacro
                     ->get($columns);
             } else {
                 // 使用窗口函数优化
-                $results = self::executeWindowPaginate(
+                $results = FastPaginationMacro::executeWindowPaginate(
                     $this,
                     $table,
                     $primaryKey,
@@ -432,7 +436,7 @@ class FastPaginationMacro
             );
 
             // 添加书签到结果（供下次使用）
-            $paginator->bookmarks = self::generateBookmarks(
+            $paginator->bookmarks = FastPaginationMacro::generateBookmarks(
                 $this,
                 $sortColumn,
                 $perPage,
@@ -689,13 +693,21 @@ class FastPaginationMacro
     ): \Illuminate\Support\Collection {
         $offset = ($page - 1) * $perPage;
         $sortColumn = $sortColumn ?: $primaryKey;
-        $direction = strtoupper($direction);
+        $direction = FastPaginationMacro::assertDirection($direction);
+        $primaryKey = FastPaginationMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+        $sortColumn = FastPaginationMacro::assertValidIdentifier($sortColumn, 'order');
+        $wrappedTable = FastPaginationMacro::wrapIdentifier($query, $table);
+        $wrappedPk = FastPaginationMacro::wrapIdentifier($query, $primaryKey);
+        $wrappedSort = FastPaginationMacro::wrapIdentifier($query, $sortColumn);
 
         // 构建列列表
         $isSelectAll = $columns === ['*'] || empty($columns) || (count($columns) === 1 && reset($columns) === '*');
         $columnList = $isSelectAll
             ? '*'
-            : implode(', ', array_map(fn ($col) => "`{$col}`", $columns));
+            : implode(', ', array_map(
+                fn ($col) => FastPaginationMacro::wrapIdentifier($query, FastPaginationMacro::assertValidIdentifier((string) $col, 'column')),
+                $columns
+            ));
 
         // 获取原始查询的 WHERE 条件
         $baseQuery = $query->clone();
@@ -712,10 +724,10 @@ class FastPaginationMacro
         $sql = "
             WITH `{$withTable}` AS (
                 SELECT {$columnList},
-                       ROW_NUMBER() OVER (ORDER BY `{$sortColumn}` {$direction}) AS __row_num
-                FROM `{$table}`
-                WHERE {$primaryKey} IN (
-                    SELECT {$primaryKey} FROM ({$whereSql}) AS base_query
+                       ROW_NUMBER() OVER (ORDER BY {$wrappedSort} {$direction}) AS __row_num
+                FROM {$wrappedTable}
+                WHERE {$wrappedPk} IN (
+                    SELECT {$wrappedPk} FROM ({$whereSql}) AS base_query
                 )
             )
             SELECT * FROM `{$withTable}`

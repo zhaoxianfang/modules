@@ -6,6 +6,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0+ JSON 高级操作宏
@@ -17,12 +18,17 @@ use Illuminate\Support\Facades\DB;
  * - JSON 聚合
  * - JSON 搜索和过滤
  *
+ * 安全性：列名经白名单校验，JSON Path 经格式校验，字面量与默认值的注入风险
+ * 通过参数绑定（?）消除，不再裸拼字符串字面量。
+ *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0+
  */
 class AdvancedJsonMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有 JSON 宏
      *
@@ -70,17 +76,23 @@ class AdvancedJsonMacro
             mixed $default = null
         ): Builder {
             /** @var Builder $this */
-            $defaultExpr = $default !== null
-                ? (is_string($default) ? "'{$default}'" : $default)
-                : 'NULL';
+            AdvancedJsonMacro::assertMysql($this, 'jsonPath');
+            $column = AdvancedJsonMacro::assertValidIdentifier($column, 'column');
+            $path = AdvancedJsonMacro::assertJsonPath($path);
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, $column);
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
 
-            $expr = "JSON_UNQUOTE(JSON_EXTRACT(`{$column}`, '{$path}'))";
+            // 默认值走参数绑定，避免字符串字面量注入
+            $expr = "JSON_UNQUOTE(JSON_EXTRACT({$wrappedColumn}, ?))";
+            $bindings = [$path];
 
             if ($default !== null) {
-                $expr = "COALESCE({$expr}, {$defaultExpr})";
+                $expr = "COALESCE({$expr}, ?)";
+                $bindings[] = $default;
             }
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
 
         /**
@@ -108,29 +120,37 @@ class AdvancedJsonMacro
             mixed $default = null
         ): Builder {
             /** @var Builder $this */
-            $alias = $alias ?: str_replace(['.', '[', ']'], '_', trim($path, '$.'));
+            AdvancedJsonMacro::assertMysql($this, 'jsonExtract');
+            $column = AdvancedJsonMacro::assertValidIdentifier($column, 'column');
+            $path = AdvancedJsonMacro::assertJsonPath($path);
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, $column);
 
-            // 基础提取表达式
-            $extractExpr = "JSON_UNQUOTE(JSON_EXTRACT(`{$column}`, '{$path}'))";
+            $alias = $alias ?: preg_replace('/[^a-zA-Z0-9_]/', '_', trim($path, '$.'));
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
+
+            // 基础提取表达式（路径走参数绑定）
+            $extractExpr = "JSON_UNQUOTE(JSON_EXTRACT({$wrappedColumn}, ?))";
+            $bindings = [$path];
 
             // 根据类型添加转换
             $expr = match (strtolower($type)) {
                 'int', 'integer' => "CAST({$extractExpr} AS SIGNED)",
                 'float', 'double', 'decimal' => "CAST({$extractExpr} AS DECIMAL(15,4))",
-                'bool', 'boolean' => "JSON_EXTRACT(`{$column}`, '{$path}') = true",
+                'bool', 'boolean' => "JSON_EXTRACT({$wrappedColumn}, ?) = true",
                 'datetime' => "STR_TO_DATE({$extractExpr}, '%Y-%m-%dT%H:%i:%s')",
                 'date' => "STR_TO_DATE({$extractExpr}, '%Y-%m-%d')",
                 'time' => "STR_TO_DATE({$extractExpr}, '%H:%i:%s')",
-                'json' => "JSON_EXTRACT(`{$column}`, '{$path}')",
+                'json' => "JSON_EXTRACT({$wrappedColumn}, ?)",
                 default => $extractExpr,
             };
 
             if ($default !== null) {
-                $defaultExpr = is_string($default) ? "'{$default}'" : $default;
-                $expr = "COALESCE({$expr}, {$defaultExpr})";
+                $expr = "COALESCE({$expr}, ?)";
+                $bindings[] = $default;
             }
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
 
         /**
@@ -154,10 +174,15 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonPathExists');
+            $column = AdvancedJsonMacro::assertValidIdentifier($column, 'column');
+            $path = AdvancedJsonMacro::assertJsonPath($path);
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, $column);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
             return $this->{$method}(
-                "JSON_CONTAINS_PATH(`{$column}`, 'one', '{$path}')"
+                "JSON_CONTAINS_PATH({$wrappedColumn}, 'one', ?)",
+                [$path]
             );
         });
 
@@ -175,10 +200,15 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonPathNotExists');
+            $column = AdvancedJsonMacro::assertValidIdentifier($column, 'column');
+            $path = AdvancedJsonMacro::assertJsonPath($path);
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, $column);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
             return $this->{$method}(
-                "NOT JSON_CONTAINS_PATH(`{$column}`, 'one', '{$path}')"
+                "NOT JSON_CONTAINS_PATH({$wrappedColumn}, 'one', ?)",
+                [$path]
             );
         });
     }
@@ -211,12 +241,16 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonArrayContains');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            [$target, $bindings] = AdvancedJsonMacro::buildJsonTarget($wrappedColumn, $path);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
-            $jsonValue = is_string($value) ? '"' . $value . '"' : json_encode($value);
-            $target = $path ? "JSON_EXTRACT(`{$column}`, '{$path}')" : "`{$column}`";
+            // 字面量走参数绑定（?），避免字符串拼接导致的注入
+            $bindings[] = AdvancedJsonMacro::toJsonLiteral($value);
 
             return $this->{$method}(
-                "JSON_CONTAINS({$target}, {$jsonValue})"
+                "JSON_CONTAINS({$target}, ?)",
+                $bindings
             );
         });
 
@@ -240,17 +274,19 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonArrayContainsAny');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            [$target, $bindings] = AdvancedJsonMacro::buildJsonTarget($wrappedColumn, $path);
             $method = $boolean === 'or' ? 'orWhere' : 'where';
-            $target = $path ? "JSON_EXTRACT(`{$column}`, '{$path}')" : "`{$column}`";
 
-            $conditions = array_map(function ($value) use ($target) {
-                $jsonValue = is_string($value) ? '"' . $value . '"' : json_encode($value);
-                return "JSON_CONTAINS({$target}, {$jsonValue})";
-            }, $values);
+            $jsonBindings = array_map(
+                fn ($value) => AdvancedJsonMacro::toJsonLiteral($value),
+                $values
+            );
+            $placeholders = implode(', ', array_fill(0, count($values), '?'));
+            $sql = "JSON_CONTAINS({$target}, JSON_ARRAY({$placeholders}))";
 
-            $sql = '(' . implode(' OR ', $conditions) . ')';
-
-            return $this->{$method}(DB::raw($sql));
+            return $this->{$method.'Raw'}($sql, [...$bindings, ...$jsonBindings]);
         });
 
         /**
@@ -273,17 +309,19 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonArrayContainsAll');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            [$target, $bindings] = AdvancedJsonMacro::buildJsonTarget($wrappedColumn, $path);
             $method = $boolean === 'or' ? 'orWhere' : 'where';
-            $target = $path ? "JSON_EXTRACT(`{$column}`, '{$path}')" : "`{$column}`";
 
-            $conditions = array_map(function ($value) use ($target) {
-                $jsonValue = is_string($value) ? '"' . $value . '"' : json_encode($value);
-                return "JSON_CONTAINS({$target}, {$jsonValue})";
-            }, $values);
+            $jsonBindings = array_map(
+                fn ($value) => AdvancedJsonMacro::toJsonLiteral($value),
+                $values
+            );
+            $placeholders = implode(', ', array_fill(0, count($values), '?'));
+            $sql = "JSON_CONTAINS({$target}, JSON_ARRAY({$placeholders}))";
 
-            $sql = '(' . implode(' AND ', $conditions) . ')';
-
-            return $this->{$method}(DB::raw($sql));
+            return $this->{$method.'Raw'}($sql, [...$bindings, ...$jsonBindings]);
         });
 
         /**
@@ -307,11 +345,13 @@ class AdvancedJsonMacro
             string $alias = 'array_length'
         ): Builder {
             /** @var Builder $this */
-            $target = $path
-                ? "JSON_EXTRACT(`{$column}`, '{$path}')"
-                : "`{$column}`";
+            AdvancedJsonMacro::assertMysql($this, 'jsonArrayLength');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            [$target, $bindings] = AdvancedJsonMacro::buildJsonTarget($wrappedColumn, $path);
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
 
-            return $this->selectRaw("JSON_LENGTH({$target}) AS `{$alias}`");
+            return $this->selectRaw("JSON_LENGTH({$target}) AS {$wrappedAlias}", $bindings);
         });
 
         /**
@@ -339,13 +379,15 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonArrayLength');
+            $operator = AdvancedJsonMacro::assertOperator($operator);
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            [$target, $bindings] = AdvancedJsonMacro::buildJsonTarget($wrappedColumn, $path);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
-            $target = $path
-                ? "JSON_EXTRACT(`{$column}`, '{$path}')"
-                : "`{$column}`";
 
             return $this->{$method}(
-                "JSON_LENGTH({$target}) {$operator} {$count}"
+                "JSON_LENGTH({$target}) {$operator} {$count}",
+                $bindings
             );
         });
 
@@ -367,13 +409,22 @@ class AdvancedJsonMacro
             ?string $path = null
         ) {
             /** @var Builder $this */
-            $jsonValue = is_string($value) ? '"' . $value . '"' : json_encode($value);
+            AdvancedJsonMacro::assertMysql($this, 'appendToJsonArray');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            $jsonValue = AdvancedJsonMacro::toJsonLiteral($value);
 
-            if ($path) {
-                $expr = "JSON_ARRAY_APPEND(`{$column}`, '{$path}', {$jsonValue})";
+            if ($path !== null) {
+                $path = AdvancedJsonMacro::assertJsonPath($path);
+                $expr = "JSON_ARRAY_APPEND({$wrappedColumn}, ?, ?)";
+                $bindings = [$path, $jsonValue];
             } else {
-                $expr = "JSON_ARRAY_APPEND(`{$column}`, '$', {$jsonValue})";
+                $expr = "JSON_ARRAY_APPEND({$wrappedColumn}, '$', ?)";
+                $bindings = [$jsonValue];
             }
+
+            // UPDATE 语句编译后的绑定顺序为 values(SET 段非 Expression 值) → join → where，
+            // 因此 SET 段 RAW 表达式的绑定须借道 join 通道，才能正确排在 where 绑定之前。
+            $this->addBinding($bindings, 'join');
 
             return $this->update([$column => DB::raw($expr)]);
         });
@@ -396,27 +447,84 @@ class AdvancedJsonMacro
             ?string $path = null
         ) {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'removeFromJsonArray');
             $table = $this->getModel()->getTable();
             $primaryKey = $this->getModel()->getKeyName();
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            $wrappedTable = AdvancedJsonMacro::wrapIdentifier($this, $table);
+            $wrappedTableInner = AdvancedJsonMacro::wrapIdentifier($this, $table);
+            $wrappedPk = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($primaryKey, 'primaryKey'));
+            $jsonValue = AdvancedJsonMacro::toJsonLiteral($value);
 
-            // MySQL 8.0+ 不支持直接删除数组元素，使用 JSON_REMOVE 通过索引删除
-            $jsonValue = is_string($value) ? '"' . $value . '"' : json_encode($value);
-            $target = $path ? "JSON_EXTRACT(`{$column}`, '{$path}')" : "`{$column}`";
+            $target = $path !== null
+                ? "JSON_EXTRACT({$wrappedColumn}, ?)"
+                : $wrappedColumn;
+            $pathBinding = $path !== null ? [AdvancedJsonMacro::assertJsonPath($path)] : [];
 
             // 使用关联子查询找到索引并删除，支持批量更新
             $expr = "(
-                SELECT JSON_REMOVE(`{$table}`.`{$column}`, CONCAT('$[', idx, ']'))
+                SELECT JSON_REMOVE({$wrappedTable}.{$wrappedColumn}, CONCAT('$[', idx, ']'))
                 FROM (
-                    SELECT JSON_SEARCH(`{$table}`.`{$column}`, 'one', {$jsonValue}) as idx_path,
-                           SUBSTRING_INDEX(JSON_SEARCH(`{$table}`.`{$column}`, 'one', {$jsonValue}), '[', -1) as idx
-                    FROM `{$table}` AS inner_t
-                    WHERE inner_t.`{$primaryKey}` = `{$table}`.`{$primaryKey}`
+                    SELECT JSON_SEARCH({$wrappedTable}.{$wrappedColumn}, 'one', ?) as idx_path,
+                           SUBSTRING_INDEX(JSON_SEARCH({$wrappedTable}.{$wrappedColumn}, 'one', ?), '[', -1) as idx
+                    FROM {$wrappedTableInner} AS inner_t
+                    WHERE inner_t.{$wrappedPk} = {$wrappedTable}.{$wrappedPk}
                 ) AS t
                 WHERE t.idx_path IS NOT NULL
             )";
 
+            // UPDATE 语句编译后的绑定顺序为 values(SET 段非 Expression 值) → join → where，
+            // 因此 SET 段 RAW 表达式的绑定须借道 join 通道，才能正确排在 where 绑定之前。
+            $this->addBinding([...$pathBinding, $jsonValue, $jsonValue], 'join');
+
             return $this->update([$column => DB::raw($expr)]);
         });
+    }
+
+    /**
+     * 构建 JSON 提取目标片段（列名 + 可选路径）。
+     *
+     * @param string $wrappedColumn 已 wrap 的安全列名
+     * @param string|null $path JSON Path（将用于参数绑定）
+     * @return array{0: string, 1: array} [目标 SQL 片段, 绑定数组]
+     */
+    /**
+     * 构建 JSON 查询目标片段
+     *
+     * 注意：本方法在 Builder::macro 闭包内通过 `AdvancedJsonMacro::buildJsonTarget(...)`
+     * 显式类名调用，必须声明为 public（Laravel Macroable 会将闭包重绑到 Builder 作用域，
+     * 匿名闭包不在本类内部，无法访问 protected/private 成员）。
+     *
+     * @param string $wrappedColumn 已 wrapIdentifier 的列名
+     * @param string|null $path JSON Path（将用于参数绑定）
+     * @return array{0: string, 1: array} [目标 SQL 片段, 绑定数组]
+     */
+    public static function buildJsonTarget(string $wrappedColumn, ?string $path): array
+    {
+        if ($path !== null) {
+            $path = self::assertJsonPath($path);
+            return ["JSON_EXTRACT({$wrappedColumn}, ?)", [$path]];
+        }
+
+        return [$wrappedColumn, []];
+    }
+
+    /**
+     * 将 PHP 值编码为 JSON 字面量，用于 JSON 函数的参数绑定
+     *
+     * JSON_CONTAINS / JSON_ARRAY / JSON_SEARCH 等 MySQL JSON 函数的目标/搜索值
+     * 必须是一个 JSON 文本（字符串需带引号），因此统一用 json_encode 生成合法字面量，
+     * 并走参数绑定（?）以避免字符串拼接导致的注入。
+     *
+     * 该方法缺失会导致所有 JSON 宏调用抛「Call to undefined method」致命错误。
+     *
+     * @param mixed $value
+     * @return string JSON 编码后的字面量
+     * @throws \JsonException
+     */
+    public static function toJsonLiteral(mixed $value): string
+    {
+        return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 
     /**
@@ -447,10 +555,17 @@ class AdvancedJsonMacro
             bool $insert = false
         ) {
             /** @var Builder $this */
-            $jsonValue = json_encode($value);
+            AdvancedJsonMacro::assertMysql($this, 'setJsonValue');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            $path = AdvancedJsonMacro::assertJsonPath($path);
+            $jsonValue = AdvancedJsonMacro::toJsonLiteral($value);
             $function = $insert ? 'JSON_INSERT' : 'JSON_SET';
 
-            $expr = "{$function}(`{$column}`, '{$path}', {$jsonValue})";
+            $expr = "{$function}({$wrappedColumn}, ?, ?)";
+
+            // UPDATE 语句编译后的绑定顺序为 values(SET 段非 Expression 值) → join → where，
+            // 因此 SET 段 RAW 表达式的绑定须借道 join 通道，才能正确排在 where 绑定之前。
+            $this->addBinding([$path, $jsonValue], 'join');
 
             return $this->update([$column => DB::raw($expr)]);
         });
@@ -474,12 +589,24 @@ class AdvancedJsonMacro
             string|array $paths
         ) {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'removeJsonKey');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
             $paths = is_array($paths) ? $paths : [$paths];
-
-            $expr = "`{$column}`";
-            foreach ($paths as $path) {
-                $expr = "JSON_REMOVE({$expr}, '{$path}')";
+            $pathBindings = [];
+            foreach ($paths as &$path) {
+                $path = AdvancedJsonMacro::assertJsonPath($path);
+                $pathBindings[] = $path;
             }
+            unset($path);
+
+            $expr = $wrappedColumn;
+            foreach ($paths as $path) {
+                $expr = "JSON_REMOVE({$expr}, ?)";
+            }
+
+            // UPDATE 语句编译后的绑定顺序为 values(SET 段非 Expression 值) → join → where，
+            // 因此 SET 段 RAW 表达式的绑定须借道 join 通道，才能正确排在 where 绑定之前。
+            $this->addBinding($pathBindings, 'join');
 
             return $this->update([$column => DB::raw($expr)]);
         });
@@ -502,15 +629,20 @@ class AdvancedJsonMacro
             ?string $path = null
         ) {
             /** @var Builder $this */
-            $jsonData = json_encode($data);
+            AdvancedJsonMacro::assertMysql($this, 'mergeJson');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            $jsonData = AdvancedJsonMacro::toJsonLiteral($data);
 
-            if ($path) {
-                $expr = "JSON_MERGE_PATCH(JSON_EXTRACT(`{$column}`, '{$path}'), {$jsonData})";
-                // 需要更新嵌套路径的值
+            if ($path !== null) {
+                // 更新嵌套路径的值（路径已校验）
                 return $this->setJsonValue($column, $path, $data);
             }
 
-            $expr = "JSON_MERGE_PATCH(`{$column}`, {$jsonData})";
+            $expr = "JSON_MERGE_PATCH({$wrappedColumn}, ?)";
+
+            // UPDATE 语句编译后的绑定顺序为 values(SET 段非 Expression 值) → join → where，
+            // 因此 SET 段 RAW 表达式的绑定须借道 join 通道，才能正确排在 where 绑定之前。
+            $this->addBinding([$jsonData], 'join');
 
             return $this->update([$column => DB::raw($expr)]);
         });
@@ -533,11 +665,13 @@ class AdvancedJsonMacro
             string $alias = 'json_keys'
         ): Builder {
             /** @var Builder $this */
-            $target = $path
-                ? "JSON_EXTRACT(`{$column}`, '{$path}')"
-                : "`{$column}`";
+            AdvancedJsonMacro::assertMysql($this, 'jsonKeys');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
+            [$target, $bindings] = AdvancedJsonMacro::buildJsonTarget($wrappedColumn, $path);
 
-            return $this->selectRaw("JSON_KEYS({$target}) AS `{$alias}`");
+            return $this->selectRaw("JSON_KEYS({$target}) AS {$wrappedAlias}", $bindings);
         });
     }
 
@@ -568,10 +702,19 @@ class AdvancedJsonMacro
             string $alias = 'search_result'
         ): Builder {
             /** @var Builder $this */
-            $searchValue = json_encode($search);
+            AdvancedJsonMacro::assertMysql($this, 'jsonSearch');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
+            if (! in_array($mode, ['one', 'all'], true)) {
+                throw new \InvalidArgumentException("JSON_SEARCH mode 仅支持 'one' 或 'all'，收到 '{$mode}'");
+            }
+            $path = AdvancedJsonMacro::assertJsonPath($path);
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
+            $searchValue = AdvancedJsonMacro::toJsonLiteral($search);
 
             return $this->selectRaw(
-                "JSON_SEARCH(`{$column}`, '{$mode}', {$searchValue}, NULL, '{$path}') AS `{$alias}`"
+                "JSON_SEARCH({$wrappedColumn}, ?, ?, NULL, ?) AS {$wrappedAlias}",
+                [$mode, $searchValue, $path]
             );
         });
 
@@ -595,12 +738,15 @@ class AdvancedJsonMacro
             string $boolean = 'and'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'whereJsonLike');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($column, 'column'));
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
-            $target = $path
-                ? "JSON_UNQUOTE(JSON_EXTRACT(`{$column}`, '{$path}'))"
-                : "JSON_UNQUOTE(`{$column}`)";
+            $target = $path !== null
+                ? "JSON_UNQUOTE(JSON_EXTRACT({$wrappedColumn}, ?))"
+                : "JSON_UNQUOTE({$wrappedColumn})";
+            $bindings = $path !== null ? [AdvancedJsonMacro::assertJsonPath($path)] : [];
 
-            return $this->{$method}("{$target} LIKE '{$pattern}'");
+            return $this->{$method}("{$target} LIKE ?", array_merge($bindings, [$pattern]));
         });
     }
 
@@ -632,14 +778,21 @@ class AdvancedJsonMacro
             string $direction = 'asc'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'jsonArrayAgg');
+            $column = AdvancedJsonMacro::assertValidIdentifier($column, 'column');
+            $wrappedColumn = AdvancedJsonMacro::wrapIdentifier($this, $column);
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
+
             if ($orderBy) {
-                $direction = strtoupper($direction);
-                $expr = "JSON_ARRAYAGG(`{$column}` ORDER BY `{$orderBy}` {$direction})";
+                $direction = AdvancedJsonMacro::assertDirection($direction);
+                $orderColumn = AdvancedJsonMacro::wrapIdentifier($this, AdvancedJsonMacro::assertValidIdentifier($orderBy, 'order'));
+                $expr = "JSON_ARRAYAGG({$wrappedColumn} ORDER BY {$orderColumn} {$direction})";
             } else {
-                $expr = "JSON_ARRAYAGG(`{$column}`)";
+                $expr = "JSON_ARRAYAGG({$wrappedColumn})";
             }
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}");
         });
 
         /**
@@ -660,9 +813,17 @@ class AdvancedJsonMacro
             string $alias = 'json_object'
         ): Builder {
             /** @var Builder $this */
-            $expr = "JSON_OBJECTAGG(`{$keyColumn}`, `{$valueColumn}`)";
+            AdvancedJsonMacro::assertMysql($this, 'jsonObjectAgg');
+            $keyColumn = AdvancedJsonMacro::assertValidIdentifier($keyColumn, 'key');
+            $valueColumn = AdvancedJsonMacro::assertValidIdentifier($valueColumn, 'value');
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedKey = AdvancedJsonMacro::wrapIdentifier($this, $keyColumn);
+            $wrappedValue = AdvancedJsonMacro::wrapIdentifier($this, $valueColumn);
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            $expr = "JSON_OBJECTAGG({$wrappedKey}, {$wrappedValue})";
+
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}");
         });
 
         /**
@@ -684,16 +845,20 @@ class AdvancedJsonMacro
             string $alias = 'json_rows'
         ): Builder {
             /** @var Builder $this */
+            AdvancedJsonMacro::assertMysql($this, 'jsonRowAgg');
             $jsonObjectParts = [];
             foreach ($columns as $col) {
+                $col = AdvancedJsonMacro::assertValidIdentifier($col, 'column');
                 $jsonObjectParts[] = "'{$col}'";
-                $jsonObjectParts[] = "`{$col}`";
+                $jsonObjectParts[] = AdvancedJsonMacro::wrapIdentifier($this, $col);
             }
             $jsonObjectExpr = 'JSON_OBJECT(' . implode(', ', $jsonObjectParts) . ')';
+            $alias = AdvancedJsonMacro::assertValidIdentifier($alias ?? 'json_rows', 'alias');
+            $wrappedAlias = AdvancedJsonMacro::wrapIdentifier($this, $alias);
 
             $expr = "JSON_ARRAYAGG({$jsonObjectExpr})";
 
-            return $this->selectRaw("{$expr} AS `{$alias}`");
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}");
         });
     }
 }

@@ -101,7 +101,7 @@ class ModuleMakeCommand extends Command
             // 避免“新模块路由 404 / 组件未被自动发现”等问题。
             // 与 module:delete 末尾的缓存失效处理保持一致。
             try {
-                Module::clearCache();
+                Module::clearRepositoryCache();
             } catch (\Throwable) {
                 // 忽略缓存清理失败
             }

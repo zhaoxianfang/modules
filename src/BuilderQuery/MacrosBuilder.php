@@ -6,6 +6,7 @@ namespace zxf\Modules\BuilderQuery;
 
 use Illuminate\Database\Eloquent;
 use Illuminate\Support\ServiceProvider;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 use zxf\Modules\BuilderQuery\WindowMacros\AdvancedJsonMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\FastPaginationMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\GroupSortMacro;
@@ -15,6 +16,7 @@ use zxf\Modules\BuilderQuery\WindowMacros\QualifyMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\RandomMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\RegexMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\SetOperationsMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\TableSampleMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\ValuesMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WindowFunctionsMacro;
@@ -30,7 +32,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
 /**
  * Macros 宏定义构建器 - Laravel 11+ / 12+ / 13+ & MySQL 8.0+ 优化版
  *
- * 提供14大类查询宏扩展：
+ * 提供15大类查询宏扩展：
  * 1. whereHas优化 - 解决关联查询全表扫描问题
  * 2. 随机查询 - 高效随机数据获取
  * 3. 窗口函数 - MySQL 8.0+ 窗口函数支持
@@ -45,9 +47,10 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * 12. 行列转换 - PIVOT/UNPIVOT透视表
  * 13. 数据抽样 - 随机/分层/系统抽样
  * 14. VALUES构造 - 批量插入和UPSERT
+ * 15. 字符串函数 - LOCATE分词/CHAR_LENGTH排序/全文检索等
  *
  * @package zxf\Modules\BuilderQuery
- * @version 2.2.0
+ * @version 2.3.0
  * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
  *
  * ============================================
@@ -265,9 +268,57 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * ============================================
  * @method $this whereVectorSimilarTo(string $column, mixed $value, ?float $minSimilarity = null) 按向量相似度筛选记录（需 Laravel 13+ 与向量数据库支持）
  * @method $this orderByVectorDistance(string $column, mixed $value) 按向量距离排序（最近邻检索，升序）
+ *
+ * ============================================
+ * 17. 字符串函数系列 - MySQL 8.0+ 高效字符串处理
+ * ============================================
+ * 子串位置查找（分词查询匹配）
+ * @method $this whereLocate(string $column, string $search, string $boolean = 'and') 使用LOCATE查找子串首次出现位置并筛选命中记录，支持空格分隔的多词分词匹配
+ * @method $this orWhereLocate(string $column, string $search) OR条件的whereLocate
+ * @method $this whereLocateAll(string $column, array $keywords) 多关键词全命中查询（AND连接），字段须同时包含所有关键词
+ * @method $this whereLocateAny(string $column, array $keywords) 多关键词任一命中查询（OR连接），字段包含任意关键词即返回
+ *
+ * 字符长度排序与筛选（多字节安全）
+ * @method $this orderByCharLength(string $column, string $direction = 'asc') 按字段字符数排序（CHAR_LENGTH），中英文均按1字符计
+ * @method $this orderByDescCharLength(string $column) 按字段字符数降序排序
+ * @method $this whereCharLength(string $column, string $operator, int $length, string $boolean = 'and') 按字段字符长度筛选（如密码长度校验）
+ * @method $this orWhereCharLength(string $column, string $operator, int $length) OR条件的字符长度筛选
+ * @method $this orderByNatural(string $column, string $direction = 'asc') 自然排序，字符串内嵌数字按数值大小排序（如V1,V2,V10而非V1,V10,V2）
+ *
+ * 自定义排序与列表查找
+ * @method $this fieldOrderBy(string $column, array $order, string $direction = 'asc') 按FIELD函数自定义值顺序排序（如状态优先级：待支付->已发货）
+ * @method $this whereFindInSet(string $column, mixed $value, string $boolean = 'and') 逗号分隔列表字段成员查找（FIND_IN_SET），比LIKE更准确
+ * @method $this orWhereFindInSet(string $column, mixed $value) OR条件的列表成员查找
+ * @method $this whereFindInSetAny(string $column, array $values) 列表字段包含任意指定值（OR）
+ * @method $this whereFindInSetAll(string $column, array $values) 列表字段包含全部指定值（AND）
+ *
+ * 多列拼接搜索与提取
+ * @method $this whereConcatLike(array $columns, string $keyword, string $boolean = 'and') 多列CONCAT_WS拼接后LIKE模糊搜索，实现跨字段一站式检索
+ * @method $this orWhereConcatLike(array $columns, string $keyword) OR条件的多列拼接搜索
+ * @method $this substringIndex(string $column, string $delimiter, int $count, string $alias = 'part') 按分隔符提取子串（SUBSTRING_INDEX），count正数从左、负数从右
+ *
+ * 字符串聚合
+ * @method $this groupConcat(string $column, string $alias = 'items', string $separator = ',', bool $distinct = false) 行转字符串聚合（GROUP_CONCAT），配合groupBy将多行值拼接
+ *
+ * 全文检索（MATCH...AGAINST，列需FULLTEXT索引）
+ * @method $this whereFullText(array|string $columns, string $keyword, string $mode = 'natural', string $boolean = 'and') 全文检索筛选，mode: natural自然语言|boolean布尔|expansion查询扩展
+ * @method $this whereFullTextBoolean(array|string $columns, string $query, string $boolean = 'and') 布尔模式全文检索，支持+word必须包含/-word排除/"短语"/word*前缀等分词语法
+ * @method $this orderByFullTextRelevance(array|string $columns, string $keyword, string $mode = 'natural', string $direction = 'desc') 按全文检索相关度分数排序
+ *
+ * 字符串变换与发音匹配
+ * @method $this whereSoundex(string $column, string $value, string $boolean = 'and') 发音相似匹配（SOUNDEX），适用于英文姓名模糊匹配
+ * @method $this orWhereSoundex(string $column, string $value) OR条件的发音相似匹配
+ * @method $this replaceString(string $column, string $search, string $replace, string $alias = 'replaced') SELECT中替换字符串（REPLACE）
+ * @method $this trimString(string $column, string $alias = 'trimmed') SELECT中去除首尾空格（TRIM）
+ * @method $this lowerString(string $column, string $alias = 'lower_val') SELECT中转小写（LOWER）
+ * @method $this upperString(string $column, string $alias = 'upper_val') SELECT中转大写（UPPER）
+ * @method $this reverseString(string $column, string $alias = 'reversed') SELECT中反转字符串（REVERSE）
+ * @method $this padString(string $column, int $length, string $padString, string $position = 'left', string $alias = 'padded') SELECT中填充字符串到指定长度（LPAD/RPAD），用于编号格式化
  */
 class MacrosBuilder extends Eloquent\Builder
 {
+    use SqlSecurity;
+
     /**
      * 注册所有宏指令
      *
@@ -320,7 +371,10 @@ class MacrosBuilder extends Eloquent\Builder
         // 14. VALUES 构造系列 - 批量插入和 UPSERT
         ValuesMacro::register();
 
-        // 15. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索支持
+        // 15. 字符串函数系列 - LOCATE 分词 / CHAR_LENGTH 排序 / 全文检索等
+        StringFunctionsMacro::register();
+
+        // 16. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索支持
         self::registerVectorSearch($provider);
     }
 
@@ -341,6 +395,9 @@ class MacrosBuilder extends Eloquent\Builder
         // 当调用方未指定 $minSimilarity 时，不向下传递该参数以使用框架默认阈值 0.6，
         // 避免向框架传入 null 导致 1 - null 的语义偏差。
         Eloquent\Builder::macro('whereVectorSimilarTo', function (string $column, $value, ?float $minSimilarity = null) {
+            // 校验列名标识符（与其他宏一致，防止列名注入）
+            $column = MacrosBuilder::assertValidIdentifier($column, 'column');
+
             $query = $this->getQuery();
 
             if ($minSimilarity === null) {
@@ -355,11 +412,14 @@ class MacrosBuilder extends Eloquent\Builder
         //   orderByVectorDistance(string $column, $vector) —— 仅按升序（最近邻）排序。
         // 注意：Laravel 13 原生实现不接收方向参数，故此处仅透传列名与向量值。
         Eloquent\Builder::macro('orderByVectorDistance', function (string $column, $value) {
+            // 校验列名标识符
+            $column = MacrosBuilder::assertValidIdentifier($column, 'column');
+
             return $this->getQuery()->orderByVectorDistance($column, $value);
         });
     }
 
-    public static function registerWhereHasInQuery(ServiceProvider $provider)
+    public static function registerWhereHasInQuery(ServiceProvider $provider): void
     {
         // in notIn
         Eloquent\Builder::macro('whereHasIn', function ($relationName, $callable = null) {

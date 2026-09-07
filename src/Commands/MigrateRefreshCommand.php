@@ -133,9 +133,9 @@ class MigrateRefreshCommand extends Command
             $migrateParams['--seeder'] = $seeder;
         }
 
-        $this->call('module:migrate', $migrateParams);
+        $exitCode = $this->call('module:migrate', $migrateParams);
 
-        return Command::SUCCESS;
+        return $exitCode === Command::SUCCESS ? Command::SUCCESS : Command::FAILURE;
     }
 
     /**
@@ -157,10 +157,7 @@ class MigrateRefreshCommand extends Command
         }
 
         // 全模块模式 + --seeder：警告用户不会传递
-        if ($seeder) {
-            $this->components->warn('⚠ 全模块模式不支持 --seeder 选项，已忽略。');
-            $this->components->warn('  提示: 使用 module:seed <ModuleName> --class=' . $seeder . ' 单独运行指定 Seeder。');
-        }
+        $this->warnSeederIgnoredForAllModules($seeder);
 
         $hasFailures = false;
 

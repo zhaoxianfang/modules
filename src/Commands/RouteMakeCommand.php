@@ -7,7 +7,6 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -15,7 +14,7 @@ use zxf\Modules\Support\StubGenerator;
  *
  * 在指定模块中创建路由文件
  */
-class RouteMakeCommand extends Command
+class RouteMakeCommand extends AbstractMakeCommand
 {
     /**
      * 命令签名
@@ -42,22 +41,19 @@ class RouteMakeCommand extends Command
      */
     public function handle(): int
     {
-        $moduleName = Str::studly($this->argument('module'));
+        $module = $this->resolveModule();
+        if (! $module) {
+            return Command::FAILURE;
+        }
+
+        $moduleName = $module->getName();
         $routeName = strtolower($this->argument('name'));
         $type = $this->option('type');
         $force = $this->option('force');
 
-        $module = Module::find($moduleName);
-
-        if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
-
-            return Command::FAILURE;
-        }
-
         // 类型不再限制，允许任意自定义类型
 
-        $routePath = $module->getRoutesPath() . DIRECTORY_SEPARATOR . $routeName . '.php';
+        $routePath = $this->targetPath('Routes/' . $routeName . '.php');
 
         if (File::exists($routePath) && ! $force) {
             $this->error("模块 [{$moduleName}] 中已存在路由文件 [{$routeName}]");
@@ -99,7 +95,7 @@ class RouteMakeCommand extends Command
         }
 
         // 确保路由目录存在
-        $routeDir = $module->getRoutesPath();
+        $routeDir = dirname($routePath);
         if (! is_dir($routeDir)) {
             File::makeDirectory($routeDir, 0755, true);
         }

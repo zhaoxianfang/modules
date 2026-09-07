@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
-use zxf\Modules\Facades\Module;
 
 /**
  * 创建模型命令
@@ -21,7 +20,7 @@ use zxf\Modules\Facades\Module;
  * - 自动生成 casts() 方法（date/datetime 使用 Carbon 转换）
  * - 自动生成 $attributes 属性（数据库默认值映射）
  * - 自动检测软删除（deleted_at）、时间戳字段
- * - 可选创建对应的迁移文件（--migration）和数据工厂（--factory）
+ * - 可选创建对应的迁移文件（--migration）
  * - 支持覆盖已存在文件（--force）
  *
  * 使用示例：
@@ -31,7 +30,7 @@ use zxf\Modules\Facades\Module;
  *
  * @package zxf\Modules\Commands
  */
-class ModelMakeCommand extends Command
+class ModelMakeCommand extends AbstractMakeCommand
 {
     /**
      * 数据库字段类型到 PHP / Eloquent 类型映射
@@ -165,16 +164,15 @@ class ModelMakeCommand extends Command
             return Command::FAILURE;
         }
 
-        // 验证模块是否存在
-        $module = Module::find($moduleName);
+        // 验证模块是否存在（基类统一解析）
+        $module = $this->resolveModule();
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
             $this->line("提示：请先创建模块，使用 php artisan module:make {$moduleName}");
             return Command::FAILURE;
         }
 
         $modelDir = config('modules.paths.generator.model.path', 'Models');
-        $modelPath = $module->getPath($modelDir . '/' . $modelName . '.php');
+        $modelPath = $this->targetPath($modelDir . '/' . $modelName . '.php');
 
         // 存在性检查
         if (File::exists($modelPath)) {
@@ -187,7 +185,7 @@ class ModelMakeCommand extends Command
             $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的模型类 [{$modelName}]");
         }
 
-        $namespace = config('modules.namespace', 'Modules');
+        $namespace = $this->module->getNamespace();
 
         // 从数据库表解析字段信息（跨数据库兼容）
         $columns = $this->resolveTableColumns($tableName);
@@ -247,13 +245,37 @@ class ModelMakeCommand extends Command
         if ($createFactory) {
             $this->line('');
             $this->line('正在创建数据工厂...');
-            $this->call('module:make-seeder', [
-                'module' => $moduleName,
-                'name' => $modelName . 'Seeder',
-            ]);
+            $this->createFactory($moduleName, $modelName, $force);
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * 创建模型对应的数据工厂类
+     *
+     * 工厂目录取自 modules.paths.generator.factory.path（默认 Database/Factories）。
+     *
+     * @param string $moduleName 模块名称
+     * @param string $modelName  模型名称
+     * @param bool   $force      是否覆盖已存在文件
+     * @return void
+     */
+    protected function createFactory(string $moduleName, string $modelName, bool $force): void
+    {
+        $factoryDir = config('modules.paths.generator.factory.path', 'Database/Factories');
+        $relativePath = $factoryDir . '/' . $modelName . 'Factory.php';
+
+        $generator = $this->makeStubGenerator();
+        $generator
+            ->addReplacement('{{CLASS}}', $modelName . 'Factory')
+            ->addReplacement('{{MODEL_CLASS}}', $modelName);
+
+        $result = $this->writeStub($generator, 'factory.stub', $relativePath, '数据工厂', $force);
+
+        if ($result === Command::SUCCESS) {
+            $this->line("工厂位置: " . $this->targetPath($relativePath));
+        }
     }
 
     // ────────────────────────────────────

@@ -248,6 +248,76 @@ class Module implements ModuleInterface
     //  路径和命名空间
     // ========================================================================
 
+    /**
+     * 按模块名查找模块（便捷静态工厂，委托给仓库）
+     *
+     * 兼容命令行中常见的 `Module::find($name)` 调用约定，避免各处重复
+     * 写 `ModuleContext::getRepository()->find(...)`。
+     *
+     * @param string $name 模块名（任意大小写/命名风格均可，内部会归一化）
+     */
+    public static function find(string $name): ?ModuleInterface
+    {
+        return ModuleContext::getRepository()->find($name);
+    }
+
+    /**
+     * 获取所有已注册模块（便捷静态委托）
+     *
+     * @return array<string, ModuleInterface>
+     */
+    public static function all(): array
+    {
+        return ModuleContext::getRepository()->all();
+    }
+
+    /**
+     * 获取所有已启用模块（便捷静态委托）
+     *
+     * @return array<string, ModuleInterface>
+     */
+    public static function allEnabled(): array
+    {
+        return ModuleContext::getRepository()->allEnabled();
+    }
+
+    /**
+     * 获取所有已禁用模块（便捷静态委托）
+     *
+     * @return array<string, ModuleInterface>
+     */
+    public static function allDisabled(): array
+    {
+        return ModuleContext::getRepository()->allDisabled();
+    }
+
+    /**
+     * 已注册模块数量（便捷静态委托）
+     */
+    public static function count(): int
+    {
+        return ModuleContext::getRepository()->count();
+    }
+
+    /**
+     * 重新扫描模块目录（便捷静态委托）
+     */
+    public static function rescan(): void
+    {
+        ModuleContext::getRepository()->rescan();
+    }
+
+    /**
+     * 清除全局模块发现缓存（便捷静态委托）
+     *
+     * 与实例方法 clearCache()（清除单个模块的内部缓存）区分：
+     * 本方法清除仓库层面的模块注册清单缓存，供命令行在重建/删除模块后调用。
+     */
+    public static function clearRepositoryCache(): void
+    {
+        ModuleContext::getRepository()->clearRepositoryCache();
+    }
+
     public function getPath(?string $path = null): string
     {
         if ($path === null) {
@@ -368,7 +438,20 @@ class Module implements ModuleInterface
 
     public function getMigrationsPath(): string
     {
-        return $this->getPath('Database/Migrations');
+        // 兼容两种目录约定：约定俗成的 Database/Migrations 与部分项目使用的
+        // database/migrations（小写）。优先返回真实存在的目录，使迁移命令与
+        // 自动发现走同一来源，避免「discovery 能识别但 module:migrate 看不到」。
+        $primary = $this->getPath('Database/Migrations');
+        if (is_dir($primary)) {
+            return $primary;
+        }
+
+        $fallback = $this->getPath('database/migrations');
+        if (is_dir($fallback)) {
+            return $fallback;
+        }
+
+        return $primary;
     }
 
     public function getControllersPath(): string
@@ -381,21 +464,33 @@ class Module implements ModuleInterface
         return $this->getPath('Database/Seeders');
     }
 
+    /**
+     * 获取模型工厂目录路径
+     */
     public function getFactoriesPath(): string
     {
         return $this->getPath('Database/Factories');
     }
 
+    /**
+     * 获取测试目录路径
+     */
     public function getTestsPath(): string
     {
         return $this->getPath('Tests');
     }
 
+    /**
+     * 获取语言文件目录路径
+     */
     public function getLangPath(): string
     {
         return $this->getPath('Resources/lang');
     }
 
+    /**
+     * 获取资源文件目录路径
+     */
     public function getAssetsPath(): string
     {
         return $this->getPath('Resources/assets');
@@ -405,21 +500,35 @@ class Module implements ModuleInterface
     //  文件/目录检查
     // ========================================================================
 
+    /**
+     * 检查指定路由文件是否存在
+     */
     public function hasRoute(string $route): bool
     {
         return file_exists($this->getRoutesPath() . DIRECTORY_SEPARATOR . $route . '.php');
     }
 
+    /**
+     * 检查指定相对路径的目录是否存在
+     */
     public function hasDirectory(string $relativePath): bool
     {
         return is_dir($this->getPath($relativePath));
     }
 
+    /**
+     * 检查指定相对路径的文件是否存在
+     */
     public function hasFile(string $relativePath): bool
     {
         return file_exists($this->getPath($relativePath));
     }
 
+    /**
+     * 获取所有路由文件名（不含扩展名）
+     *
+     * @return array<string>
+     */
     public function getRouteFiles(): array
     {
         $routesPath = $this->getRoutesPath();
@@ -487,14 +596,27 @@ class Module implements ModuleInterface
             return $className;
         }
 
-        // 回退到 Providers/ 目录下的任意 ServiceProvider
+        // 回退到 Providers/ 目录下的任意 ServiceProvider。
+        // 优先选取与模块名同构的 {Name}ServiceProvider，避免 glob 返回顺序
+        // 不确定时误选其它 Provider 类。
         $providersPath = $this->getProvidersPath();
 
         if (is_dir($providersPath)) {
-            $files = glob($providersPath . '/*ServiceProvider.php');
-            if (! empty($files)) {
-                $basename = basename($files[0], '.php');
-                $className = $this->namespace . '\\' . $this->name . '\\Providers\\' . $basename;
+            $files = glob($providersPath . '/*ServiceProvider.php') ?: [];
+            $preferred = $this->name . 'ServiceProvider';
+            $matched = null;
+
+            foreach ($files as $file) {
+                $basename = basename($file, '.php');
+                if ($basename === $preferred) {
+                    $matched = $basename;
+                    break;
+                }
+                $matched ??= $basename;
+            }
+
+            if ($matched !== null) {
+                $className = $this->namespace . '\\' . $this->name . '\\Providers\\' . $matched;
                 if (class_exists($className)) {
                     return $className;
                 }

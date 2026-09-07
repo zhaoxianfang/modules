@@ -826,7 +826,7 @@ after_class_calling($this, 'before', [$request]);
 | `module:validate` | 验证模块完整性 | `php artisan module:validate Blog` |
 | `module:cache` | 重新扫描并写入模块缓存 | `php artisan module:cache` |
 | `module:clear` | 清除模块缓存（下次重新扫描磁盘） | `php artisan module:clear` |
-| `module:publish` | 发布模块资源 | `php artisan module:publish Blog` |
+| `module:publish` | 发布用户指南或配置文件（`--guide` / `--config`，不接受模块名参数） | `php artisan module:publish --config` |
 
 ```bash
 # 创建模块时强制覆盖
@@ -1075,7 +1075,7 @@ class PostController extends BaseController
 
 ### 6.8 Eloquent 查询宏
 
-本扩展包提供了 **15 大类** Eloquent Builder 增强宏，注册到 `Illuminate\Database\Eloquent\Builder` 上：
+本扩展包提供了 **17 个系列** Eloquent Builder 增强宏，注册到 `Illuminate\Database\Eloquent\Builder` 上：
 
 #### 1. whereHas 优化系列
 
@@ -1209,12 +1209,19 @@ Category::recursiveQuery(
 Post::random(10);                      // 随机10条
 Post::groupRandom('category_id', 3);   // 每组随机3条
 
+// 分组排序（每组前 N 名）
+Post::groupSort('category_id', 3, 'views', 'desc');  // 每分类阅读量前3
+
 // 集合操作 (MySQL 8.0.31+)
 ActiveUser::query()->intersect(VipUser::query())->get();
 ActiveUser::query()->except(BlacklistUser::query())->get();
 
 // 行列转换 (PIVOT)
 Sales::pivot('month', ['Jan', 'Feb', 'Mar'], 'amount', 'SUM', 'product_id')->get();
+
+// LATERAL JOIN (MySQL 8.0.14+)
+User::query()->lateralJoin(fn($q) => $q->select('*')->from('orders')
+    ->whereColumn('user_id', 'users.id')->orderByDesc('created_at')->limit(3), 'recent_orders');
 
 // 数据抽样
 User::sample(10.0);                    // 10% 随机抽样
@@ -1228,6 +1235,22 @@ Post::regexpExtract('content', '/(\w+@\w+\.\w+)/', 1, 1, 'i', 'email')->get();
 Post::rowNumber('category_id', 'views', 'desc', 'rn')
     ->qualify('rn', '<=', 3)  // 每组前3名
     ->get();
+
+// VALUES 构造（批量插入 / UPSERT）
+Log::valuesInsert([['level' => 'info', 'message' => 'User login']]);
+User::batchUpsert([['id' => 1, 'name' => '张三']], 'id', ['name']);
+
+// 向量相似度搜索（Laravel 13+）
+Article::whereVectorSimilarTo('embedding', $vector, 0.8)->get();
+Article::orderByVectorDistance('embedding', $vector)->get();
+
+// 字符串函数（MySQL 8.0+）
+Post::whereLocate('title', 'Laravel');                    // 分词查询匹配
+Post::whereFindInSet('tags', 'php');                      // 逗号分隔列表查找
+Post::whereFullText(['title', 'body'], '查询构造器');       // 全文检索
+Post::orderByCharLength('title');                         // 按字符数排序
+Post::orderByNatural('version');                          // 自然排序（v1,v2,...,v10）
+User::whereConcatLike(['name', 'phone'], '张');            // 多列拼接模糊搜索
 ```
 
 ---

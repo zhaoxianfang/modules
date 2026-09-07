@@ -432,10 +432,10 @@ php artisan module:migrate Blog
 php artisan module:migrate-status
 
 # 回滚迁移
-php artisan module:migrate:reset Blog
+php artisan module:migrate-reset Blog
 
 # 刷新迁移
-php artisan module:migrate:refresh Blog
+php artisan module:migrate-refresh Blog
 ```
 
 ### 5. 命令文件引用

@@ -6,6 +6,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0+ VALUES 行构造函数和批量操作宏
@@ -16,12 +17,17 @@ use Illuminate\Support\Facades\DB;
  * - valuesInsert: 优化的批量插入
  * - batchUpsert: 批量插入或更新
  *
+ * 安全性：行数据的键名、表别名、关联键均经白名单校验并由 grammar wrap，
+ * 数值/字面值全部走参数绑定。
+ *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0+
  */
 class ValuesMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有 VALUES 宏
      *
@@ -33,6 +39,33 @@ class ValuesMacro
         self::registerValuesJoin();
         self::registerValuesInsert();
         self::registerBatchUpsert();
+    }
+
+    /**
+     * 校验行数据键名并返回安全标识符列表
+     *
+     * @param array $rows
+     * @return array 已校验的列名
+     */
+    /**
+     * 校验批量行数据的列名合法性
+     *
+     * 注意：本方法在 Builder::macro 闭包内通过 `ValuesMacro::assertRowColumns(...)` 显式
+     * 类名调用，必须声明为 public（闭包被重绑到 Builder 作用域，不在本类内部，无法访问
+     * protected/private 成员）。
+     *
+     * @param array<int, array<string, mixed>> $rows
+     * @return array 已校验的列名
+     */
+    public static function assertRowColumns(array $rows): array
+    {
+        $columns = array_keys($rows[0]);
+        foreach ($columns as &$column) {
+            $column = self::assertValidIdentifier((string) $column, 'column');
+        }
+        unset($column);
+
+        return $columns;
     }
 
     /**
@@ -71,12 +104,13 @@ class ValuesMacro
             string $alias = 'val'
         ): Builder {
             /** @var Builder $this */
+            ValuesMacro::assertMysql($this, 'valuesQuery');
             if (empty($rows)) {
                 throw new \InvalidArgumentException('VALUES rows cannot be empty');
             }
 
-            // 获取列名
-            $columns = array_keys($rows[0]);
+            // 获取列名（校验为合法标识符）
+            $columns = ValuesMacro::assertRowColumns($rows);
             $valueRows = [];
             $bindings = [];
 
@@ -88,11 +122,13 @@ class ValuesMacro
                 }
             }
 
-            $columnList = implode(', ', array_map(fn ($c) => "`{$c}`", $columns));
+            $columnList = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
             $valuesSql = "VALUES " . implode(', ', $valueRows);
+            $alias = ValuesMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = ValuesMacro::wrapIdentifier($this, $alias);
 
             return $this->getModel()->newQuery()
-                ->fromRaw("({$valuesSql}) AS `{$alias}` ({$columnList})", $bindings);
+                ->fromRaw("({$valuesSql}) AS {$wrappedAlias} ({$columnList})", $bindings);
         });
     }
 
@@ -132,6 +168,7 @@ class ValuesMacro
             string $joinType = 'inner'
         ): Builder {
             /** @var Builder $this */
+            ValuesMacro::assertMysql($this, 'valuesJoin');
             $model = $this->getModel();
             $table = $model->getTable();
 
@@ -139,8 +176,8 @@ class ValuesMacro
                 return $this;
             }
 
-            // 构建 VALUES 子查询
-            $columns = array_keys($rows[0]);
+            // 构建 VALUES 子查询（列名经白名单校验）
+            $columns = ValuesMacro::assertRowColumns($rows);
             $valueRows = [];
             $bindings = [];
 
@@ -152,8 +189,16 @@ class ValuesMacro
                 }
             }
 
-            $columnList = implode(', ', array_map(fn ($c) => "`{$c}`", $columns));
+            $columnList = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
             $valuesSql = "VALUES " . implode(', ', $valueRows);
+
+            $localKey = ValuesMacro::assertValidIdentifier($localKey, 'localKey');
+            $valuesKey = ValuesMacro::assertValidIdentifier($valuesKey, 'valuesKey');
+            $alias = ValuesMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = ValuesMacro::wrapIdentifier($this, $alias);
+            $wrappedTable = ValuesMacro::wrapIdentifier($this, $table);
+            $wrappedLocal = ValuesMacro::wrapIdentifier($this, $localKey);
+            $wrappedValues = ValuesMacro::wrapIdentifier($this, $valuesKey);
 
             // 构建 JOIN
             $joinMethod = match (strtolower($joinType)) {
@@ -162,10 +207,10 @@ class ValuesMacro
                 default => 'join',
             };
 
-            $joinSql = "({$valuesSql}) AS `{$alias}` ({$columnList})";
+            $joinSql = "({$valuesSql}) AS {$wrappedAlias} ({$columnList})";
 
-            return $this->{$joinMethod}(DB::raw($joinSql), function ($join) use ($localKey, $valuesKey, $table, $alias) {
-                $join->on("{$table}.{$localKey}", '=', "{$alias}.{$valuesKey}");
+            return $this->{$joinMethod}(DB::raw($joinSql), function ($join) use ($wrappedTable, $wrappedLocal, $wrappedAlias, $wrappedValues) {
+                $join->on("{$wrappedTable}.{$wrappedLocal}", '=', "{$wrappedAlias}.{$wrappedValues}");
             })->addBinding($bindings, 'join');
         });
     }
@@ -201,6 +246,7 @@ class ValuesMacro
             int $chunkSize = 1000
         ): int {
             /** @var Builder $this */
+            ValuesMacro::assertMysql($this, 'valuesInsert');
             $model = $this->getModel();
             $table = $model->getTable();
 
@@ -208,8 +254,9 @@ class ValuesMacro
                 return 0;
             }
 
-            $columns = array_keys($rows[0]);
-            $columnStr = implode('`, `', $columns);
+            $columns = ValuesMacro::assertRowColumns($rows);
+            $columnStr = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
+            $wrappedTable = ValuesMacro::wrapIdentifier($this, $table);
             $totalAffected = 0;
 
             $chunks = array_chunk($rows, $chunkSize);
@@ -226,7 +273,7 @@ class ValuesMacro
                     }
                 }
 
-                $sql = "INSERT INTO `{$table}` (`{$columnStr}`) VALUES " . implode(', ', $valueRows);
+                $sql = "INSERT INTO {$wrappedTable} ({$columnStr}) VALUES " . implode(', ', $valueRows);
                 $totalAffected += DB::affectingStatement($sql, $bindings);
             }
 
@@ -268,6 +315,7 @@ class ValuesMacro
             int $chunkSize = 1000
         ): int {
             /** @var Builder $this */
+            ValuesMacro::assertMysql($this, 'batchUpsert');
             $model = $this->getModel();
             $table = $model->getTable();
 
@@ -275,20 +323,28 @@ class ValuesMacro
                 return 0;
             }
 
-            $columns = array_keys($rows[0]);
-            $columnStr = implode('`, `', $columns);
+            $columns = ValuesMacro::assertRowColumns($rows);
+            $columnStr = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
+            $wrappedTable = ValuesMacro::wrapIdentifier($this, $table);
 
             // 确定更新列
-            $uniqueColumns = is_array($uniqueBy) ? $uniqueBy : [$uniqueBy];
+            $uniqueColumns = array_map(
+                fn ($c) => ValuesMacro::assertValidIdentifier((string) $c, 'uniqueBy'),
+                is_array($uniqueBy) ? $uniqueBy : [$uniqueBy]
+            );
             if ($updateColumns === null) {
                 $updateColumns = array_diff($columns, $uniqueColumns);
             }
+            $updateColumns = array_map(
+                fn ($c) => ValuesMacro::assertValidIdentifier((string) $c, 'updateColumn'),
+                $updateColumns
+            );
 
             // 构建 ON DUPLICATE KEY UPDATE 部分（使用新值引用语法，兼容MySQL 8.0.20+）
             $updateParts = [];
             foreach ($updateColumns as $col) {
                 // MySQL 8.0.20+ 推荐使用别名.列名引用新值，VALUES()函数已弃用
-                $updateParts[] = "`{$col}` = new_values.`{$col}`";
+                $updateParts[] = ValuesMacro::wrapIdentifier($this, $col) . ' = new_values.' . ValuesMacro::wrapIdentifier($this, $col);
             }
             $updateStr = implode(', ', $updateParts);
 
@@ -307,7 +363,7 @@ class ValuesMacro
                     }
                 }
 
-                $sql = "INSERT INTO `{$table}` (`{$columnStr}`) VALUES " . implode(', ', $valueRows) . " AS new_values";
+                $sql = "INSERT INTO {$wrappedTable} ({$columnStr}) VALUES " . implode(', ', $valueRows) . " AS new_values";
                 if (!empty($updateStr)) {
                     $sql .= " ON DUPLICATE KEY UPDATE {$updateStr}";
                 }

@@ -6,6 +6,7 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
 
 /**
  * MySQL 8.0+ 数据抽样查询宏
@@ -16,12 +17,16 @@ use Illuminate\Support\Facades\DB;
  * - stratifiedSample: 分层抽样
  * - systematicSample: 系统抽样（等距抽样）
  *
+ * 安全性：分层列名 / 主键经白名单校验并由 grammar wrap；随机种子走参数绑定。
+ *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
+ * @version 2.0.0
  * @requires MySQL 8.0+
  */
 class TableSampleMacro
 {
+    use SqlSecurity;
+
     /**
      * 注册所有抽样宏
      *
@@ -65,16 +70,23 @@ class TableSampleMacro
             string $method = 'random'
         ): Builder {
             /** @var Builder $this */
+            TableSampleMacro::assertMysql($this, 'sample');
             $model = $this->getModel();
             $table = $model->getTable();
+
+            // 百分比需大于 0，否则 MOD(pk, ceil(100/0)) 会除零
+            if ($percentage <= 0 || $percentage > 100) {
+                throw new \InvalidArgumentException('sample 抽样百分比必须大于 0 且不超过 100');
+            }
             $percentage = max(0, min(100, $percentage));
 
             if ($method === 'system') {
                 // 系统抽样：使用主键的模运算
                 $mod = (int) ceil(100 / $percentage);
-                $primaryKey = $model->getKeyName();
+                $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+                $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
 
-                return $this->whereRaw("MOD(`{$primaryKey}`, ?) = 0", [$mod]);
+                return $this->whereRaw("MOD({$wrappedPk}, ?) = 0", [$mod]);
             }
 
             // 随机抽样：使用 RAND()
@@ -111,24 +123,31 @@ class TableSampleMacro
             ?string $seed = null
         ): Builder {
             /** @var Builder $this */
+            TableSampleMacro::assertMysql($this, 'randomSample');
             $model = $this->getModel();
             $table = $model->getTable();
-            $primaryKey = $model->getKeyName();
+            $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
 
             if ($seed !== null) {
-                $randExpr = "ROW_NUMBER() OVER (ORDER BY RAND(CRC32(CONCAT(?, `{$primaryKey}`))))";
+                $randExpr = "ROW_NUMBER() OVER (ORDER BY RAND(CRC32(CONCAT(?, {$wrappedPk}))))";
                 $randBindings = [$seed];
             } else {
                 $randExpr = "ROW_NUMBER() OVER (ORDER BY RAND())";
                 $randBindings = [];
             }
 
-            // 构建子查询：给每行分配随机排名
-            $subQuery = $model->newQuery()
-                ->select("{$table}.*")
+            // 构建子查询：给每行分配随机排名。
+            // 深拷贝当前查询（含全部 where/join 条件），但清空列选择、排序与分页，
+            // 避免丢失调用者已添加的过滤条件，同时不影响 ROW_NUMBER 的随机顺序。
+            $subQuery = $model->newQuery()->setQuery(clone $this->getQuery());
+            $subQuery->getQuery()->columns = null;
+            $subQuery->getQuery()->limit = null;
+            $subQuery->getQuery()->offset = null;
+            $subQuery->getQuery()->orders = null;
+            $subQuery->select("{$table}.*")
                 ->selectRaw("{$randExpr} AS __sample_rank", $randBindings);
 
-            // 复制当前查询的条件
             $subSql = $subQuery->toSql();
             $bindings = $subQuery->getBindings();
 
@@ -167,21 +186,29 @@ class TableSampleMacro
             ?string $seed = null
         ): Builder {
             /** @var Builder $this */
+            TableSampleMacro::assertMysql($this, 'stratifiedSample');
             $model = $this->getModel();
             $table = $model->getTable();
-            $primaryKey = $model->getKeyName();
+            $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
+            $stratumColumn = TableSampleMacro::assertValidIdentifier($stratumColumn, 'stratum');
+            $wrappedStratum = TableSampleMacro::wrapIdentifier($this, $stratumColumn);
 
             if ($seed !== null) {
-                $randExpr = "ROW_NUMBER() OVER (PARTITION BY `{$stratumColumn}` ORDER BY RAND(CRC32(CONCAT(?, `{$primaryKey}`))))";
+                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY RAND(CRC32(CONCAT(?, {$wrappedPk}))))";
                 $randBindings = [$seed];
             } else {
-                $randExpr = "ROW_NUMBER() OVER (PARTITION BY `{$stratumColumn}` ORDER BY RAND())";
+                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY RAND())";
                 $randBindings = [];
             }
 
-            // 构建分层抽样子查询
-            $subQuery = $model->newQuery()
-                ->select("{$table}.*")
+            // 构建分层抽样子查询（深拷贝当前查询条件，并清空列选择、排序与分页）
+            $subQuery = $model->newQuery()->setQuery(clone $this->getQuery());
+            $subQuery->getQuery()->columns = null;
+            $subQuery->getQuery()->limit = null;
+            $subQuery->getQuery()->offset = null;
+            $subQuery->getQuery()->orders = null;
+            $subQuery->select("{$table}.*")
                 ->selectRaw("{$randExpr} AS __stratum_rank", $randBindings);
 
             $subSql = $subQuery->toSql();
@@ -222,15 +249,22 @@ class TableSampleMacro
             ?int $startOffset = null
         ): Builder {
             /** @var Builder $this */
+            TableSampleMacro::assertMysql($this, 'systematicSample');
             $model = $this->getModel();
-            $table = $model->getTable();
-            $primaryKey = $model->getKeyName();
+
+            // 抽样间隔必须大于 0，否则取模运算会除零、rand 区间非法
+            if ($interval <= 0) {
+                throw new \InvalidArgumentException('systematicSample 抽样间隔必须大于 0');
+            }
+
+            $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
 
             $offset = $startOffset ?? rand(0, $interval - 1);
 
             // 使用主键模运算实现等距抽样
             return $this->whereRaw(
-                "(`{$primaryKey}` + ?) % ? = 0",
+                "({$wrappedPk} + ?) % ? = 0",
                 [$offset, $interval]
             );
         });
