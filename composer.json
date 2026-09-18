@@ -40,7 +40,8 @@
   "extra": {
     "laravel": {
       "providers": [
-        "zxf\\Modules\\ModulesServiceProvider"
+        "zxf\\Modules\\ModulesServiceProvider",
+        "zxf\\Modules\\Logging\\LoggingServiceProvider"
       ],
       "aliases": {
         "Module": "zxf\\Modules\\Facades\\Module"
