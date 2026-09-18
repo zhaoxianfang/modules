@@ -20,8 +20,11 @@ use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
  *
  * 职责（本模块只负责「采集 + 落库」，刻意不提供任何后台管理界面）：
  * 1. 通过 mergeConfigFrom 把 database 日志通道合并进应用的 config/logging.php，
- *    使得在 .env 设置 LOG_CHANNEL=database 即可启用数据库日志。
- * 2. 发布迁移文件（php artisan vendor:publish --tag=modules-logging），创建 logs 表。
+ *    使得在 .env 设置 LOG_CHANNEL=database 即可启用数据库日志（无需先 vendor:publish 配置）。
+ * 2. 通过 loadMigrationsFrom 注册迁移，使得直接 `php artisan migrate` 即可创建 logs 表，
+ *    无需先执行 `php artisan vendor:publish --tag=modules-logging`（同时保留 publishes 以兼容旧用法）。
+ * 3. 运行时若 logs 表不存在（迁移未发布 / 未执行 migrate），数据库日志处理器会自动跳过，
+ *    不影响主业务流程（详见 DatabaseLogHandler::write 的表存在性守卫）。
  * 3. 注册请求 / 响应上下文中间件（web / api 组，仅 HTTP 模式），用于自动采集上下文。
  * 4. 监听日志事件，使 Laravel 的 report($e) 等携带异常的日志也能落入 database 通道
  *    （被 datatable 检索），且避免重复写入。
@@ -37,11 +40,12 @@ class LoggingServiceProvider extends ServiceProvider
     public function register(): void
     {
         // 将 database 日志通道与扩展配置合并进 config('logging')
-        $this->mergeConfigFrom(__DIR__.'/../config/logging.php', 'logging');
+        // 注意：本服务提供者位于 src/Logging/，配置实际在包根 config/，需上溯两级。
+        $this->mergeConfigFrom(__DIR__.'/../../config/logging.php', 'logging');
 
         // 当配置被缓存（configuration:cache）时 mergeConfigFrom 不会生效，
         // 这里保证 database 通道一定存在，使 LOG_CHANNEL=database 随时可用。
-        $channelConfig = require __DIR__.'/../config/logging.php';
+        $channelConfig = require __DIR__.'/../../config/logging.php';
         $database = $channelConfig['channels']['database'] ?? null;
         if ($database !== null && ! $this->app['config']->has('logging.channels.database')) {
             $this->app['config']->set('logging.channels.database', $database);
@@ -71,6 +75,11 @@ class LoggingServiceProvider extends ServiceProvider
         }
         $this->app->instance('logging.booted', true);
 
+        // 注册迁移路径：无需先 vendor:publish 即可直接 `php artisan migrate` 创建 logs 表。
+        // publishes() 仍保留，以兼容希望将迁移发布到应用 migrations 目录的开发者；
+        // 由于迁移文件名相同，Laravel 在 migrate 时会按名称去重，不会产生重复执行。
+        $this->loadMigrationsFrom(__DIR__.'/Database/Migrations');
+
         // 发布迁移文件（仅 CLI）
         if ($this->app->runningInConsole()) {
             $this->publishes([
@@ -95,26 +104,45 @@ class LoggingServiceProvider extends ServiceProvider
         // 让 Laravel 原生的 report($e)（以及任何携带异常的日志）也能落入 database 通道，
         // 从而被后台 datatable 检索到。若 database 通道未配置则静默跳过。
         $this->app['events']->listen(MessageLogged::class, function (MessageLogged $event): void {
-            // 仅当日志携带异常、且来源通道不是 database 时，额外写入 database 通道，避免重复。
-            if (! isset($event->context['exception']) || ($event->channel ?? null) === 'database') {
+            // 仅当日志携带异常时，才需要额外转发到 database 通道（让 report($e) 等异常日志可被检索）。
+            // 注意：本版本 Illuminate\Log\Events\MessageLogged 仅有 level / message / context 三属性，
+            // 没有 channel 字段，切勿访问 $event->channel（会触发 Undefined property 警告）。
+            if (! isset($event->context['exception']) || ! ($event->context['exception'] instanceof Throwable)) {
+                return;
+            }
+
+            // 重入守护：转发到 database 通道会再次派发 MessageLogged 事件。本版本事件无 channel 字段，
+            // 无法据来源判断，故用静态标志位阻断递归；否则在默认通道既非 database、也非含 database 的
+            // stack 时，会无限递归直至栈溢出。
+            static $forwarding = false;
+            if ($forwarding) {
                 return;
             }
 
             // 默认通道已是 database（LOG_CHANNEL=database），或默认 stack 已包含 database 时，
             // report($e) 已直接落库，无需重复写入。
             $default = $this->app['config']->get('logging.default');
+            $stackChannels = $this->app['config']->get('logging.channels.stack.channels', []);
+            $stackChannels = is_array($stackChannels) ? $stackChannels : [];
             if ($default === 'database'
-                || ($default === 'stack'
-                    && in_array('database', $this->app['config']->get('logging.channels.stack.channels', []), true))) {
+                || ($default === 'stack' && in_array('database', $stackChannels, true))) {
                 return;
             }
 
-            // 以原始等级转发到 database 通道（保留 error / critical 等等级信息）
+            // 以原始等级转发到 database 通道（保留 error / critical 等等级信息）。
+            // level 统一转字符串，兼容各 Laravel 版本（字符串或枚举）的表示；对象且无 __toString 时
+            // 兜底为 'error'，避免 (string) 强转抛 TypeError 影响主流程。
+            $level = $event->level;
+            if (is_object($level)) {
+                $level = method_exists($level, '__toString') ? (string) $level : 'error';
+            }
+            $forwarding = true;
             try {
-                $level = $event->level;
                 $this->app['log']->channel('database')->{$level}($event->message, $event->context);
             } catch (Throwable) {
                 // 忽略（不影响主流程）
+            } finally {
+                $forwarding = false;
             }
         });
     }

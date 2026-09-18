@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Logging\Handler;
 
 use Illuminate\Support\Facades\Log as LogFacade;
+use Illuminate\Support\Facades\Schema;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -13,6 +14,7 @@ use zxf\Modules\Logging\Config\LoggingConfig;
 use zxf\Modules\Logging\Contracts\LogWriter;
 use zxf\Modules\Logging\Contracts\RedactorContract;
 use zxf\Modules\Logging\LogContext;
+use zxf\Modules\Logging\Models\Log as LogModel;
 use zxf\Modules\Logging\Support\Redactor;
 use zxf\Modules\Logging\Writer\DatabaseLogWriter;
 
@@ -56,6 +58,36 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         parent::__construct($level, $bubble);
     }
 
+    /**
+     * 检查日志表是否存在（结果按「请求」缓存于 LogContext）。
+     *
+     * 用于实现「未发布 / 未执行迁移、或库表未初始化时自动跳过本日志模块」的能力：
+     * 此时绝不抛错，也不会回退到文件通道刷屏，仅仅是静默跳过。
+     * 任何数据库不可达 / 查询异常都被视为「不存在」并安全跳过。
+     *
+     * 缓存放在 LogContext（随每次请求 reset 清空），而非处理器实例：
+     * 既避免每条日志都查 information_schema，又能在 Octane / Swoole 常驻进程下
+     * 保证表存在性判定随请求刷新（实例会跨请求复用，挂在实例上会跨请求残留）。
+     */
+    private function logsTableExists(): bool
+    {
+        $cached = LogContext::logsTableExists();
+        if ($cached !== null) {
+            return $cached;
+        }
+
+        try {
+            $table = $this->table ?? (new LogModel())->getTable();
+            $exists = Schema::hasTable($table);
+        } catch (Throwable) {
+            $exists = false;
+        }
+
+        LogContext::setLogsTableExists($exists);
+
+        return $exists;
+    }
+
     protected function write(LogRecord $record): void
     {
         // CLI 模式默认不写库（无请求上下文）。支持两种显式开启方式：
@@ -64,6 +96,12 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         if (PHP_SAPI === 'cli'
             && empty($record->context['console_to_log'])
             && ! $this->config()->logCli) {
+            return;
+        }
+
+        // 日志表不存在（迁移未发布 / 未执行 migrate / 库表尚未初始化）时，直接跳过本模块功能，
+        // 避免任何数据库异常污染主业务流程（如 composer update、首次部署前）。结果按请求缓存。
+        if (! $this->logsTableExists()) {
             return;
         }
 
@@ -190,7 +228,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     protected function redactor(): RedactorContract
     {
         if ($this->redactor === null) {
-            $this->redactor = app()->bound(RedactorContract::class)
+            $this->redactor = (function_exists('app') && app()->bound(RedactorContract::class))
                 ? app(RedactorContract::class)
                 : new Redactor(LoggingConfig::fromConfig()->sensitiveKeys);
         }
@@ -205,7 +243,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     protected function writer(): LogWriter
     {
         if ($this->writer === null) {
-            $this->writer = app()->bound(LogWriter::class)
+            $this->writer = (function_exists('app') && app()->bound(LogWriter::class))
                 ? app(LogWriter::class, ['model' => $this->model, 'table' => $this->table])
                 : new DatabaseLogWriter($this->model, $this->table);
         }

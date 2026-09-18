@@ -33,6 +33,17 @@ final class LogContext
     /** 单次请求内去重集合（随 reset() 在每次请求开始时清空） */
     private static array $seen = [];
 
+    /**
+     * 日志表存在性检查结果（按请求缓存）。
+     *
+     * 挂在请求级静态存储（而非处理器实例）有两层考量：
+     * 1. 避免每条日志都查询 information_schema（性能）；
+     * 2. Octane / Swoole 常驻进程下，处理器实例会跨请求复用，若缓存挂在实例上会导致
+     *    表存在性判定跨请求残留（表创建/删除后无法即时生效）。随 reset() 在每次请求
+     *    开始时清空即可保证「每请求最多查一次」且判定始终正确。
+     */
+    private static ?bool $logsTableExists = null;
+
     public static function setStart(float $t): void
     {
         self::$startTime = $t;
@@ -83,6 +94,22 @@ final class LogContext
     }
 
     /**
+     * 读取按请求缓存的日志表存在性判定（未检测过返回 null）。
+     */
+    public static function logsTableExists(): ?bool
+    {
+        return self::$logsTableExists;
+    }
+
+    /**
+     * 缓存日志表存在性判定（随 reset() 在每次请求开始时清空）。
+     */
+    public static function setLogsTableExists(bool $exists): void
+    {
+        self::$logsTableExists = $exists;
+    }
+
+    /**
      * 重置全部状态。中间件在每个请求开始时调用，确保请求级上下文与去重集合
      * 不会跨请求（尤其是 Octane / Swoole 常驻进程）串味。
      */
@@ -93,5 +120,6 @@ final class LogContext
         self::$hasResponse = false;
         self::$startTime = 0.0;
         self::$seen = [];
+        self::$logsTableExists = null;
     }
 }

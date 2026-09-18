@@ -50,11 +50,11 @@ return [
         'log_cli' => env('LOG_DB_LOG_CLI', false),
 
         // 响应体最大存储字符数（中间件在采集响应体时按此截断）
-        'max_body_length' => env('LOG_DB_MAX_BODY_LENGTH', 200),
+        'max_body_length' => env('LOG_DB_MAX_BODY_LENGTH', 20000),
 
         // 单字段最大长度（字符）：任意日志字段值超出将被截断，防止超长数据导致落库异常
         // 或占用过多内存 / 存储。0 表示不截断（不推荐，仅用于特殊场景）。
-        'max_field_length' => env('LOG_DB_MAX_FIELD_LENGTH', 200),
+        'max_field_length' => env('LOG_DB_MAX_FIELD_LENGTH', 20000),
 
         // 应用层追加的敏感字段键名（会与内置 DEFAULT_KEYS 合并，而非覆盖）
         'sensitive_keys' => [],

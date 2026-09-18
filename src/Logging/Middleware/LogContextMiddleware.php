@@ -18,9 +18,11 @@ use zxf\Modules\Logging\Support\Redactor;
  * - 请求开始：采集丰富请求信息（方法 / URL / 路由 / 控制器 / IP / UA / 来源 /
  *   会话 / 认证用户 / 入参 / 请求头），写入 LogContext，并同步进 Laravel 13 的
  *   Context 门面（Context::add），供所有日志通道共享。
- * - 请求结束（app()->terminating()）：采集最终响应结果（状态码 / 状态短语 /
- *   耗时 / 峰值内存 / 响应头 / 响应体），写入 LogContext，并向 database 通道
- *   写入一条「请求 → 响应」汇总日志，保证 logs 数据表中天然带有完整响应信息。
+ * - 请求结束（handle 返回前，$response 已是最终响应）：同步采集最终响应结果
+ *   （状态码 / 状态短语 / 耗时 / 峰值内存 / 响应头 / 响应体），写入 LogContext，
+ *   并向 database 通道写入一条「请求 → 响应」汇总日志，保证 logs 数据表中天然带有
+ *   完整响应信息。此处故意采用「同步」采集而非 app()->terminating() 回调，以避免在
+ *   Octane / Swoole 等常驻进程下回调跨请求累积、并以过期响应重复执行。
  *
  * 脱敏统一交由 Redactor（全模块唯一事实来源），避免与落库侧口径不一致。
  * 仅 HTTP 模式生效；CLI 无请求上下文，数据库通道也不会落库（见 DatabaseLogHandler）。
@@ -41,7 +43,7 @@ class LogContextMiddleware
 
     public function handle(Request $request, Closure $next)
     {
-        // 每次请求开始时重置上下文（含去重集合），避免 Octane / Swoole 常驻进程跨请求串味
+        // 每次请求开始时重置上下文（含去重集合与表存在性缓存），避免 Octane / Swoole 常驻进程跨请求串味
         LogContext::reset();
 
         LogContext::setStart(microtime(true));
@@ -56,10 +58,18 @@ class LogContextMiddleware
 
         $response = $next($request);
 
-        // 终止阶段捕获最终响应（响应已发送给客户端之后）
-        app()->terminating(function () use ($request, $response) {
+        // 请求处理结束后（下游与响应中间件均已执行完毕，$response 已是最终响应）立即采集响应信息，
+        // 并向 database 通道写入一条「请求 → 响应」汇总日志，保证 logs 数据表天然带有完整响应上下文。
+        //
+        // 注意：此处「同步」采集，而非注册 app()->terminating() 回调。原因：在 Octane / Swoole 等
+        // 常驻进程下，每次请求都注册 terminating 回调会导致回调跨请求累积，既泄漏内存、又可能在
+        // worker 退出时以过期响应重复执行。响应对象在 handle 返回时已是终态（状态码 / 头 / 体均确定），
+        // 故同步采集在语义上完全等价且更安全。
+        try {
             $this->captureResponse($request, $response);
-        });
+        } catch (\Throwable) {
+            // 采集失败不影响主流程
+        }
 
         return $response;
     }
