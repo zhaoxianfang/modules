@@ -84,6 +84,7 @@ run_php_test() {
 run_php_test "字符串函数宏" "verify_string_macros.php"
 run_php_test "递归 CTE / JSON 宏" "verify_recursive_macros.php"
 run_php_test "模块缓存存储" "verify_cache_store.php"
+run_php_test "数据库日志模块" "verify_logging.php"
 
 # ---------- 4. 汇总 ----------
 echo ""

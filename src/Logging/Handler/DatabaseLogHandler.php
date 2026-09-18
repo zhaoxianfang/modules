@@ -4,38 +4,52 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Logging\Handler;
 
+use Illuminate\Support\Facades\Log as LogFacade;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
 use Throwable;
-use zxf\Modules\Logging\Models\SystemLog;
+use zxf\Modules\Logging\Config\LoggingConfig;
+use zxf\Modules\Logging\Contracts\LogWriter;
+use zxf\Modules\Logging\Contracts\RedactorContract;
+use zxf\Modules\Logging\LogContext;
+use zxf\Modules\Logging\Support\Redactor;
+use zxf\Modules\Logging\Writer\DatabaseLogWriter;
 
 /**
  * 数据库日志处理器（Monolog 3 兼容，Laravel 11 / 12 / 13 通用）。
  *
- * 设计要点（继承自 wsf Modules\Logs 的审计经验，并针对 Laravel 13 增强）：
- * - LogRecord 的 level 是 Monolog\Level 枚举；取等级名用 $record->level->name 或
- *   $record->level_name（大写字符串）。切勿对 level 重新赋值（会抛 LogicException）。
+ * 职责拆分（清晰的关注点分离）：
+ * - 去重：单次请求内相同日志只落库一次（去重集合存于 LogContext，随每次请求 reset）；
+ * - 归一化：把 LogRecord 翻译为与 logs 表字段对应的属性数组（buildAttributes）；
+ * - 脱敏：所有敏感字段脱敏交由 RedactorContract（全模块唯一事实来源）；
+ * - 落库：委托给 LogWriter 抽象（默认 DatabaseLogWriter，可配置为 QueuedDatabaseLogWriter）；
+ * - 事件：每次成功落库派发 LogRecorded 事件（默认无监听，可用于告警 / 同步 / 审计）；
+ * - 回退：落库失败时回退到 stack 文件通道，确保关键日志不丢失。
+ *
+ * 设计要点：
+ * - LogRecord 的 level 是 Monolog\Level 枚举；取等级名请用数组访问 `$record['level_name']`
+ *   （返回大写名如 'ERROR'）。本环境的 Monolog 在 LogRecord 上未暴露 level_name 公共属性，
+ *   只能通过 offsetGet 访问；切勿写 `$record->level_name`（会触发 Undefined property）。
+ *   切勿对 level 重新赋值（会抛 LogicException）。
  * - 仅 extra / formatted 可写；context / message 等为 readonly，不可重新赋值。
- * - 单次请求内精确去重：相同 {level, message, exception} 只落库一次，避免异常刷屏。
- * - 对敏感字段（password / token / secret / authorization 等）强制脱敏。
- * - context 中可能含有 Throwable 实例（不可 JSON 序列化），写入前必须剔除 / 转换。
- * - 任何写入异常都被吞掉，绝不影响主业务流程。
+ * - 任何写入异常都被捕获或回退，绝不影响主业务流程。
+ * - 异常处理策略：异常日志的「文件落盘」由 Laravel 默认通道（report($e) / stack）负责，
+ *   本 handler 不再二次写 stack，避免与默认通道重复；仅当数据库写入失败时回退 stack 文件。
  *
  * @package zxf\Modules\Logging
  */
 class DatabaseLogHandler extends AbstractProcessingHandler
 {
-    /** 单次请求内去重集合（静态，避免同一次请求里异常重复刷屏） */
-    protected static ?array $seen = null;
+    private ?LoggingConfig $config = null;
 
     public function __construct(
         protected ?string $model = null,
         protected ?string $table = null,
         protected bool $captureRequestBody = true,
         protected bool $captureResponseBody = true,
-        protected int $maxBodyLength = 20000,
-        protected ?int $retentionDays = 30,
+        protected ?RedactorContract $redactor = null,
+        protected ?LogWriter $writer = null,
         Level $level = Level::Debug,
         bool $bubble = true
     ) {
@@ -44,116 +58,110 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     protected function write(LogRecord $record): void
     {
-        // CLI 模式不写库：无请求上下文，价值低（如需 CLI 日志落库，可移除该判断）
-        if (PHP_SAPI === 'cli') {
+        // CLI 模式默认不写库（无请求上下文）。支持两种显式开启方式：
+        //   1) 单条日志携带 context['console_to_log'] = true
+        //   2) 全局配置 logging.db.log_cli = true
+        if (PHP_SAPI === 'cli'
+            && empty($record->context['console_to_log'])
+            && ! $this->config()->logCli) {
             return;
         }
 
-        // 单次请求内精确去重
-        $key = $record->level->name.'|'.$record->message;
-        if (isset($record->context['exception']) && $record->context['exception'] instanceof Throwable) {
+        // 单次请求内精确去重（避免异常在同一请求里被记录多次刷屏）
+        $key = $record['level_name'].'|'.$record->message;
+        if ($this->hasException($record)) {
             $key .= '|'.get_class($record->context['exception']);
         }
-        if (self::$seen === null) {
-            self::$seen = [];
-        }
-        if (isset(self::$seen[$key])) {
+        if (LogContext::hasSeen($key)) {
             return;
         }
-        self::$seen[$key] = true;
+        LogContext::markSeen($key);
 
-        $modelClass = $this->model ?: SystemLog::class;
-
+        // 落库（失败时回退到 stack 文件通道，确保关键日志不丢失）
         try {
-            /** @var SystemLog $log */
-            $log = new $modelClass();
-            if ($this->table !== null) {
-                $log->setTable($this->table);
-            }
-
-            $extra = $record->extra;
-            $trace = $this->trace($record);
-
-            $log->fill([
-                'level' => $record->level->name,
-                'level_name' => $record->level_name,
-                'channel' => $record->channel,
-                'message' => mb_substr($record->message, 0, 65535),
-                'context' => $this->sanitizeContext($record->context),
-                'extra' => $this->sanitizeContext($extra),
-
-                'request_method' => $extra['request_method'] ?? null,
-                'request_url' => $extra['request_url'] ?? null,
-                'request_path' => $extra['request_path'] ?? null,
-                'request_route' => $extra['request_route'] ?? null,
-                'request_controller' => $extra['request_controller'] ?? null,
-                'request_ip' => $extra['request_ip'] ?? null,
-                'request_user_agent' => $extra['request_user_agent'] ?? null,
-                'request_referer' => $extra['request_referer'] ?? null,
-                'request_session_id' => $extra['request_session_id'] ?? null,
-                'request_input' => ($this->captureRequestBody ? ($extra['request_input'] ?? null) : null),
-                'request_headers' => ($this->captureRequestBody ? ($extra['request_headers'] ?? null) : null),
-
-                'user_id' => $extra['user_id'] ?? null,
-                'user_type' => $extra['user_type'] ?? null,
-
-                'response_code' => $extra['response_code'] ?? null,
-                'response_status' => $extra['response_status'] ?? null,
-                'response_duration_ms' => $extra['response_duration_ms'] ?? null,
-                'response_memory_mb' => $extra['response_memory_mb'] ?? null,
-                'response_headers' => ($this->captureResponseBody ? ($extra['response_headers'] ?? null) : null),
-                'response_body' => ($this->captureResponseBody ? ($extra['response_body'] ?? null) : null),
-
-                'exception_class' => $trace['class'] ?? null,
-                'exception_message' => $trace['message'] ?? null,
-                'file' => $trace['file'] ?? null,
-                'trace' => $trace['trace'] ?? null,
-            ]);
-            $log->save();
-        } catch (Throwable) {
-            // 日志写入失败绝不能反向污染主流程
-            return;
+            $this->writer()->write($this->buildAttributes($record));
+        } catch (Throwable $e) {
+            $this->fallbackToStack($record, $e);
         }
     }
 
     /**
-     * 脱敏 context / extra 中的敏感字段，并剔除不可 JSON 序列化的值（如 Throwable）。
+     * 将 LogRecord 归一化为与 logs 表字段对应的属性数组。
+     *
+     * @return array<string, mixed>
      */
-    protected function sanitizeContext(array $context): array
+    protected function buildAttributes(LogRecord $record): array
     {
-        unset($context['__summary__']);
+        $extra = $record->extra;
+        $redactor = $this->redactor();
 
-        $sensitive = [
-            'password', 'password_confirmation', 'new_password', 'token', 'secret',
-            'authorization', 'api_key', 'apikey', 'cookie', 'passwd', 'csrf_token', '_token',
+        // 剔除一次性控制标记，避免写入 context 列造成噪音
+        $context = $record->context;
+        unset($context['__summary__'], $context['console_to_log']);
+
+        $trace = $this->trace($record);
+
+        return [
+            'level' => $record['level_name'],
+            'level_name' => $record['level_name'],
+            'channel' => $record->channel,
+            'message' => mb_substr($redactor->maskText($record->message), 0, 65535),
+            'context' => $redactor->sanitizeContext($context),
+            'extra' => $redactor->sanitizeContext($extra),
+
+            'request_method' => $extra['request_method'] ?? null,
+            'request_url' => $extra['request_url'] ?? null,
+            'request_path' => $extra['request_path'] ?? null,
+            'request_route' => $extra['request_route'] ?? null,
+            'request_controller' => $extra['request_controller'] ?? null,
+            'request_ip' => $extra['request_ip'] ?? null,
+            'request_user_agent' => $extra['request_user_agent'] ?? null,
+            'request_referer' => $extra['request_referer'] ?? null,
+            'request_session_id' => $extra['request_session_id'] ?? null,
+            'request_input' => ($this->captureRequestBody ? ($extra['request_input'] ?? null) : null),
+            'request_headers' => ($this->captureRequestBody ? ($extra['request_headers'] ?? null) : null),
+
+            'user_id' => $extra['user_id'] ?? null,
+            'user_type' => $extra['user_type'] ?? null,
+
+            'response_code' => $extra['response_code'] ?? null,
+            'response_status' => $extra['response_status'] ?? null,
+            'response_duration_ms' => $extra['response_duration_ms'] ?? null,
+            'response_memory_mb' => $extra['response_memory_mb'] ?? null,
+            'response_headers' => ($this->captureResponseBody ? ($extra['response_headers'] ?? null) : null),
+            'response_body' => ($this->captureResponseBody
+                ? $redactor->maskText($extra['response_body'] ?? '')
+                : null),
+
+            'exception_class' => $trace['class'] ?? null,
+            'exception_message' => $trace['message'] ?? null,
+            'file' => $trace['file'] ?? null,
+            'trace' => $trace['trace'] ?? null,
         ];
+    }
 
-        $walk = function (&$value, $key) use ($sensitive, &$walk) {
-            if (is_array($value)) {
-                foreach ($value as $k => &$v) {
-                    $walk($v, $k);
-                }
+    /**
+     * 落库失败时回退：把原始信息写入 stack 文件通道，确保关键日志不丢失。
+     */
+    protected function fallbackToStack(LogRecord $record, ?Throwable $e = null): void
+    {
+        try {
+            LogFacade::channel('stack')->error('[database-log] 写入日志表失败，已回退至文件通道', [
+                'original_level' => $record['level_name'],
+                'message' => $record->message,
+                'exception' => $e?->getMessage(),
+            ]);
+        } catch (Throwable) {
+            // 彻底放弃，不影响主流程
+        }
+    }
 
-                return;
-            }
-            if ($value instanceof Throwable) {
-                // Throwable 不可序列化，转为可读字符串
-                $value = sprintf('[%s] %s', get_class($value), $value->getMessage());
-
-                return;
-            }
-            if (is_object($value)) {
-                $value = sprintf('[object] %s', get_class($value));
-
-                return;
-            }
-            if (is_string($key) && in_array(strtolower($key), $sensitive, true)) {
-                $value = '***REDACTED***';
-            }
-        };
-        $walk($context, '');
-
-        return $context;
+    /**
+     * 该记录是否承载异常。
+     */
+    protected function hasException(LogRecord $record): bool
+    {
+        return isset($record->context['exception']) && $record->context['exception'] instanceof Throwable;
     }
 
     /**
@@ -161,7 +169,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      */
     protected function trace(LogRecord $record): array
     {
-        if (! isset($record->context['exception']) || ! $record->context['exception'] instanceof Throwable) {
+        if (! $this->hasException($record)) {
             return [];
         }
 
@@ -171,7 +179,45 @@ class DatabaseLogHandler extends AbstractProcessingHandler
             'class' => get_class($e),
             'message' => mb_substr($e->getMessage(), 0, 65535),
             'file' => $e->getFile().':'.$e->getLine(),
-            'trace' => $e->getTraceAsString(),
+            'trace' => mb_substr($e->getTraceAsString(), 0, 60000),
         ];
+    }
+
+    /**
+     * 脱敏器：懒加载，优先使用容器绑定的 RedactorContract 实现（由 LoggingServiceProvider 绑定），
+     * 非容器环境下回退为按配置新建。
+     */
+    protected function redactor(): RedactorContract
+    {
+        if ($this->redactor === null) {
+            $this->redactor = app()->bound(RedactorContract::class)
+                ? app(RedactorContract::class)
+                : new Redactor(LoggingConfig::fromConfig()->sensitiveKeys);
+        }
+
+        return $this->redactor;
+    }
+
+    /**
+     * 落库写入器：懒加载，优先使用容器绑定的实现（可由自定义 LogWriter 替换，
+     * 或按配置切换为 QueuedDatabaseLogWriter），非容器环境下回退为默认 Eloquent 写入器。
+     */
+    protected function writer(): LogWriter
+    {
+        if ($this->writer === null) {
+            $this->writer = app()->bound(LogWriter::class)
+                ? app(LogWriter::class, ['model' => $this->model, 'table' => $this->table])
+                : new DatabaseLogWriter($this->model, $this->table);
+        }
+
+        return $this->writer;
+    }
+
+    /**
+     * 强类型配置（logging.db.* + handler_with.*），懒加载并缓存。
+     */
+    private function config(): LoggingConfig
+    {
+        return $this->config ??= LoggingConfig::fromConfig();
     }
 }

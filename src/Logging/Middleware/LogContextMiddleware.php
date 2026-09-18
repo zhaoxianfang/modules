@@ -8,26 +8,42 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Context;
+use zxf\Modules\Logging\Config\LoggingConfig;
 use zxf\Modules\Logging\LogContext;
+use zxf\Modules\Logging\Support\Redactor;
 
 /**
  * 请求 / 响应上下文中间件。
  *
  * - 请求开始：采集丰富请求信息（方法 / URL / 路由 / 控制器 / IP / UA / 来源 /
- *   会话 / 认证用户 / 入参 / 请求头）写入 LogContext，并同步进 Laravel 13 的
+ *   会话 / 认证用户 / 入参 / 请求头），写入 LogContext，并同步进 Laravel 13 的
  *   Context 门面（Context::add），供所有日志通道共享。
  * - 请求结束（app()->terminating()）：采集最终响应结果（状态码 / 状态短语 /
  *   耗时 / 峰值内存 / 响应头 / 响应体），写入 LogContext，并向 database 通道
- *   写入一条「请求 → 响应」汇总日志，保证系统_logs 中天然带有完整响应信息。
+ *   写入一条「请求 → 响应」汇总日志，保证 logs 数据表中天然带有完整响应信息。
  *
+ * 脱敏统一交由 Redactor（全模块唯一事实来源），避免与落库侧口径不一致。
  * 仅 HTTP 模式生效；CLI 无请求上下文，数据库通道也不会落库（见 DatabaseLogHandler）。
  *
  * @package zxf\Modules\Logging
  */
 class LogContextMiddleware
 {
+    private LoggingConfig $config;
+
+    private Redactor $redactor;
+
+    public function __construct(?Redactor $redactor = null)
+    {
+        $this->config = LoggingConfig::fromConfig();
+        $this->redactor = $redactor ?? new Redactor($this->config->sensitiveKeys, $this->config->maxFieldLength);
+    }
+
     public function handle(Request $request, Closure $next)
     {
+        // 每次请求开始时重置上下文（含去重集合），避免 Octane / Swoole 常驻进程跨请求串味
+        LogContext::reset();
+
         LogContext::setStart(microtime(true));
         LogContext::setRequest($this->buildRequestContext($request));
 
@@ -80,7 +96,7 @@ class LogContextMiddleware
         // 仅采集请求体入参（不含 URL 查询串），并对敏感字段脱敏
         $input = [];
         if (in_array($request->method(), ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
-            $input = $this->maskSensitive($request->request->all());
+            $input = $this->redactor->maskArray($request->request->all());
         }
 
         return [
@@ -95,7 +111,7 @@ class LogContextMiddleware
             'session_id' => $sessionId,
             'user' => $user,
             'input' => $input,
-            'headers' => $this->maskHeaders($request->headers->all()),
+            'headers' => $this->redactor->maskHeaders($request->headers->all()),
         ];
     }
 
@@ -113,10 +129,11 @@ class LogContextMiddleware
         $code = method_exists($response, 'getStatusCode') ? $response->getStatusCode() : 200;
         $statusText = method_exists($response, 'getReasonPhrase') ? $response->getReasonPhrase() : '';
 
+        $maxBody = $this->config->maxBodyLength;
         $body = null;
         $contentType = method_exists($response, 'headers') ? $response->headers->get('content-type') : null;
         if ($response instanceof Response && $this->shouldCaptureBody($contentType)) {
-            $body = mb_substr((string) $response->getContent(), 0, 20000);
+            $body = mb_substr((string) $response->getContent(), 0, $maxBody);
         }
 
         $data = [
@@ -124,7 +141,9 @@ class LogContextMiddleware
             'status' => $statusText,
             'duration_ms' => round($duration, 2),
             'memory_mb' => round($memory, 2),
-            'headers' => $this->maskHeaders(method_exists($response, 'headers') ? $response->headers->all() : []),
+            'headers' => $this->redactor->maskHeaders(
+                method_exists($response, 'headers') ? $response->headers->all() : []
+            ),
             'body' => $body,
         ];
 
@@ -163,46 +182,5 @@ class LogContextMiddleware
         }
 
         return (bool) preg_match('#(text/html|application/json|text/plain|application/xml|text/xml)#i', $ct);
-    }
-
-    /**
-     * 对敏感入参脱敏。
-     */
-    protected function maskSensitive(array $data): array
-    {
-        $sensitive = [
-            'password', 'password_confirmation', 'token', 'secret', 'authorization',
-            'api_key', 'apikey', 'cookie', 'passwd', 'csrf_token', '_token', 'new_password',
-        ];
-
-        $walk = function (&$value, $key) use ($sensitive, &$walk) {
-            if (is_array($value)) {
-                foreach ($value as $k => &$v) {
-                    $walk($v, $k);
-                }
-
-                return;
-            }
-            if (is_string($key) && in_array(strtolower($key), $sensitive, true)) {
-                $value = '***REDACTED***';
-            }
-        };
-        $walk($data, '');
-
-        return $data;
-    }
-
-    /**
-     * 对敏感响应 / 请求头脱敏（Authorization / Cookie / CSRF 等）。
-     */
-    protected function maskHeaders(array $headers): array
-    {
-        $mask = ['authorization', 'cookie', 'set-cookie', 'x-csrf-token', 'x-xsrf-token'];
-        $out = [];
-        foreach ($headers as $k => $v) {
-            $out[$k] = in_array(strtolower($k), $mask, true) ? ['***REDACTED***'] : $v;
-        }
-
-        return $out;
     }
 }

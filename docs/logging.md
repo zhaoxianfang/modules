@@ -1,9 +1,10 @@
 # 数据库日志驱动（database channel）使用文档
 
 > 本功能随 `zxf/modules` 包一同提供，命名空间为 `zxf\Modules\Logging`。
-> 它实现了一个**强大且友好**的「数据库日志驱动」：开箱即可把 Laravel 全站日志
-> （包含每次 HTTP 请求自动产生的「请求 → 响应」汇总日志）写入 `system_logs` 数据表，
-> 字段齐全、信息丰富，并自带后台检索界面与清理命令。
+> 它实现了一个**轻量且专注**的「数据库日志驱动」：开箱即可把 Laravel 全站日志
+> （包含每次 HTTP 请求自动产生的「请求 → 响应」汇总日志）写入 `logs` 数据表，
+> 字段齐全、信息丰富。**本模块只负责采集与落库日志，不提供任何后台管理界面**
+> （查看 / 检索 / 删除等控制器功能已移除），过期日志的清理交由业务系统按需基于 `Log` 模型自行处理。
 
 ---
 
@@ -15,10 +16,10 @@
 - **完整的响应结果（Laravel 13+ 重点）**：HTTP 状态码、状态短语、请求耗时（ms）、
   峰值内存（MB）、响应头（敏感头脱敏）、响应体（仅文本类，截断至 2 万字符）。
 - **异常全链路**：异常类名、消息、文件:行、完整堆栈，并自动与触发它的请求/响应关联。
-- **安全**：密码 / token / secret / Authorization / Cookie 等敏感信息强制 `***REDACTED***`。
+- **安全**：密码 / token / secret / Authorization / Cookie 等敏感信息强制 `***`。
 - **去重**：单次请求内相同异常只落库一次，避免刷屏。
 - **健壮**：写库异常被静默吞掉，**绝不影响主业务流程**。
-- **友好检索**：自带 `/logs` 后台界面（列表、详情、删除、清理），并支持 `logs:clean` 命令。
+- **友好检索**：落库表 `logs` 与模型 `zxf\Modules\Logging\Models\Log` 公开可用，可直接查询或接入外部日志平台。
 
 ---
 
@@ -30,7 +31,7 @@
 # 发布迁移文件到 database/migrations
 php artisan vendor:publish --tag=modules-logging
 
-# 执行迁移，创建 system_logs 表
+# 执行迁移，创建 logs 表
 php artisan migrate
 ```
 
@@ -44,18 +45,25 @@ LOG_CHANNEL=database
 # 可选：控制最低记录等级（默认 debug）
 LOG_LEVEL=debug
 
-# 可选：查看器开关 / URL 前缀 / 保留天数（均有默认值）
-LOG_DB_VIEWER_ENABLED=true
-LOG_DB_VIEWER_PREFIX=logs
-LOG_DB_RETENTION_DAYS=30
+# 可选：是否允许 CLI 模式下的日志也写入数据库（默认 false）
+LOG_DB_LOG_CLI=false
+
+# 可选：响应体最大存储字符数（中间件采集响应体时按此截断，默认 20000）
+LOG_DB_MAX_BODY_LENGTH=20000
+
+# 可选：追加的敏感字段键名（会与内置默认名单合并，而非覆盖），例如：
+# LOG_DB_SENSITIVE_KEYS=pass,credit_card,id_card
 ```
 
+> CLI 日志默认不落库（无请求上下文）。若需记录，可设 `LOG_DB_LOG_CLI=true` 全局开启，
+> 或在单条日志上携带 `Log::info('...', ['console_to_log' => true])` 精准开启。
+
 完成。此后所有 `Log::info()` / `Log::error()` 以及**每次 HTTP 请求的访问汇总**
-都会写入 `system_logs` 表。
+都会写入 `logs` 表。
 
 ---
 
-## 三、数据表字段说明（system_logs）
+## 三、数据表字段说明（logs）
 
 | 字段 | 说明 |
 | --- | --- |
@@ -108,8 +116,6 @@ LOG_DB_RETENTION_DAYS=30
         'table' => null,
         'captureRequestBody' => true,
         'captureResponseBody' => true,
-        'maxBodyLength' => 20000,
-        'retentionDays' => 30,
     ],
     'tap' => [ \zxf\Modules\Logging\Handler\DatabaseLogTap::class ],
     'processors' => [],
@@ -131,52 +137,71 @@ LOG_DB_RETENTION_DAYS=30
 
 继承 `Monolog\Handler\AbstractProcessingHandler`，负责：
 
-- 使用 `LogRecord->level->name` / `level_name`（Monolog 3 枚举，避免对 `level` 重新赋值）；
-- 请求内去重；
-- 敏感字段脱敏；
+- 使用 `$record['level_name']`（Monolog 3 数组访问，返回大写等级名如 ERROR，避免对 `level` 重新赋值）；
+- 请求内精确去重（去重集合存放于 `LogContext`，随每次请求 `reset()` 清空，Octane / Swoole 常驻进程下也不会跨请求串味）；
+- **敏感字段脱敏**：对 `password` / `token` / `secret` / `authorization` / `api_key` / `access_token` /
+  `client_secret` / `private_key` / `csrf_token` 等键名做键名脱敏，并对 `message` / `response_body`
+  等自由文本做正则脱敏（命中 `"password":"..."` 形态即替换为 `***`），防止密码等明文落库；
 - 剔除 `Throwable` / 对象（无法 JSON 序列化）；
+- **异常双写**：当某条日志承载异常（`context.exception` 为 `Throwable`）时，除落库外，额外写入 Laravel
+  默认的 `stack` **文件**通道（`Log::channel('stack')`），实现「数据库 + 文件」双保险，便于事后排查；
 - 任何异常都吞掉，不影响主流程。
 
 ---
 
-## 五、后台检索界面
+## 五、设计定位：只记录，不提供管理界面
 
-默认在 `{prefix}`（默认 `/logs`）提供：
+本模块**只负责采集与落库日志信息**，刻意不提供任何后台管理界面（列表 / 详情 / 删除 / 检索等
+控制器功能均已移除）。理由：
 
-- `GET  /logs` —— 列表（按等级 / 通道 / 关键字筛选、分页）
-- `GET  /logs/{id}` —— 详情（请求、响应、异常、原始 context/extra 完整展开）
-- `DELETE /logs/{id}` —— 删除单条
-- `POST /logs/clean` —— 按保留天数清理过期日志
+- 日志的查看、检索、审计通常由业务系统各自的后台 / 日志平台承担，重复造一个查看器既冗余
+  又易引入越权风险；
+- 落库表 `logs` 与模型 `zxf\Modules\Logging\Models\Log` 仍公开可用，需要检索时直接用模型查询
+  （见下节）或接入 ELK / Grafana 等外部系统即可。
 
-> 生产环境建议为该前缀追加认证中间件。可在 `config('logging.db.viewer_middleware')`
-> 中配置（默认 `['web']`），或设置 `LOG_DB_VIEWER_ENABLED=false` 彻底关闭。
+过期日志的清理不在本模块范围内，业务系统可基于 `Log` 模型按需实现（如定时任务批量删除）。
 
 ---
 
-## 六、清理命令
+## 六、与 Laravel `report()` 集成（异常日志也能落库）
 
-```bash
-php artisan logs:clean                 # 删除 30 天前的日志（默认保留天数）
-php artisan logs:clean --days=7        # 仅保留最近 7 天
-php artisan logs:clean --level=error   # 仅清理 error 等级
-php artisan logs:clean --dry-run       # 仅预览，不实际删除
+本模块自动监听日志事件：当应用代码中调用 Laravel 原生的 `report($e)`（或任何携带
+`exception` 的日志）时，只要 database 通道已配置，该异常也会被写入 `logs` 表，从而能被后台
+datatable 检索到。
+
+```php
+use Throwable;
+
+try {
+    // ... 业务代码
+} catch (Throwable $e) {
+    report($e);   // 异常会被自动记录到 database 通道（logs 表），不影响主流程
+}
 ```
+
+行为要点：
+- 仅当日志 `context` 中携带 `exception`、且来源通道不是 `database` 时，才会额外写入，避免重复。
+- 若 `LOG_CHANNEL=database`（默认通道已是 database），`report($e)` 已直接落库，不会重复。
+- 若默认 `stack` 通道已包含 `database`，同样已落库，不会重复。
+- 以原始等级（error / critical 等）转发，保留等级信息。
+- CLI 模式（队列 / 命令）下 database 通道默认不落库；如需记录，设置 `LOG_DB_LOG_CLI=true`
+  或在该条日志携带 `context['console_to_log'] = true`。
 
 ---
 
 ## 七、编程方式读取日志
 
 ```php
-use zxf\Modules\Logging\Models\SystemLog;
+use zxf\Modules\Logging\Models\Log;
 
 // 最近 7 天的错误日志
-$errors = SystemLog::errors()->recent(7)->latest()->get();
+$errors = Log::errors()->recent(7)->latest()->get();
 
 // 某次请求产生的全部日志（按路径 / IP 检索）
-$byPath = SystemLog::where('request_path', '/api/orders')->get();
+$byPath = Log::where('request_path', '/api/orders')->get();
 
 // 某异常类相关日志
-$byEx = SystemLog::where('exception_class', 'App\Exceptions\FooException')->get();
+$byEx = Log::where('exception_class', 'App\Exceptions\FooException')->get();
 ```
 
 模型已内置作用域：`scopeLevel`、`scopeOfChannel`、`scopeRecent`、`scopeErrors`。
@@ -209,9 +234,13 @@ $byEx = SystemLog::where('exception_class', 'App\Exceptions\FooException')->get(
 
 `.env`：`LOG_LEVEL=error`
 
-### 关闭查看器
+### 异步队列落库（高并发优化）
 
-`.env`：`LOG_DB_VIEWER_ENABLED=false`
+`.env`：`LOG_DB_QUEUE=true`
+
+开启后，日志写入由队列 worker（`php artisan queue:work`）在后台完成，请求主链路不再阻塞于
+数据库 I/O，显著提升高并发接口吞吐。需配置可用的队列连接（如 `QUEUE_CONNECTION=redis`）；
+若仍使用默认 `sync` 驱动，则等价于同步写入，行为不变。切换对业务代码与落库核心逻辑完全透明。
 
 ---
 
@@ -223,3 +252,65 @@ $byEx = SystemLog::where('exception_class', 'App\Exceptions\FooException')->get(
   `stack` 等通道完全兼容，可随意组合（例如 `stack` 同时写文件与数据库）。
 - 配置加载兼容 `config:cache`（即使配置被缓存，`LoggingServiceProvider` 也会强制确保
   `database` 通道存在）。
+
+---
+
+## 十、架构设计
+
+本模块刻意保持「薄而专一」：只负责**采集 + 脱敏 + 落库**，不涉及任何后台管理界面。
+核心组件与数据流如下：
+
+```
+HTTP 请求
+   │
+   ▼
+LogContextMiddleware（web / api 组，仅 HTTP）
+   ├─ 请求开始：采集请求上下文 → LogContext（请求级单例）+ Laravel Context 门面
+   └─ 响应终止（terminating）：采集响应上下文 → LogContext
+        └─ 写入一条「请求 → 响应」汇总日志到 database 通道
+   │
+   ▼
+database 通道（Monolog 3）
+   ├─ DatabaseLogTap（仅 Web 挂载）→ RequestContextProcessor
+   │     把 LogContext 的请求 / 响应上下文注入每条日志的 extra
+   ▼
+DatabaseLogHandler::write(LogRecord)
+   ├─ ① 去重：相同「level|message|exception」单次请求内只落库一次
+   │        （去重集合存于 LogContext，随每次请求 reset，避免 Octane 跨请求串味）
+   ├─ ② 归一化：buildAttributes() 把 LogRecord 映射为 logs 表字段数组
+   ├─ ③ 脱敏：Redactor（全模块唯一事实来源）统一处理
+   │        - 键名脱敏（password / token / secret … → ***）
+   │        - 自由文本脱敏（"key":"value" 形态）
+   │        - 请求 / 响应头脱敏（Authorization / Cookie / CSRF …）
+   ├─ ④ 落库：委托 LogWriter 抽象（默认 DatabaseLogWriter；开启 logging.db.queue 后切换为
+   │        QueuedDatabaseLogWriter，由队列 worker 异步写库，剥离请求主链路 I/O）
+   │        - 落库失败 → 回退写入 stack 文件通道，避免日志丢失
+   └─ ⑤ 事件：每次成功落库派发 LogRecorded 事件（默认无监听，可用于告警 / 同步 / 审计）
+```
+
+### 关键设计决策
+
+- **Redactor 单一事实来源**：敏感键名原本散落在 handler（两套常量）与 middleware（两套方法）
+  共三处，极易不一致。现收敛到 `Support/Redactor` 一处，handler 与 middleware 共用；
+  内置 `DEFAULT_KEYS` 永远生效，应用配置只做【合并】不做【覆盖】，确保核心密钥不会被误放行。
+  正则模式在构造时预编译一次，避免每条日志重复拼接。
+- **LogWriter 抽象 + 队列可选**：落库动作与具体存储解耦。`DatabaseLogHandler` 依赖
+  `Contracts/LogWriter` 接口，默认 `Writer/DatabaseLogWriter`（Eloquent，同步）。设置
+  `logging.db.queue = true` 后自动切换为 `Writer/QueuedDatabaseLogWriter`，由 `Jobs/WriteLogJob`
+  在队列 worker 中真正写库，把数据库 I/O 从请求主链路剥离（未配置真实队列时退化为同步，行为不变）。
+  需要写入其它存储时，实现该接口并替换绑定即可，handler 本身无需改动；单元测试也可注入假实现。
+- **RedactorContract 契约**：脱敏器现在是 `Contracts/RedactorContract` 接口的具体实现
+  `Support/Redactor`，便于替换为接入密钥管理系统的自定义脱敏策略，而不动 handler / middleware。
+- **LoggingConfig 配置对象**：把散落的 `config('logging.db.*')` 与 `handler_with.*` 读取收敛为
+  单一强类型 DTO（`Config/LoggingConfig`），各组件统一读取，避免口径不一致、重复解析；
+  且在缺少 Laravel 环境（如纯单元测试）时自动回退默认配置，可独立测试。
+- **LogRecorded 事件**：每次成功落库后派发，默认无任何监听器；业务系统可借此实现「入库即告警」
+  等解耦的下游能力，而不污染落库核心逻辑。同步 / 异步两条写入路径都会派发，事件语义一致。
+- **关注点分离**：`DatabaseLogHandler` 只做「去重 / 归一化 / 落库 / 派发事件」，不再内联脱敏与持久化细节，
+  单个类职责清晰、易测试。异常日志的「文件落盘」由 Laravel 默认通道（report($e) / stack）负责，
+  本 handler 不再二次写 stack，避免与默认通道重复；仅落库失败时回退 stack 文件。
+- **健壮性**：任何写库 / 序列化异常都被捕获；数据库不可用时仍有 stack 文件通道兜底，绝不反向影响主流程。
+- **常驻进程安全**：所有请求级状态集中在 `LogContext`，由中间件在每次请求开始时 `reset()`，
+  在 Laravel Octane / Swoole 下不会跨请求串味。
+- **可检索性**：`logs` 表已为 `level_name`、`channel`、`created_at` 及其组合建立索引；
+  检索时直接使用 `zxf\Modules\Logging\Models\Log` 模型或接入 ELK / Grafana 等外部系统。

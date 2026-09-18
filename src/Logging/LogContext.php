@@ -14,6 +14,10 @@ namespace zxf\Modules\Logging;
  * 版本间行为一致、并精确控制写入字段；同时我们也会把数据同步进 Context 门面，
  * 供其它日志通道 / 处理器共享（见 LogContextMiddleware）。
  *
+ * 同时承担「单次请求内去重集合」的存储：因为 PHP 常驻场景（Laravel Octane / Swoole）
+ * 下，处理器中的静态变量会跨请求残留，导致去重错乱；统一放在 here 的 reset() 中
+ * 随每次请求清空，即可保证去重仅在当前请求内生效。
+ *
  * @package zxf\Modules\Logging
  */
 final class LogContext
@@ -25,6 +29,9 @@ final class LogContext
     private static bool $hasResponse = false;
 
     private static float $startTime = 0.0;
+
+    /** 单次请求内去重集合（随 reset() 在每次请求开始时清空） */
+    private static array $seen = [];
 
     public static function setStart(float $t): void
     {
@@ -62,16 +69,29 @@ final class LogContext
         return self::$hasResponse;
     }
 
+    /**
+     * 请求内去重：是否已记录过该 key（level|message|exception）。
+     */
+    public static function hasSeen(string $key): bool
+    {
+        return isset(self::$seen[$key]);
+    }
+
+    public static function markSeen(string $key): void
+    {
+        self::$seen[$key] = true;
+    }
+
+    /**
+     * 重置全部状态。中间件在每个请求开始时调用，确保请求级上下文与去重集合
+     * 不会跨请求（尤其是 Octane / Swoole 常驻进程）串味。
+     */
     public static function reset(): void
     {
         self::$request = [];
         self::$response = [];
         self::$hasResponse = false;
         self::$startTime = 0.0;
-    }
-
-    public static function all(): array
-    {
-        return ['request' => self::$request, 'response' => self::$response];
+        self::$seen = [];
     }
 }

@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Logging\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * 系统日志模型（数据库日志通道落库表 system_logs）。
+ * 系统日志模型（数据库日志通道落库表 logs）。
  *
  * 一条记录代表一条日志，并尽可能完整地携带触发它的「请求」与「响应」上下文，
  * 便于事后在后台检索、复盘问题（尤其是生产环境的 500 / 异常）。
+ *
+ * 命名说明：本模型类名为 Log（对应数据表 logs）。在引用 Laravel 的日志门面时，
+ * 请使用 Illuminate\Support\Facades\Log 的完全限定名或别名，避免与本类冲突。
  *
  * @property int         $id
  * @property string      $level            等级键（error）
@@ -43,11 +47,18 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $file
  * @property string|null $trace
  *
+ * @method static Builder|Log level(string $level)
+ * @method static Builder|Log ofChannel(string $channel)
+ * @method static Builder|Log recent(int $days = 7)
+ * @method static Builder|Log errors()
+ * @method static Builder|Log between($from, $to)
+ * @method static Builder|Log search(string $term)
+ *
  * @package zxf\Modules\Logging
  */
-class SystemLog extends Model
+class Log extends Model
 {
-    protected $table = 'system_logs';
+    protected $table = 'logs';
 
     protected $fillable = [
         'level', 'level_name', 'channel', 'message', 'context', 'extra',
@@ -88,6 +99,18 @@ class SystemLog extends Model
     public function scopeRecent($query, int $days = 7)
     {
         return $query->where('created_at', '>=', now()->subDays($days));
+    }
+
+    /** 时间区间（created_at 闭区间，供 datatable 时间范围过滤） */
+    public function scopeBetween($query, $from, $to)
+    {
+        return $query->whereBetween('created_at', [$from, $to]);
+    }
+
+    /** 消息模糊检索（用于后台搜索框，转义 % 与 _ 通配符） */
+    public function scopeSearch($query, string $term)
+    {
+        return $query->where('message', 'like', '%'.addcslashes($term, '%_').'%');
     }
 
     /** 仅异常 / 错误级别 */

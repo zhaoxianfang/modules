@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * 创建 system_logs 表（数据库日志通道落库表）。
+ * 创建 logs 表（数据库日志通道落库表）。
  *
  * 设计目标：字段齐全，覆盖
  *   - 日志基础信息（level / channel / message / context / extra）
@@ -23,7 +23,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('system_logs', function (Blueprint $table) {
+        Schema::create('logs', function (Blueprint $table) {
             $table->id();
 
             // ---- 日志基础信息 ----
@@ -32,8 +32,8 @@ return new class extends Migration
             $table->string('channel', 50)->nullable()->index()->comment('日志通道名');
             $table->longText('message')->comment('日志正文');
 
-            $table->json('context')->nullable()->comment('Monolog context（已脱敏、剔除不可序列化对象）');
-            $table->json('extra')->nullable()->comment('Monolog extra（上下文附加数据）');
+            $table->longText('context')->nullable()->comment('Monolog context（已脱敏、剔除不可序列化对象、超长字段已截断）');
+            $table->longText('extra')->nullable()->comment('Monolog extra（上下文附加数据）');
 
             // ---- 请求上下文 ----
             $table->string('request_method', 10)->nullable()->index();
@@ -45,8 +45,8 @@ return new class extends Migration
             $table->text('request_user_agent')->nullable();
             $table->text('request_referer')->nullable();
             $table->string('request_session_id', 255)->nullable();
-            $table->json('request_input')->nullable()->comment('请求入参（已脱敏）');
-            $table->json('request_headers')->nullable()->comment('请求头（敏感头已脱敏）');
+            $table->longText('request_input')->nullable()->comment('请求入参（已脱敏、超长字段已截断）');
+            $table->longText('request_headers')->nullable()->comment('请求头（敏感头已脱敏）');
 
             // ---- 认证用户 ----
             $table->unsignedBigInteger('user_id')->nullable()->index();
@@ -57,8 +57,8 @@ return new class extends Migration
             $table->string('response_status', 50)->nullable()->comment('状态短语，如 OK');
             $table->unsignedInteger('response_duration_ms')->nullable()->comment('请求耗时（毫秒）');
             $table->decimal('response_memory_mb', 8, 2)->nullable()->comment('峰值内存（MB）');
-            $table->json('response_headers')->nullable()->comment('响应头（敏感头已脱敏）');
-            $table->longText('response_body')->nullable()->comment('响应体（文本类，截断至 20000 字符）');
+            $table->longText('response_headers')->nullable()->comment('响应头（敏感头已脱敏）');
+            $table->longText('response_body')->nullable()->comment('响应体（文本类，截断至 20000 字符，已脱敏）');
 
             // ---- 异常信息 ----
             $table->string('exception_class', 255)->nullable();
@@ -68,11 +68,14 @@ return new class extends Migration
 
             $table->timestamps();
             $table->index('created_at');
+            // 复合索引：常见的「按等级 / 通道 + 时间」检索组合（按 created_at 检索仅需单列索引）
+            $table->index(['level_name', 'created_at']);
+            $table->index(['channel', 'created_at']);
         });
     }
 
     public function down(): void
     {
-        Schema::dropIfExists('system_logs');
+        Schema::dropIfExists('logs');
     }
 };
