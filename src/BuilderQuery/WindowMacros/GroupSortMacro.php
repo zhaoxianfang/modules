@@ -4,13 +4,24 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
-class GroupSortMacro
+/**
+ * 分组排序宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
+ *
+ * 基于标准 SQL 窗口函数 ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...) 实现「每个分组内的前 N 名」
+ * 查询，同时支持倒数排名（负数名次）。同一套宏在 MySQL 8.0+ 与 PostgreSQL 15+ 上均可直接使用。
+ *
+ * 安全性：分组/排序列名经白名单校验并由 grammar wrap；排名条件通过参数化子查询（MAX + 关联）实现，
+ * 不裸拼用户输入。
+ *
+ * @package zxf\Modules\BuilderQuery\WindowMacros
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
+ */
+class GroupSortMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册 groupSort 宏函数
@@ -31,26 +42,26 @@ class GroupSortMacro
          * @param  string  $orderBy  排序字段名 eg: read
          * @param  string  $direction  排序方向，eg: desc, asc
          */
-        Builder::macro('groupSort', function (string $groupBy, int|array $ranks, string $orderBy = 'read', string $direction = 'desc') {
-            /** @var Builder $this */
-            $model = $this->getModel();
+        static::define('groupSort', function (string $groupBy, int|array $ranks, string $orderBy = 'read', string $direction = 'desc') {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
             $primaryKey = $model->getKeyName();
 
             // 校验外部传入的字段名，防止 SQL 注入（表名/主键来自模型定义，视为可信）。
-            $groupBy = GroupSortMacro::assertValidIdentifier($groupBy, 'group');
-            $orderBy = GroupSortMacro::assertValidIdentifier($orderBy, 'order');
-            GroupSortMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+            $groupBy = BaseMacro::assertValidIdentifier($groupBy, 'group');
+            $orderBy = BaseMacro::assertValidIdentifier($orderBy, 'order');
+            BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
 
             // 克隆查询构造器并移除分页限制避免影响子查询
             $baseQuery = clone $this;
-            $baseQuery->getQuery()->limit = null;
-            $baseQuery->getQuery()->offset = null;
+            BaseMacro::queryOf($baseQuery)->limit = null;
+            BaseMacro::queryOf($baseQuery)->offset = null;
 
             // 添加开窗函数排名（使用 grammar wrap 生成适配驱动的标识符引用）
-            $orderDirection = GroupSortMacro::assertDirection($direction);
-            $wrappedGroup = GroupSortMacro::wrapIdentifier($baseQuery, $groupBy);
-            $wrappedOrder = GroupSortMacro::wrapIdentifier($baseQuery, $orderBy);
+            $orderDirection = BaseMacro::assertDirection($direction);
+            $wrappedGroup = BaseMacro::wrapIdentifier($baseQuery, $groupBy);
+            $wrappedOrder = BaseMacro::wrapIdentifier($baseQuery, $orderBy);
             $partitionExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedGroup} ORDER BY {$wrappedOrder} {$orderDirection}) AS row_rank";
             // 必须同时选出分组列，供倒数排名子查询中 `ranked.{$wrappedGroup}` 引用
             $baseQuery->select([$table.'.'.$primaryKey, $table.'.'.$groupBy, DB::raw($partitionExpr)]);
@@ -58,7 +69,7 @@ class GroupSortMacro
             // 包装子查询并合并绑定
             $subSql = $baseQuery->toSql();
             $rankedSubQuery = DB::table(DB::raw("({$subSql}) as ranked"))
-                ->mergeBindings($baseQuery->getQuery());
+                ->mergeBindings(BaseMacro::queryOf($baseQuery));
 
             // 添加 row_rank 条件
             // 负数表示倒数排名：需计算 max_rank，并过滤 row_rank = max_rank + ranks + 1

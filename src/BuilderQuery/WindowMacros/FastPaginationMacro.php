@@ -4,33 +4,30 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * 超大表快速分页查询宏
+ * 超大表快速分页查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  *
- * 针对 MySQL 8.0+ 优化的分页解决方案，解决传统 OFFSET 分页在超大表上的性能问题
- *
- * 核心策略：
+ * 基于标准 SQL（OFFSET/LIMIT、ROW_NUMBER() 窗口函数、WITH 公共表表达式）实现大表分页优化，
+ * 因此同一套宏在 MySQL 8.0+ 与 PostgreSQL 15+ 上均可直接使用：
  * 1. 延迟关联法：先查询ID，再关联详情（避免全表扫描）
  * 2. 窗口函数法：使用 ROW_NUMBER() 高效定位行范围
  * 3. 智能自适应：根据表大小和页码自动选择最优策略
+ * 4. 游标 / 寻址分页：基于排序书签的键集分页，O(1) 复杂度
  *
- * 不使用缓存机制，完全基于 SQL 优化
- *
- * 安全性：排序列名 / 主键经白名单校验并由 grammar wrap。
+ * 不使用缓存机制，完全基于 SQL 优化。
+ * 安全性：排序列名 / 主键 / 表名 / CTE 别名经白名单校验并由 grammar wrap；分页偏移量为整数。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
- * @requires MySQL 8.0+
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
  */
-class FastPaginationMacro
+class FastPaginationMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 大表阈值（行数超过此值视为大表）
@@ -49,11 +46,11 @@ class FastPaginationMacro
      */
     public static function register(): void
     {
-        self::registerFastPaginate();
-        self::registerFastSimplePaginate();
-        self::registerCursorBasedPaginate();
-        self::registerSeekPaginate();
-        self::registerPartitionPaginate();
+        FastPaginationMacro::registerFastPaginate();
+        FastPaginationMacro::registerFastSimplePaginate();
+        FastPaginationMacro::registerCursorBasedPaginate();
+        FastPaginationMacro::registerSeekPaginate();
+        FastPaginationMacro::registerPartitionPaginate();
     }
 
     /**
@@ -63,7 +60,7 @@ class FastPaginationMacro
      * - 小表/浅分页：使用传统 OFFSET LIMIT
      * - 大表/深分页：使用延迟关联或窗口函数
      */
-    protected static function registerFastPaginate(): void
+public static function registerFastPaginate(): void
     {
         /**
          * 智能快速分页 - 自动选择最优策略
@@ -101,22 +98,22 @@ class FastPaginationMacro
          * // 深度分页场景
          * $records = BigTable::query()->fastPaginate(30, 5000);
          */
-        Builder::macro('fastPaginate', function (
+        static::define('fastPaginate', function (
             int $perPage = 15,
             ?int $page = null,
             ?string $primaryKey = null,
             array $options = []
         ): LengthAwarePaginator {
-            /** @var Builder $this */
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
-            $primaryKey = $primaryKey ?: $this->getModel()->getKeyName();
+            $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
             $strategy = $options['strategy'] ?? 'auto';
             $countStrategy = $options['countStrategy'] ?? 'exact';
             $columns = $options['columns'] ?? ['*'];
 
             // 获取表名
-            $table = $this->getModel()->getTable();
+            $table = BaseMacro::resolveTable($this);
 
             // 判断是否需要使用优化策略
             $needsOptimization = FastPaginationMacro::shouldOptimize($this, $page, $perPage, $strategy);
@@ -160,7 +157,7 @@ class FastPaginationMacro
      *
      * 不计算总数，只判断是否有下一页（性能更好）
      */
-    protected static function registerFastSimplePaginate(): void
+public static function registerFastSimplePaginate(): void
     {
         /**
          * 简单快速分页 - 不计算总数
@@ -180,19 +177,19 @@ class FastPaginationMacro
          * // 无限滚动加载
          * $posts = Post::query()->fastSimplePaginate(10);
          */
-        Builder::macro('fastSimplePaginate', function (
+        static::define('fastSimplePaginate', function (
             int $perPage = 15,
             ?int $page = null,
             ?string $primaryKey = null,
             array $options = []
         ): \Illuminate\Pagination\Paginator {
-            /** @var Builder $this */
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
-            $primaryKey = $primaryKey ?: $this->getModel()->getKeyName();
+            $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
             $columns = $options['columns'] ?? ['*'];
 
-            $table = $this->getModel()->getTable();
+            $table = BaseMacro::resolveTable($this);
 
             // 使用延迟关联策略优化
             if ($page > FastPaginationMacro::DEEP_PAGE_THRESHOLD) {
@@ -228,7 +225,7 @@ class FastPaginationMacro
      *
      * 性能最佳，但只能顺序访问
      */
-    protected static function registerCursorBasedPaginate(): void
+public static function registerCursorBasedPaginate(): void
     {
         /**
          * 游标分页 - 基于排序值的高效分页
@@ -261,7 +258,7 @@ class FastPaginationMacro
          * // 使用上一页的游标
          * $nextPage = Post::query()->cursorPaginate(10, $cursor, 'published_at');
          */
-        Builder::macro('cursorPaginate', function (
+        static::define('cursorPaginate', function (
             int $perPage = 15,
             ?string $cursor = null,
             string $sortColumn = '',
@@ -269,9 +266,9 @@ class FastPaginationMacro
             ?string $primaryKey = null,
             array $options = []
         ): \Illuminate\Contracts\Pagination\CursorPaginator {
-            /** @var Builder $this */
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = strtolower($direction);
-            $primaryKey = $primaryKey ?: $this->getModel()->getKeyName();
+            $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
             $sortColumn = $sortColumn ?: $primaryKey;
             $columns = $options['columns'] ?? ['*'];
 
@@ -356,7 +353,7 @@ class FastPaginationMacro
      *
      * 适合深分页场景，基于书签定位
      */
-    protected static function registerSeekPaginate(): void
+public static function registerSeekPaginate(): void
     {
         /**
          * 寻址分页 - 基于书签的深度分页方案
@@ -383,7 +380,7 @@ class FastPaginationMacro
          * // 使用书签快速跳转到第100页
          * $page100 = BigTable::query()->seekPaginate(100, $bookmarks, 100);
          */
-        Builder::macro('seekPaginate', function (
+        static::define('seekPaginate', function (
             int $perPage = 100,
             ?array $bookmarks = null,
             int $page = 1,
@@ -392,13 +389,13 @@ class FastPaginationMacro
             ?string $primaryKey = null,
             array $options = []
         ): \Illuminate\Contracts\Pagination\LengthAwarePaginator {
-            /** @var Builder $this */
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = strtolower($direction);
-            $primaryKey = $primaryKey ?: $this->getModel()->getKeyName();
+            $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
             $sortColumn = $sortColumn ?: $primaryKey;
             $columns = $options['columns'] ?? ['*'];
 
-            $table = $this->getModel()->getTable();
+            $table = BaseMacro::resolveTable($this);
             $offset = ($page - 1) * $perPage;
 
             // 如果有书签且目标页有书签，使用书签优化
@@ -452,7 +449,7 @@ class FastPaginationMacro
      *
      * 针对 MySQL 8.0+ 分区表的优化分页
      */
-    protected static function registerPartitionPaginate(): void
+public static function registerPartitionPaginate(): void
     {
         /**
          * 分区表分页 - 针对分区表的并行扫描优化
@@ -470,13 +467,13 @@ class FastPaginationMacro
          * // 按日期分区的大表
          * $logs = Log::query()->partitionPaginate(100, 1, 'created_date');
          */
-        Builder::macro('partitionPaginate', function (
+        static::define('partitionPaginate', function (
             int $perPage = 15,
             ?int $page = null,
             ?string $partitionKey = null,
             array $options = []
         ): LengthAwarePaginator {
-            /** @var Builder $this */
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $page = $page ?: request()->input('page', 1);
             $page = max(1, (int) $page);
             $columns = $options['columns'] ?? ['*'];
@@ -497,14 +494,14 @@ class FastPaginationMacro
     /**
      * 判断是否需要进行分页优化
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @param int $page 当前页码
      * @param int $perPage 每页数量
      * @param string $strategy 策略
      * @return string|false 优化策略或false
      */
     public static function shouldOptimize(
-        Builder $query,
+        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
         int $page,
         int $perPage,
         string $strategy
@@ -515,7 +512,7 @@ class FastPaginationMacro
         }
 
         // 浅分页不需要优化
-        if ($page <= self::DEEP_PAGE_THRESHOLD) {
+        if ($page <= FastPaginationMacro::DEEP_PAGE_THRESHOLD) {
             return false;
         }
 
@@ -523,7 +520,7 @@ class FastPaginationMacro
         $offset = ($page - 1) * $perPage;
 
         // 超大偏移量使用窗口函数
-        if ($offset > self::LARGE_TABLE_THRESHOLD) {
+        if ($offset > FastPaginationMacro::LARGE_TABLE_THRESHOLD) {
             return 'window';
         }
 
@@ -538,11 +535,11 @@ class FastPaginationMacro
     /**
      * 获取总记录数
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @param string $strategy 计数策略
      * @return int
      */
-    public static function getTotalCount(Builder $query, string $strategy): int
+    public static function getTotalCount(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query, string $strategy): int
     {
         // 跳过计数（返回估算值）
         if ($strategy === 'skip') {
@@ -551,7 +548,7 @@ class FastPaginationMacro
 
         // 近似计数（使用 EXPLAIN 估算）
         if ($strategy === 'approximate') {
-            return self::getApproximateCount($query);
+            return FastPaginationMacro::getApproximateCount($query);
         }
 
         // 精确计数
@@ -561,20 +558,24 @@ class FastPaginationMacro
     /**
      * 获取近似记录数
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @return int
      */
-    public static function getApproximateCount(Builder $query): int
+    public static function getApproximateCount(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query): int
     {
-        $table = $query->getModel()->getTable();
-        $result = DB::select("EXPLAIN SELECT * FROM `{$table}`");
+        $table = BaseMacro::resolveTable($query);
+        $wrappedTable = BaseMacro::wrapIdentifier($query, $table);
 
-        if (!empty($result)) {
-            // 尝试从 EXPLAIN 结果中获取估算行数
-            $row = $result[0];
-            if (isset($row->rows)) {
-                return (int) $row->rows;
-            }
+        if (BaseMacro::isPostgres($query)) {
+            // PostgreSQL：从统计信息 pg_class.reltuples 读取近似行数（非精确，但与 EXPLAIN 近似语义一致）
+            $result = DB::select('SELECT reltuples::bigint AS rows FROM pg_class WHERE oid = ' . $wrappedTable . '::regclass');
+        } else {
+            // MySQL：EXPLAIN 返回估算行数
+            $result = DB::select("EXPLAIN SELECT * FROM {$wrappedTable}");
+        }
+
+        if (! empty($result) && isset($result[0]->rows)) {
+            return (int) $result[0]->rows;
         }
 
         // 回退到精确计数
@@ -584,7 +585,7 @@ class FastPaginationMacro
     /**
      * 执行优化分页
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @param string $table 表名
      * @param string $primaryKey 主键
      * @param int $page 页码
@@ -594,7 +595,7 @@ class FastPaginationMacro
      * @return \Illuminate\Support\Collection
      */
     public static function executeOptimizedPaginate(
-        Builder $query,
+        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
         string $table,
         string $primaryKey,
         int $page,
@@ -603,7 +604,7 @@ class FastPaginationMacro
         array $columns
     ): \Illuminate\Support\Collection {
         if ($strategy === 'window') {
-            return self::executeWindowPaginate(
+            return FastPaginationMacro::executeWindowPaginate(
                 $query,
                 $table,
                 $primaryKey,
@@ -615,7 +616,7 @@ class FastPaginationMacro
             );
         }
 
-        return self::executeDeferredPaginate(
+        return FastPaginationMacro::executeDeferredPaginate(
             $query,
             $table,
             $primaryKey,
@@ -630,7 +631,7 @@ class FastPaginationMacro
      *
      * 策略：先查ID，再关联详情
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @param string $table 表名
      * @param string $primaryKey 主键
      * @param int $page 页码
@@ -639,7 +640,7 @@ class FastPaginationMacro
      * @return \Illuminate\Support\Collection
      */
     public static function executeDeferredPaginate(
-        Builder $query,
+        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
         string $table,
         string $primaryKey,
         int $page,
@@ -671,7 +672,7 @@ class FastPaginationMacro
      *
      * 使用 ROW_NUMBER() 高效定位行范围
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @param string $table 表名
      * @param string $primaryKey 主键
      * @param string $sortColumn 排序字段
@@ -682,7 +683,7 @@ class FastPaginationMacro
      * @return \Illuminate\Support\Collection
      */
     public static function executeWindowPaginate(
-        Builder $query,
+        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
         string $table,
         string $primaryKey,
         string $sortColumn,
@@ -693,36 +694,37 @@ class FastPaginationMacro
     ): \Illuminate\Support\Collection {
         $offset = ($page - 1) * $perPage;
         $sortColumn = $sortColumn ?: $primaryKey;
-        $direction = FastPaginationMacro::assertDirection($direction);
-        $primaryKey = FastPaginationMacro::assertValidIdentifier($primaryKey, 'primaryKey');
-        $sortColumn = FastPaginationMacro::assertValidIdentifier($sortColumn, 'order');
-        $wrappedTable = FastPaginationMacro::wrapIdentifier($query, $table);
-        $wrappedPk = FastPaginationMacro::wrapIdentifier($query, $primaryKey);
-        $wrappedSort = FastPaginationMacro::wrapIdentifier($query, $sortColumn);
+        $direction = BaseMacro::assertDirection($direction);
+        $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+        $sortColumn = BaseMacro::assertValidIdentifier($sortColumn, 'order');
+        $wrappedTable = BaseMacro::wrapIdentifier($query, $table);
+        $wrappedPk = BaseMacro::wrapIdentifier($query, $primaryKey);
+        $wrappedSort = BaseMacro::wrapIdentifier($query, $sortColumn);
 
         // 构建列列表
         $isSelectAll = $columns === ['*'] || empty($columns) || (count($columns) === 1 && reset($columns) === '*');
         $columnList = $isSelectAll
             ? '*'
             : implode(', ', array_map(
-                fn ($col) => FastPaginationMacro::wrapIdentifier($query, FastPaginationMacro::assertValidIdentifier((string) $col, 'column')),
+                fn ($col) => BaseMacro::wrapIdentifier($query, BaseMacro::assertValidIdentifier((string) $col, 'column')),
                 $columns
             ));
 
         // 获取原始查询的 WHERE 条件
         $baseQuery = $query->clone();
-        $baseQuery->getQuery()->orders = []; // 清除排序，稍后重新添加
-        $baseQuery->getQuery()->limit = null;
-        $baseQuery->getQuery()->offset = null;
+        BaseMacro::queryOf($baseQuery)->orders = []; // 清除排序，稍后重新添加
+        BaseMacro::queryOf($baseQuery)->limit = null;
+        BaseMacro::queryOf($baseQuery)->offset = null;
 
         $whereSql = $baseQuery->toSql();
         $bindings = $baseQuery->getBindings();
 
         // 构建窗口函数分页查询
         $withTable = 'paginated_' . uniqid();
+        $wrappedWith = BaseMacro::wrapIdentifier($query, $withTable);
 
         $sql = "
-            WITH `{$withTable}` AS (
+            WITH {$wrappedWith} AS (
                 SELECT {$columnList},
                        ROW_NUMBER() OVER (ORDER BY {$wrappedSort} {$direction}) AS __row_num
                 FROM {$wrappedTable}
@@ -730,27 +732,27 @@ class FastPaginationMacro
                     SELECT {$wrappedPk} FROM ({$whereSql}) AS base_query
                 )
             )
-            SELECT * FROM `{$withTable}`
+            SELECT * FROM {$wrappedWith}
             WHERE __row_num > {$offset} AND __row_num <= " . ($offset + $perPage) . '
             ORDER BY __row_num
         ';
 
         $results = DB::select($sql, $bindings);
 
-        return $query->getModel()->hydrate($results);
+        return BaseMacro::modelOf($query)->hydrate($results);
     }
 
     /**
      * 生成分页书签
      *
-     * @param Builder $query 查询构建器
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
      * @param string $sortColumn 排序字段
      * @param int $perPage 每页数量
      * @param string $direction 排序方向
      * @return array
      */
     public static function generateBookmarks(
-        Builder $query,
+        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
         string $sortColumn,
         int $perPage,
         string $direction

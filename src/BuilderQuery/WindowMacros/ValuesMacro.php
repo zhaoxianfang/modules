@@ -4,29 +4,27 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0+ VALUES 行构造函数和批量操作宏
+ * VALUES 行构造函数与批量操作宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  *
- * 提供 VALUES ROW 语法支持：
- * - valuesQuery: 使用 VALUES 构建内存表
+ * 提供基于标准 VALUES 语法的内存表与批量写入能力，所有数据库专属差异经 {@see Dialect} 抽象：
+ * - valuesQuery: 使用 VALUES 构建内存表（MySQL ROW(...) / PostgreSQL (...)）
  * - valuesJoin: 使用 VALUES 作为 JOIN 表
- * - valuesInsert: 优化的批量插入
- * - batchUpsert: 批量插入或更新
+ * - valuesInsert: 优化的批量插入（标准 (...) 行构造，双库通用）
+ * - batchUpsert: 批量插入或更新（MySQL ON DUPLICATE KEY UPDATE / PostgreSQL ON CONFLICT DO UPDATE）
  *
- * 安全性：行数据的键名、表别名、关联键均经白名单校验并由 grammar wrap，
- * 数值/字面值全部走参数绑定。
+ * 安全性：行数据的键名、表别名、关联键、唯一键、更新列均经白名单校验并由 grammar wrap，
+ * 数值 / 字面值全部走参数绑定。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
- * @requires MySQL 8.0+
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
  */
-class ValuesMacro
+class ValuesMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有 VALUES 宏
@@ -35,10 +33,10 @@ class ValuesMacro
      */
     public static function register(): void
     {
-        self::registerValuesQuery();
-        self::registerValuesJoin();
-        self::registerValuesInsert();
-        self::registerBatchUpsert();
+        ValuesMacro::registerValuesQuery();
+        ValuesMacro::registerValuesJoin();
+        ValuesMacro::registerValuesInsert();
+        ValuesMacro::registerBatchUpsert();
     }
 
     /**
@@ -50,8 +48,8 @@ class ValuesMacro
     /**
      * 校验批量行数据的列名合法性
      *
-     * 注意：本方法在 Builder::macro 闭包内通过 `ValuesMacro::assertRowColumns(...)` 显式
-     * 类名调用，必须声明为 public（闭包被重绑到 Builder 作用域，不在本类内部，无法访问
+     * 注意：本方法在 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder::macro 闭包内通过 `ValuesMacro::assertRowColumns(...)` 显式
+     * 类名调用，必须声明为 public（闭包被重绑到 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder 作用域，不在本类内部，无法访问
      * protected/private 成员）。
      *
      * @param array<int, array<string, mixed>> $rows
@@ -61,7 +59,7 @@ class ValuesMacro
     {
         $columns = array_keys($rows[0]);
         foreach ($columns as &$column) {
-            $column = self::assertValidIdentifier((string) $column, 'column');
+            $column = ValuesMacro::assertValidIdentifier((string) $column, 'column');
         }
         unset($column);
 
@@ -71,7 +69,7 @@ class ValuesMacro
     /**
      * 注册 VALUES 查询方法
      */
-    protected static function registerValuesQuery(): void
+public static function registerValuesQuery(): void
     {
         /**
          * valuesQuery - 使用 VALUES ROW 构建内存表查询
@@ -80,7 +78,7 @@ class ValuesMacro
          *
          * @param array $rows 数据行 [['id' => 1, 'name' => 'A'], ['id' => 2, 'name' => 'B']]
          * @param string $alias 表别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 使用 VALUES 作为临时表进行查询
@@ -99,12 +97,12 @@ class ValuesMacro
          *     ->join('target_ids', 'users.id', '=', 'target_ids.id')
          *     ->get();
          */
-        Builder::macro('valuesQuery', function (
+        static::define('valuesQuery', function (
             array $rows,
             string $alias = 'val'
-        ): Builder {
-            /** @var Builder $this */
-            ValuesMacro::assertMysql($this, 'valuesQuery');
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $builder = $this;
             if (empty($rows)) {
                 throw new \InvalidArgumentException('VALUES rows cannot be empty');
             }
@@ -115,19 +113,18 @@ class ValuesMacro
             $bindings = [];
 
             foreach ($rows as $row) {
-                $placeholders = array_fill(0, count($columns), '?');
-                $valueRows[] = 'ROW(' . implode(', ', $placeholders) . ')';
+                $valueRows[] = BaseMacro::valuesRowSyntax($this, count($columns));
                 foreach ($columns as $col) {
                     $bindings[] = $row[$col] ?? null;
                 }
             }
 
-            $columnList = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
+            $columnList = implode(', ', array_map(fn ($c) => BaseMacro::wrapIdentifier($builder, $c), $columns));
             $valuesSql = "VALUES " . implode(', ', $valueRows);
-            $alias = ValuesMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = ValuesMacro::wrapIdentifier($this, $alias);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
-            return $this->getModel()->newQuery()
+            return BaseMacro::freshQuery($this)
                 ->fromRaw("({$valuesSql}) AS {$wrappedAlias} ({$columnList})", $bindings);
         });
     }
@@ -135,7 +132,7 @@ class ValuesMacro
     /**
      * 注册 VALUES JOIN 方法
      */
-    protected static function registerValuesJoin(): void
+public static function registerValuesJoin(): void
     {
         /**
          * valuesJoin - 使用 VALUES 作为 JOIN 表
@@ -147,7 +144,7 @@ class ValuesMacro
          * @param string $localKey 主表关联键
          * @param string $valuesKey VALUES 表关联键
          * @param string $joinType JOIN 类型: inner|left|right
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 使用 VALUES JOIN 批量更新状态
@@ -160,16 +157,16 @@ class ValuesMacro
          *     ->select('orders.*', 'updates.new_status')
          *     ->get();
          */
-        Builder::macro('valuesJoin', function (
+        static::define('valuesJoin', function (
             array $rows,
             string $alias,
             string $localKey,
             string $valuesKey,
             string $joinType = 'inner'
-        ): Builder {
-            /** @var Builder $this */
-            ValuesMacro::assertMysql($this, 'valuesJoin');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $builder = $this;
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
 
             if (empty($rows)) {
@@ -182,23 +179,22 @@ class ValuesMacro
             $bindings = [];
 
             foreach ($rows as $row) {
-                $placeholders = array_fill(0, count($columns), '?');
-                $valueRows[] = 'ROW(' . implode(', ', $placeholders) . ')';
+                $valueRows[] = BaseMacro::valuesRowSyntax($this, count($columns));
                 foreach ($columns as $col) {
                     $bindings[] = $row[$col] ?? null;
                 }
             }
 
-            $columnList = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
+            $columnList = implode(', ', array_map(fn ($c) => BaseMacro::wrapIdentifier($builder, $c), $columns));
             $valuesSql = "VALUES " . implode(', ', $valueRows);
 
-            $localKey = ValuesMacro::assertValidIdentifier($localKey, 'localKey');
-            $valuesKey = ValuesMacro::assertValidIdentifier($valuesKey, 'valuesKey');
-            $alias = ValuesMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = ValuesMacro::wrapIdentifier($this, $alias);
-            $wrappedTable = ValuesMacro::wrapIdentifier($this, $table);
-            $wrappedLocal = ValuesMacro::wrapIdentifier($this, $localKey);
-            $wrappedValues = ValuesMacro::wrapIdentifier($this, $valuesKey);
+            $localKey = BaseMacro::assertValidIdentifier($localKey, 'localKey');
+            $valuesKey = BaseMacro::assertValidIdentifier($valuesKey, 'valuesKey');
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
+            $wrappedTable = BaseMacro::wrapIdentifier($this, $table);
+            $wrappedLocal = BaseMacro::wrapIdentifier($this, $localKey);
+            $wrappedValues = BaseMacro::wrapIdentifier($this, $valuesKey);
 
             // 构建 JOIN
             $joinMethod = match (strtolower($joinType)) {
@@ -218,7 +214,7 @@ class ValuesMacro
     /**
      * 注册 VALUES 批量插入方法
      */
-    protected static function registerValuesInsert(): void
+public static function registerValuesInsert(): void
     {
         /**
          * valuesInsert - 使用 VALUES ROW 语法进行高效批量插入
@@ -241,13 +237,13 @@ class ValuesMacro
          * $data = array_map(fn ($i) => ['name' => "Item {$i}", 'sort' => $i], range(1, 10000));
          * Item::query()->valuesInsert($data, 1000);
          */
-        Builder::macro('valuesInsert', function (
+        static::define('valuesInsert', function (
             array $rows,
             int $chunkSize = 1000
         ): int {
-            /** @var Builder $this */
-            ValuesMacro::assertMysql($this, 'valuesInsert');
-            $model = $this->getModel();
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $builder = $this;
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
 
             if (empty($rows)) {
@@ -255,8 +251,8 @@ class ValuesMacro
             }
 
             $columns = ValuesMacro::assertRowColumns($rows);
-            $columnStr = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
-            $wrappedTable = ValuesMacro::wrapIdentifier($this, $table);
+            $columnStr = implode(', ', array_map(fn ($c) => BaseMacro::wrapIdentifier($builder, $c), $columns));
+            $wrappedTable = BaseMacro::wrapIdentifier($this, $table);
             $totalAffected = 0;
 
             $chunks = array_chunk($rows, $chunkSize);
@@ -284,7 +280,7 @@ class ValuesMacro
     /**
      * 注册批量 Upsert 方法
      */
-    protected static function registerBatchUpsert(): void
+public static function registerBatchUpsert(): void
     {
         /**
          * batchUpsert - 批量插入或更新（INSERT ... ON DUPLICATE KEY UPDATE）
@@ -308,15 +304,15 @@ class ValuesMacro
          *     ['date' => '2024-01-01', 'metric' => 'uv', 'value' => 500],
          * ], ['date', 'metric'], ['value']);
          */
-        Builder::macro('batchUpsert', function (
+        static::define('batchUpsert', function (
             array $rows,
             array|string $uniqueBy,
             ?array $updateColumns = null,
             int $chunkSize = 1000
         ): int {
-            /** @var Builder $this */
-            ValuesMacro::assertMysql($this, 'batchUpsert');
-            $model = $this->getModel();
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $builder = $this;
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
 
             if (empty($rows)) {
@@ -324,29 +320,28 @@ class ValuesMacro
             }
 
             $columns = ValuesMacro::assertRowColumns($rows);
-            $columnStr = implode(', ', array_map(fn ($c) => ValuesMacro::wrapIdentifier($this, $c), $columns));
-            $wrappedTable = ValuesMacro::wrapIdentifier($this, $table);
+            $columnStr = implode(', ', array_map(fn ($c) => BaseMacro::wrapIdentifier($builder, $c), $columns));
+            $wrappedTable = BaseMacro::wrapIdentifier($this, $table);
 
             // 确定更新列
             $uniqueColumns = array_map(
-                fn ($c) => ValuesMacro::assertValidIdentifier((string) $c, 'uniqueBy'),
+                fn ($c) => BaseMacro::assertValidIdentifier((string) $c, 'uniqueBy'),
                 is_array($uniqueBy) ? $uniqueBy : [$uniqueBy]
             );
             if ($updateColumns === null) {
                 $updateColumns = array_diff($columns, $uniqueColumns);
             }
             $updateColumns = array_map(
-                fn ($c) => ValuesMacro::assertValidIdentifier((string) $c, 'updateColumn'),
+                fn ($c) => BaseMacro::assertValidIdentifier((string) $c, 'updateColumn'),
                 $updateColumns
             );
 
-            // 构建 ON DUPLICATE KEY UPDATE 部分（使用新值引用语法，兼容MySQL 8.0.20+）
-            $updateParts = [];
-            foreach ($updateColumns as $col) {
-                // MySQL 8.0.20+ 推荐使用别名.列名引用新值，VALUES()函数已弃用
-                $updateParts[] = ValuesMacro::wrapIdentifier($this, $col) . ' = new_values.' . ValuesMacro::wrapIdentifier($this, $col);
-            }
-            $updateStr = implode(', ', $updateParts);
+            // 构建 UPSERT 后缀：MySQL 走 ON DUPLICATE KEY UPDATE（引用 new_values 别名），
+            // PostgreSQL 走 ON CONFLICT (唯一键) DO UPDATE SET（引用 EXCLUDED），均由 Dialect 生成。
+            $wrappedUpdateColumns = array_map(fn ($c) => BaseMacro::wrapIdentifier($builder, $c), $updateColumns);
+            $wrappedUniqueColumns = array_map(fn ($c) => BaseMacro::wrapIdentifier($builder, $c), $uniqueColumns);
+            [$upsertSuffix, $upsertBindings] = BaseMacro::upsertSuffix($this, $wrappedUpdateColumns, $wrappedUniqueColumns);
+            $isPostgres = BaseMacro::isPostgres($this);
 
             $totalAffected = 0;
             $chunks = array_chunk($rows, $chunkSize);
@@ -363,12 +358,14 @@ class ValuesMacro
                     }
                 }
 
-                $sql = "INSERT INTO {$wrappedTable} ({$columnStr}) VALUES " . implode(', ', $valueRows) . " AS new_values";
-                if (!empty($updateStr)) {
-                    $sql .= " ON DUPLICATE KEY UPDATE {$updateStr}";
+                // MySQL 仅在带 ON DUPLICATE KEY UPDATE 时允许 AS new_values 别名；PostgreSQL 不支持该别名。
+                $newValuesAlias = (! $isPostgres && $upsertSuffix !== '') ? ' AS new_values' : '';
+                $sql = "INSERT INTO {$wrappedTable} ({$columnStr}) VALUES " . implode(', ', $valueRows) . $newValuesAlias;
+                if ($upsertSuffix !== '') {
+                    $sql .= " {$upsertSuffix}";
                 }
 
-                $totalAffected += DB::affectingStatement($sql, $bindings);
+                $totalAffected += DB::affectingStatement($sql, array_merge($bindings, $upsertBindings));
             }
 
             return $totalAffected;

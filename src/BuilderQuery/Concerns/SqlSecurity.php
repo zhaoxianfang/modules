@@ -40,17 +40,17 @@ trait SqlSecurity
      *
      * 允许：字母、数字、下划线，以及受限的点（跨表引用如 a.b）。
      */
-    private const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/';
+    public const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/';
 
     /**
      * 合法 JSON Path 表达式。
      */
-    private const JSON_PATH_PATTERN = '/^\$[A-Za-z0-9_\[\]\.\*"\x{4e00}-\x{9fa5}]*$/u';
+    public const JSON_PATH_PATTERN = '/^\$[A-Za-z0-9_\[\]\.\*"\x{4e00}-\x{9fa5}]*$/u';
 
     /**
      * 合法聚合函数白名单（用于 SUM/AVG/LAG 等聚合列）。
      */
-    private const AGGREGATE_FUNCTIONS = [
+    public const AGGREGATE_FUNCTIONS = [
         'SUM', 'AVG', 'MIN', 'MAX', 'COUNT', 'GROUP_CONCAT',
         'JSON_ARRAYAGG', 'JSON_OBJECTAGG', 'BIT_AND', 'BIT_OR', 'BIT_XOR',
         'STD', 'STDDEV', 'VARIANCE', 'VAR_POP', 'VAR_SAMP',
@@ -59,7 +59,7 @@ trait SqlSecurity
     /**
      * SQL 窗口函数名白名单。
      */
-    private const WINDOW_FUNCTIONS = [
+    public const WINDOW_FUNCTIONS = [
         'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'PERCENT_RANK', 'CUME_DIST',
         'NTILE', 'LAG', 'LEAD', 'FIRST_VALUE', 'LAST_VALUE', 'NTH_VALUE',
     ];
@@ -235,10 +235,14 @@ trait SqlSecurity
     }
 
     /**
-     * 断言当前数据库连接为 MySQL。
+     * 断言当前数据库连接受本扩展支持（MySQL 8.0+ 或 PostgreSQL 15+）。
      *
-     * 大量宏依赖 MySQL 8.0+ 专属语法（REGEXP_LIKE / JSON_EXTRACT / VALUES ROW /
-     * ON DUPLICATE KEY UPDATE / LATERAL 等）。在非 MySQL 驱动上调用应给出清晰异常。
+     * 历史上本方法名为 assertMysql，仅允许 MySQL；在「MySQL + PostgreSQL 双数据库通用」重构后，
+     * 它改为允许 mysql 与 pgsql 两种驱动，仅在遇到 SQLite 等未全面支持的驱动时抛出清晰异常。
+     * 新代码应优先使用 {@see Dialect::assertSupportedOn()} 以精确表达受支持驱动列表。
+     *
+     * 注意：本方法仅做「驱动是否受支持」的粗粒度判断，不保证后续生成的 SQL 一定适配当前驱动；
+     * 真正的方言差异由 {@see Dialect} 的各片段方法在调用点按驱动分别生成 SQL。
      *
      * @param EloquentBuilder|QueryBuilder $builder
      * @param string $feature 功能名（用于异常提示）
@@ -247,13 +251,22 @@ trait SqlSecurity
      */
     public static function assertMysql(EloquentBuilder|QueryBuilder $builder, string $feature): void
     {
-        $driver = $builder->getConnection()->getDriverName();
+        self::assertSupportedOn($builder, $feature, ['mysql', 'pgsql']);
+    }
 
-        if ($driver !== 'mysql') {
-            throw new InvalidArgumentException(
-                sprintf('宏 [%s] 仅支持 MySQL 8.0+ 数据库，当前驱动为 [%s]。', $feature, $driver)
-            );
-        }
+    /**
+     * 断言当前数据库连接受本扩展支持（MySQL 8.0+ 或 PostgreSQL 15+）。
+     *
+     * 见 {@see self::assertMysql()} 的说明；本方法为语义更清晰的别名。
+     *
+     * @param EloquentBuilder|QueryBuilder $builder
+     * @param string $feature 功能名（用于异常提示）
+     * @return void
+     * @throws InvalidArgumentException
+     */
+    public static function assertSupported(EloquentBuilder|QueryBuilder $builder, string $feature): void
+    {
+        self::assertMysql($builder, $feature);
     }
 
     /**

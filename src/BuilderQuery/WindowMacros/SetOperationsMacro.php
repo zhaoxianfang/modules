@@ -4,24 +4,25 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0.31+ 集合操作宏
+ * 集合操作宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
  *
- * 提供 INTERSECT、EXCEPT 等集合操作支持：
- * - intersect: 返回两个查询的交集
- * - except: 返回第一个查询中存在但第二个查询中不存在的记录
+ * 基于标准 SQL 集合操作，同一套宏在 MySQL 8.0.31+ 与 PostgreSQL 15+ 上均可直接使用：
+ * - intersect: 返回两个查询的交集（INTERSECT）
+ * - except: 返回第一个查询中存在但第二个查询中不存在的记录（EXCEPT）
  * - unionDistinct: UNION DISTINCT 显式去重
  *
+ * 安全性：子查询通过 grammar 编译，绑定参数沿用 Laravel 绑定合并机制，不存在字符串裸拼注入；
+ * 衍生结果表别名（intersect_result / except_result）为固定字面量，非用户输入。
+ *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
- * @requires MySQL 8.0.31+
+ * @version 3.0.0
+ * @requires MySQL 8.0.31+ / PostgreSQL 15+
  */
-class SetOperationsMacro
+class SetOperationsMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有集合操作宏
@@ -30,24 +31,24 @@ class SetOperationsMacro
      */
     public static function register(): void
     {
-        self::registerIntersect();
-        self::registerExcept();
-        self::registerUnionDistinct();
+        SetOperationsMacro::registerIntersect();
+        SetOperationsMacro::registerExcept();
+        SetOperationsMacro::registerUnionDistinct();
     }
 
     /**
      * 注册 INTERSECT 交集操作
      */
-    protected static function registerIntersect(): void
+public static function registerIntersect(): void
     {
         /**
          * 返回两个查询结果的交集（去重）
          *
          * 应用场景：查找同时满足两组条件的记录
          *
-         * @param \Closure|Builder $query 第二个查询构建器或闭包
+         * @param \Closure|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 第二个查询构建器或闭包
          * @param bool $all 是否保留重复行 true=INTERSECT ALL, false=INTERSECT DISTINCT
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找既购买了A商品又购买了B商品的用户
@@ -63,20 +64,19 @@ class SetOperationsMacro
          *     })
          *     ->get();
          *
-         * // 使用 Builder 实例
+         * // 使用 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder 实例
          * $q1 = User::query()->select('id')->where('status', 1);
          * $q2 = User::query()->select('id')->where('vip', 1);
          * $q1->intersect($q2)->get();
          */
-        Builder::macro('intersect', function ($query, bool $all = false): Builder {
-            /** @var Builder $this */
-            SetOperationsMacro::assertMysql($this, 'intersect');
+        static::define('intersect', function ($query, bool $all = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $sql = $this->toSql();
             $bindings = $this->getBindings();
 
             if ($query instanceof \Closure) {
                 $callback = $query;
-                $query = $this->getModel()->newQuery();
+                $query = BaseMacro::freshQuery($this);
                 $callback($query);
             }
 
@@ -87,7 +87,7 @@ class SetOperationsMacro
             $combinedSql = "({$sql}) INTERSECT {$allKeyword} ({$secondSql})";
             $combinedBindings = array_merge($bindings, $secondBindings);
 
-            return $this->getModel()->newQuery()
+            return BaseMacro::freshQuery($this)
                 ->fromRaw("({$combinedSql}) as intersect_result", $combinedBindings);
         });
     }
@@ -95,16 +95,16 @@ class SetOperationsMacro
     /**
      * 注册 EXCEPT 差集操作
      */
-    protected static function registerExcept(): void
+public static function registerExcept(): void
     {
         /**
          * 返回在第一个查询中存在但在第二个查询中不存在的记录
          *
          * 应用场景：查找满足某条件但不满足另一条件的记录
          *
-         * @param \Closure|Builder $query 第二个查询构建器或闭包
+         * @param \Closure|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 第二个查询构建器或闭包
          * @param bool $all 是否保留重复行 true=EXCEPT ALL, false=EXCEPT DISTINCT
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找活跃但未验证邮箱的用户
@@ -119,15 +119,14 @@ class SetOperationsMacro
          * $reviewedUsers = User::query()->select('id')->whereHas('reviews');
          * $orderedUsers->except($reviewedUsers)->get();
          */
-        Builder::macro('except', function ($query, bool $all = false): Builder {
-            /** @var Builder $this */
-            SetOperationsMacro::assertMysql($this, 'except');
+        static::define('except', function ($query, bool $all = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $sql = $this->toSql();
             $bindings = $this->getBindings();
 
             if ($query instanceof \Closure) {
                 $callback = $query;
-                $query = $this->getModel()->newQuery();
+                $query = BaseMacro::freshQuery($this);
                 $callback($query);
             }
 
@@ -138,7 +137,7 @@ class SetOperationsMacro
             $combinedSql = "({$sql}) EXCEPT {$allKeyword} ({$secondSql})";
             $combinedBindings = array_merge($bindings, $secondBindings);
 
-            return $this->getModel()->newQuery()
+            return BaseMacro::freshQuery($this)
                 ->fromRaw("({$combinedSql}) as except_result", $combinedBindings);
         });
     }
@@ -146,13 +145,13 @@ class SetOperationsMacro
     /**
      * 注册 UNION DISTINCT 显式去重
      */
-    protected static function registerUnionDistinct(): void
+public static function registerUnionDistinct(): void
     {
         /**
          * UNION DISTINCT - 显式去重的并集（默认行为，但显式声明更清晰）
          *
-         * @param \Closure|Builder $query 第二个查询构建器或闭包
-         * @return Builder
+         * @param \Closure|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 第二个查询构建器或闭包
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 合并两个查询结果并去重
@@ -164,11 +163,11 @@ class SetOperationsMacro
          *     })
          *     ->get();
          */
-        Builder::macro('unionDistinct', function ($query): Builder {
-            /** @var Builder $this */
+        static::define('unionDistinct', function ($query): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             if ($query instanceof \Closure) {
                 $callback = $query;
-                $query = $this->getModel()->newQuery();
+                $query = BaseMacro::freshQuery($this);
                 $callback($query);
             }
 

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0+ 窗口函数宏
+ * 窗口函数宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  *
  * 提供丰富的窗口函数封装，包括：
  * - 排序函数：rowNumber, rank, denseRank, ntile, percentRank, cumeDist, rankOver
@@ -18,34 +17,36 @@ use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
  * - 框架窗口函数：rowsBetween, rangeBetween
  * - 统计函数：cumulativeSum, movingAverage, runningTotal
  *
+ * 上述窗口函数均为 SQL 标准，MySQL 8.0+ 与 PostgreSQL 15+ 原生支持，无需方言分支。
+ * 仅标识符引用（引号风格）交由 Dialect 方言抽象层按驱动生成，杜绝硬编码反引号。
+ *
  * 安全性：所有列名 / 别名 / 排序方向 / 聚合函数 / 框架边界均经白名单校验，
  * 标识符由 grammar wrap 生成（适配 MySQL / PostgreSQL / SQLite），字面值走参数绑定，
  * 彻底消除原先 `{$column}` 裸插值导致的 SQL 注入风险。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
- * @requires MySQL 8.0+
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
  */
-class WindowFunctionsMacro
+class WindowFunctionsMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有窗口函数宏
      */
     public static function register(): void
     {
-        self::registerRankingFunctions();
-        self::registerValueFunctions();
-        self::registerAggregateWindowFunctions();
-        self::registerFrameWindowFunctions();
-        self::registerStatisticalFunctions();
+        WindowFunctionsMacro::registerRankingFunctions();
+        WindowFunctionsMacro::registerValueFunctions();
+        WindowFunctionsMacro::registerAggregateWindowFunctions();
+        WindowFunctionsMacro::registerFrameWindowFunctions();
+        WindowFunctionsMacro::registerStatisticalFunctions();
     }
 
     /**
      * 注册排名窗口函数
      */
-    protected static function registerRankingFunctions(): void
+public static function registerRankingFunctions(): void
     {
         /**
          * 为查询结果添加行号（ROW_NUMBER）
@@ -56,25 +57,25 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向（asc/desc）
          * @param string|null $alias 结果列别名，默认 'row_num'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 按部门分区，按工资降序排名
          * Employee::query()->rowNumber('department_id', 'salary', 'desc', 'rn')->get();
          */
-        Builder::macro('rowNumber', function (
+        static::define('rowNumber', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'row_num', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -92,25 +93,25 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 'rank_val'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 按分数排名（并列会跳过名次）
          * Student::query()->rank('class_id', 'score', 'desc', 'rank_pos')->get();
          */
-        Builder::macro('rank', function (
+        static::define('rank', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'rank_val', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -128,25 +129,25 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 'dense_rank_val'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 按销售额密集排名（并列不跳过名次）
          * Sales::query()->denseRank('region', 'amount', 'desc', 'dense_rank_pos')->get();
          */
-        Builder::macro('denseRank', function (
+        static::define('denseRank', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'dense_rank_val', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -163,20 +164,20 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 'ntile_val'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 将员工按工资分为4个等级
          * Employee::query()->ntile(4, 'department_id', 'salary', 'desc', 'salary_grade')->get();
          */
-        Builder::macro('ntile', function (
+        static::define('ntile', function (
             int $buckets = 4,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             if ($buckets < 1) {
                 throw new \InvalidArgumentException('NTILE buckets must be greater than 0');
             }
@@ -185,7 +186,7 @@ class WindowFunctionsMacro
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -203,25 +204,25 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 'percent_rank_val'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算员工工资的百分比排名
          * Employee::query()->percentRank('department_id', 'salary', 'desc', 'pct_rank')->get();
          */
-        Builder::macro('percentRank', function (
+        static::define('percentRank', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'percent_rank_val', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -239,25 +240,25 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 'cume_dist_val'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算产品价格的累积分布
          * Product::query()->cumeDist('category_id', 'price', 'asc', 'cum_dist')->get();
          */
-        Builder::macro('cumeDist', function (
+        static::define('cumeDist', function (
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'cume_dist_val', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -276,27 +277,27 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 'custom_rank'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 自定义排名
          * Employee::query()->rankOver('DENSE_RANK', 'department_id', 'salary', 'desc')->get();
          */
-        Builder::macro('rankOver', function (
+        static::define('rankOver', function (
             string $function = 'RANK',
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $function = WindowFunctionsMacro::assertWindowFunction($function);
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'custom_rank', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -309,7 +310,7 @@ class WindowFunctionsMacro
     /**
      * 注册值访问窗口函数
      */
-    protected static function registerValueFunctions(): void
+public static function registerValueFunctions(): void
     {
         /**
          * 访问当前行之前的第N行数据（LAG）
@@ -321,7 +322,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 {column}_lag
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算月度销售额环比变化
@@ -330,7 +331,7 @@ class WindowFunctionsMacro
          *     ->selectRaw('amount - prev_amount as growth')
          *     ->get();
          */
-        Builder::macro('lag', function (
+        static::define('lag', function (
             string $column,
             int $offset = 1,
             mixed $default = null,
@@ -338,8 +339,8 @@ class WindowFunctionsMacro
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
             $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
@@ -347,7 +348,7 @@ class WindowFunctionsMacro
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -370,7 +371,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 {column}_lead
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算下个月的预测销售额
@@ -379,7 +380,7 @@ class WindowFunctionsMacro
          *     ->selectRaw('next_amount - amount as forecast')
          *     ->get();
          */
-        Builder::macro('lead', function (
+        static::define('lead', function (
             string $column,
             int $offset = 1,
             mixed $default = null,
@@ -387,8 +388,8 @@ class WindowFunctionsMacro
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
             $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
@@ -396,7 +397,7 @@ class WindowFunctionsMacro
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -416,7 +417,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 {column}_first
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算每天股价与当月首日开盘价的差额
@@ -425,14 +426,14 @@ class WindowFunctionsMacro
          *     ->selectRaw('open_price - month_first_price as price_change')
          *     ->get();
          */
-        Builder::macro('firstValue', function (
+        static::define('firstValue', function (
             string $column,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
             $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
@@ -440,7 +441,7 @@ class WindowFunctionsMacro
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -457,7 +458,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 {column}_last
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算每个销售员与团队最佳业绩的差距
@@ -466,14 +467,14 @@ class WindowFunctionsMacro
          *     ->selectRaw('team_best - amount as gap_to_best')
          *     ->get();
          */
-        Builder::macro('lastValue', function (
+        static::define('lastValue', function (
             string $column,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
             $wrappedColumn = WindowFunctionsMacro::wrapIdentifier($this, $column);
@@ -481,7 +482,7 @@ class WindowFunctionsMacro
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -499,7 +500,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string|null $alias 结果列别名，默认 {column}_nth
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 获取每个班级第3名的成绩作为基准线
@@ -507,15 +508,15 @@ class WindowFunctionsMacro
          *     ->nthValue('score', 3, 'class_id', 'score', 'desc', 'third_place_score')
          *     ->get();
          */
-        Builder::macro('nthValue', function (
+        static::define('nthValue', function (
             string $column,
             int $n,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             ?string $alias = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             if ($n < 1) {
                 throw new \InvalidArgumentException('NTH_VALUE n must be greater than 0');
             }
@@ -526,7 +527,7 @@ class WindowFunctionsMacro
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -541,7 +542,7 @@ class WindowFunctionsMacro
      *
      * 包含: sumOver, avgOver, countOver, minOver, maxOver
      */
-    protected static function registerAggregateWindowFunctions(): void
+public static function registerAggregateWindowFunctions(): void
     {
         $aggregates = [
             'sumOver' => ['fn' => 'SUM', 'defaultAlias' => 'sum_val'],
@@ -563,7 +564,7 @@ class WindowFunctionsMacro
              * @param string|null $orderBy 排序字段（用于有序聚合）
              * @param string $direction 排序方向
              * @param string|null $alias 结果列别名
-             * @return Builder
+             * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
              *
              * @example
              * // 计算每个员工销售额占部门总销售额的比例
@@ -577,14 +578,14 @@ class WindowFunctionsMacro
              *     ->avgOver('close_price', 'stock_code', 'trade_date', 'asc', 'ma')
              *     ->get();
              */
-            Builder::macro($macroName, function (
+            static::define($macroName, function (
                 string $column,
                 string|array|null $partitionBy = null,
                 ?string $orderBy = null,
                 string $direction = 'asc',
                 ?string $alias = null
-            ) use ($config): Builder {
-                /** @var Builder $this */
+            ) use ($config): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+                /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
                 $direction = WindowFunctionsMacro::assertDirection($direction);
                 $function = WindowFunctionsMacro::assertAggregateFunction($config['fn']);
                 $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
@@ -611,7 +612,7 @@ class WindowFunctionsMacro
      *
      * 包含: rowsBetween, rangeBetween
      */
-    protected static function registerFrameWindowFunctions(): void
+public static function registerFrameWindowFunctions(): void
     {
         /**
          * 使用 ROWS 框架指定窗口范围
@@ -626,7 +627,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算3日移动平均（当前行及前2行）
@@ -639,7 +640,7 @@ class WindowFunctionsMacro
          *     ->rowsBetween('amount', 'SUM', 'UNBOUNDED PRECEDING', 'CURRENT ROW', 'region', 'date', 'asc', 'cumulative')
          *     ->get();
          */
-        Builder::macro('rowsBetween', function (
+        static::define('rowsBetween', function (
             string $column,
             string $function,
             string $start,
@@ -648,8 +649,8 @@ class WindowFunctionsMacro
             string $orderBy = '',
             string $direction = 'asc',
             string $alias = 'frame_result'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $function = WindowFunctionsMacro::assertAggregateFunction($function);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
@@ -660,7 +661,7 @@ class WindowFunctionsMacro
             $end = WindowFunctionsMacro::assertFrameBound($end);
 
             $partitionClause = WindowFunctionsMacro::buildPartitionClause($this, $partitionBy);
-            $orderColumn = $orderBy ?: $this->getModel()->getKeyName();
+            $orderColumn = $orderBy ?: BaseMacro::keyName($this);
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
@@ -682,7 +683,7 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段（必须）
          * @param string $direction 排序方向
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算数值范围内（±10）的平均值
@@ -690,7 +691,7 @@ class WindowFunctionsMacro
          *     ->rangeBetween('value', 'AVG', '10 PRECEDING', '10 FOLLOWING', 'sensor_id', 'reading', 'asc', 'smoothed')
          *     ->get();
          */
-        Builder::macro('rangeBetween', function (
+        static::define('rangeBetween', function (
             string $column,
             string $function,
             string $start,
@@ -699,8 +700,8 @@ class WindowFunctionsMacro
             string $orderBy = '',
             string $direction = 'asc',
             string $alias = 'frame_result'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             if (empty($orderBy)) {
                 throw new \InvalidArgumentException('RANGE frame requires orderBy parameter');
             }
@@ -729,7 +730,7 @@ class WindowFunctionsMacro
      *
      * 包含: cumulativeSum, movingAverage, runningTotal
      */
-    protected static function registerStatisticalFunctions(): void
+public static function registerStatisticalFunctions(): void
     {
         /**
          * 计算累计和（从分区开始到当前行）
@@ -739,20 +740,20 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string $alias 结果列别名，默认 'cumulative_sum'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算累计销售额
          * Sales::query()->cumulativeSum('amount', 'region', 'date', 'asc', 'running_total')->get();
          */
-        Builder::macro('cumulativeSum', function (
+        static::define('cumulativeSum', function (
             string $column,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             string $alias = 'cumulative_sum'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             return $this->rowsBetween(
                 $column,
                 'SUM',
@@ -774,21 +775,21 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string $alias 结果列别名，默认 'moving_avg'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算5日移动平均（当前行±2行）
          * StockPrice::query()->movingAverage('close_price', 2, 'stock_code', 'date', 'asc', 'ma5')->get();
          */
-        Builder::macro('movingAverage', function (
+        static::define('movingAverage', function (
             string $column,
             int $windowSize,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             string $alias = 'moving_avg'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             return $this->rowsBetween(
                 $column,
                 'AVG',
@@ -809,20 +810,20 @@ class WindowFunctionsMacro
          * @param string $orderBy 排序字段
          * @param string $direction 排序方向
          * @param string $alias 结果列别名，默认 'running_total'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算运行总计
          * Orders::query()->runningTotal('amount', 'customer_id', 'created_at', 'asc')->get();
          */
-        Builder::macro('runningTotal', function (
+        static::define('runningTotal', function (
             string $column,
             string|array|null $partitionBy = null,
             string $orderBy = '',
             string $direction = 'asc',
             string $alias = 'running_total'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             return $this->cumulativeSum($column, $partitionBy, $orderBy, $direction, $alias);
         });
     }

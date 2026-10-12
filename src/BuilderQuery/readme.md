@@ -1,30 +1,60 @@
 # Laravel 查询构建器宏扩展 - 完整指南
 
-专为 Laravel 11+ / 12+ / 13+ 和 MySQL 8.0+ 设计的高性能查询扩展包。
+专为 Laravel 11+ / 12+ / 13+ 与 MySQL 8.0+ / PostgreSQL 15+ 设计的通用高性能查询扩展包（通过 Dialect 方言抽象层同时支持两套数据库）。
 
 ## 功能概览
 
-本扩展包提供 17 个系列宏功能：
+本扩展包提供 30 个系列宏功能，全部基于 **`BaseMacro` 标准化基类 + `Dialect` 方言抽象层** 构建，
+**同时注册到 `Eloquent\Builder`（ORM）与 `Query\Builder`（`DB::table()` 原生查询）**，满足「必须友好支持
+Laravel 11+ 的 ORM 和 DB」要求。所有 SQL 片段均经 `Dialect` 生成适配 MySQL 8.0+ / PostgreSQL 15+ 的语法，
+标识符经白名单校验并由 grammar 生成引用，字面值一律参数绑定，杜绝 SQL 注入与方言耦合。
 
-| 系列 | 功能数量 | 说明 |
-|------|---------|------|
-| 1. whereHas 优化 | 10+ | 解决关联查询全表扫描问题 |
-| 2. 主表字段 | 8 | 自动表前缀避免歧义 |
-| 3. 随机查询 | 2 | 高效随机数据获取 |
-| 4. 分组排序 | 1 | 窗口函数分组排名查询 |
-| 5. 窗口函数 | 25+ | MySQL 8.0+ 窗口函数支持 |
-| 6. 递归查询 | 16+ | 树形结构数据处理（层级/路径/关系/树构建） |
-| 7. 分页优化 | 5 | 超大表快速分页 |
-| 8. JSON 操作 | 20+ | 高级 JSON 查询和操作 |
-| 9. 正则表达式 | 15+ | 强大的文本匹配功能 |
-| 10. 集合操作 | 3 | INTERSECT/EXCEPT 集合运算 |
-| 11. QUALIFY 过滤 | 4 | 窗口函数结果过滤（类似 HAVING） |
-| 12. LATERAL JOIN | 4 | 横向连接，高效 Top-N 查询 |
-| 13. 行列转换 | 8 | PIVOT/UNPIVOT 数据透视表 |
-| 14. 数据抽样 | 4 | 随机/分层/系统抽样 |
-| 15. VALUES 构造 | 4 | 批量插入和 UPSERT 优化 |
-| 16. 向量相似度 | 2 | Laravel 13+ 原生向量/语义检索 |
-| 17. 字符串函数 | 30+ | LOCATE 分词 / CHAR_LENGTH 排序 / 全文检索等 |
+> **v3.2.0 新增「性能与稳定性」专项（第 23–27 系列）**：围绕 `study_mysql` 中「系统开发常见性能瓶颈」系统化封装——
+> 索引/优化器提示、查询守卫（防失控）、分组 Top-N 去重、单条 SQL 多维条件聚合、列选择纪律（消除 `SELECT *`），
+> 直接命中「慢查询、全表扫描、结果集失控、资源占用高、卡死」等高频痛点。
+
+> **v3.3.0 新增「失控防护与超大集合」专项（第 28–30 系列）**：继续深挖 `study_mysql` 中
+> 「08-playbook / 02-query-rewrite-cookbook」「04-performance / 07-bottlenecks-and-advanced-ops」「07-appendix / 01-pitfalls-compendium」
+> 记录的高频事故源，针对用户「避免长时间未响应、资源占用高、卡死、异常」硬性要求，新增三类护栏宏：
+> - **超大 IN/NOT IN 分块（ChunkedListMacro）**：数万/数十万 ID 一次性 `IN (...)` 会触发占位符上限异常、优化器退化、PHP 内存暴涨；
+>   自动按块切分并以 OR/AND 合并，单块直接委托原生，空集合安全（IN→零行、NOT IN→全表）。
+> - **大表计数加速（FastCountMacro）**：亿级表 `COUNT(*)` 拖垮连接、大屏超时；无过滤时经 `information_schema`/`pg_class` 读取 O(1) 估算，
+>   有过滤/复杂 FROM 自动回退精确 COUNT，目录异常静默回退，永不向上抛错。
+> - **防失控写入/删除护栏（SafeWriteMacro）**：无 WHERE 的 UPDATE/DELETE 误操作、单条巨 DELETE 锁表/undo 膨胀；
+>   `mustHaveWhere()` 写前拦截全表操作，`deleteInChunks()` 按主键分批删除并内置「删 0 行即停 + 最大迭代上限」双防死循环。
+
+| 系列 | 模块类 | 说明 |
+|------|--------|------|
+| 1. whereHas 优化 | WhereHasMacros | 解决关联查询全表扫描问题（IN / JOIN / 跨表） |
+| 2. 主表字段 | QualifyMacro 等 | 自动表前缀避免歧义 |
+| 3. 随机查询 | RandomMacro | 高效随机数据获取 |
+| 4. 分组排序 | GroupSortMacro | 窗口函数分组排名查询 |
+| 5. 窗口函数 | WindowFunctionsMacro | MySQL 8.0+ / PostgreSQL 15+ 窗口函数（排名/偏移/聚合/框架/统计） |
+| 6. 递归查询 | WithRecursiveMacro | 树形结构数据处理（层级/路径/关系/树构建，含深度上限防环） |
+| 7. 分页优化 | FastPaginationMacro | 超大表快速分页（游标/Seek/分区/延迟关联） |
+| 8. JSON 操作 | AdvancedJsonMacro | 高级 JSON 查询和操作 |
+| 9. 正则表达式 | RegexMacro | 强大的文本匹配功能（REGEXP_LIKE / ~） |
+| 10. 集合操作 | SetOperationsMacro | INTERSECT / EXCEPT 集合运算 |
+| 11. QUALIFY 过滤 | QualifyMacro | 窗口函数结果过滤（类似 HAVING） |
+| 12. LATERAL JOIN | LateralJoinMacro | 横向连接，高效 Top-N 查询 |
+| 13. 行列转换 | PivotMacro | PIVOT / UNPIVOT 数据透视表 |
+| 14. 数据抽样 | TableSampleMacro | 随机/分层/系统抽样 |
+| 15. VALUES 构造 | ValuesMacro | 批量插入和 UPSERT 优化 |
+| 16. 向量相似度 | MacrosBuilder（原生桥接） | Laravel 13+ 原生向量/语义检索 |
+| 17. 字符串函数 | StringFunctionsMacro | LOCATE 分词 / CHAR_LENGTH 排序 / SOUNDEX / 字符串变换（**全文检索已独立为第 18 项**） |
+| 18. 全文检索 | FullTextMacro | MATCH...AGAINST / tsvector 全文检索（自然语言/布尔/查询扩展/两阶段） |
+| 19. 日期时间分桶 | DateTimeMacro | 按 日/周/月/季/年、N 分钟分桶、时间段范围、时段冲突检测 |
+| 20. 数值/比较运算 | MathMacro | NULL 安全比较 / 区间夹紧 / 多级兜底 / 加权排序 / 精度控制 |
+| 21. 锁机制 | LockingMacro | 行锁 SKIP LOCKED / NOWAIT / 咨询锁（MySQL GET_LOCK / PG pg_advisory_lock） |
+| 22. 相关度搜索 | SearchRelevanceMacro | 无全文索引时的 LOCATE 两阶段相关度检索 |
+| 23. 索引与优化器提示 | IndexHintMacro | USE/FORCE/IGNORE INDEX、优化器提示、执行时限、STRAIGHT_JOIN（性能调优入口） |
+| 24. 查询守卫与诊断 | QueryGuardMacro | LIMIT 软/硬守卫（防失控）、EXPLAIN / EXPLAIN ANALYZE（慢查询定位） |
+| 25. 分组 Top-N | TopNMacro | 窗口函数去重，每组最新/最大/前 N 条（替代 GROUP BY 丢字段/关联子查询） |
+| 26. 条件聚合 | ConditionalAggregateMacro | SUM/COUNT/AVG/MAX/MIN 的 IF 变体（单条 SQL 多维统计，替代 N+1） |
+| 27. 列选择纪律 | SelectColumnMacro | selectOnly / selectExcept / selectPrimaryKey（消除 SELECT *，降 I/O 与内存） |
+| 28. 超大 IN/NOT IN 分块 | ChunkedListMacro | whereInChunked / whereNotInChunked / orWhereInChunked / orWhereNotInChunked（规避占位符上限/优化器退化/内存暴涨） |
+| 29. 大表计数加速 | FastCountMacro | approximateCount()（无过滤走数据字典 O(1) 估算，有过滤回退精确 COUNT） |
+| 30. 防失控写入/删除护栏 | SafeWriteMacro | mustHaveWhere() 写前闸门 + deleteInChunks() 按主键分批安全删除（防全表误操作/锁表/卡死） |
 
 ---
 
@@ -47,6 +77,50 @@ $users = User::query()
     ->random(5)
     ->get();
 ```
+
+---
+
+## 架构与标准化设计（v3.1.0）
+
+本扩展包经 v3.1.0 系统化重构，建立了统一的宏扩展架构，彻底解决历史版本「仅在 ORM 可用、DB 不可用」
+「命名/注释/示例不规范」「闭包内 self:: 陷阱」等问题。
+
+### 1. 双构建器注册（ORM + DB 友好）
+
+所有宏均通过 `BaseMacro::define()` 同时注册到两个构建器，因此 `User::query()->macro()` 与
+`DB::table('users')->macro()` **完全等价、均可使用**：
+
+```php
+// ORM 用法
+User::query()->whereRegexp('name', '^张')->get();
+
+// DB 原生用法（语法完全一致）
+\DB::table('users')->whereRegexp('name', '^张')->get();
+```
+
+### 2. 标准化基类 `BaseMacro`
+
+`Concerns/BaseMacro` 是每一个宏模块（位于 `WindowMacros` 命名空间）必须继承的基类，统一提供：
+
+- `define()`：双构建器注册入口；
+- `resolveTable()` / `modelOf()` / `keyName()` / `queryOf()` / `freshQuery()` / `resetSubQuery()`：
+  跨 Eloquent 与 Query 构建器的安全助手；
+- `wrapColumn()` / `wrapColumnOrStar()`：标识符安全 wrap。
+
+### 3. 方言抽象层 `Dialect`（及 `SqlSecurity`）
+
+所有依赖数据库专属语法的片段（正则、JSON、字符串、全文、抽样、批量写、随机、日期分桶、锁等）一律
+经 `Dialect` 生成 `[sql, bindings]` 二元组，绝不在宏类内硬编码 `REGEXP_LIKE` / `JSON_EXTRACT` / 反引号。
+标识符经 `SqlSecurity::assertValidIdentifier()` 白名单校验，再由 grammar `wrap()` 生成适配当前驱动的引用
+（MySQL 反引号、PostgreSQL 双引号），字面值一律 `?` 绑定。
+
+### 4. 宏编写规范（强制）
+
+- 每个模块暴露 `public static function register(): void`，内部按功能分组调用 `self::registerXxx()`；
+- 宏闭包内**禁止**使用 `self::`（会被 `Closure::bind` 重绑为 `Builder` 而致命），助手方法须用**显式类名**调用，
+  如 `RegexMacro::assertXxx(...)` 或 `BaseMacro::wrapIdentifier(...)`；
+- 每个宏闭包头部必须含 `@example`（用法示例）与 `@scenario`（适用场景）注释；
+- 链式宏一律返回 `$this`（Builder），参数声明类型并经白名单/边界校验。
 
 ---
 
@@ -676,7 +750,7 @@ User::query()->mainSelect(['id', 'name', 'email']);
 
 ---
 
-## 10. 集合操作系列（MySQL 8.0.31+）
+## 10. 集合操作系列（MySQL 8.0.31+ / PostgreSQL 15+，标准 SQL）
 
 INTERSECT 和 EXCEPT 集合运算。
 
@@ -707,7 +781,7 @@ User::query()->where('role', 'admin')
 
 ---
 
-## 11. QUALIFY 过滤系列（MySQL 8.0.33+）
+## 11. QUALIFY 过滤系列（MySQL 8.0.33+ / PostgreSQL 15+，通过子查询模拟）
 
 过滤窗口函数结果，无需子查询或 CTE。
 
@@ -749,7 +823,7 @@ Employee::query()
 
 ---
 
-## 12. LATERAL JOIN 系列（MySQL 8.0.14+）
+## 12. LATERAL JOIN 系列（MySQL 8.0.14+ / PostgreSQL 15+）
 
 横向连接，子查询可引用主查询列。
 
@@ -915,9 +989,9 @@ $nearest = Article::query()
 
 ---
 
-## 17. 字符串函数系列（MySQL 8.0+ 高效字符串处理）
+## 17. 字符串函数系列（MySQL 8.0+ / PostgreSQL 15+ 高效字符串处理）
 
-基于 MySQL 8.0 内置字符串函数封装的高性能查询能力：
+基于 MySQL 8.0 / PostgreSQL 15 字符串函数封装的高性能查询能力（方言差异由 `Dialect` 统一处理）：
 - **LOCATE**：查找子字符串首次出现的位置，天然支持分词查询匹配
 - **CHAR_LENGTH**：多字节安全的字符数计算（中英文均按 1 字符计）
 - **FIELD / FIND_IN_SET**：自定义排序与逗号分隔列表成员查找
@@ -1033,6 +1107,9 @@ OrderItem::query()
 
 ### 17.6 全文检索（MATCH...AGAINST）
 
+> 全文检索在 v3.1.0 起已独立为 **第 18 项 `FullTextMacro` 模块**（单一职责、示例与场景更完整）。
+> 下列宏仍由 `FullTextMacro` 提供，字符串函数模块仅保留 LOCATE/CHAR_LENGTH/SOUNDEX 等基础能力。
+
 参与全文检索的列必须先建立 FULLTEXT 索引：
 
 ```sql
@@ -1090,6 +1167,295 @@ Order::query()->padString('order_no', 8, '0', 'left', 'padded_no')->get();
 
 ---
 
+## 18. 全文检索系列（FullTextMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+基于 study_mysql「搜索、模糊匹配与相关度排名」系统化封装，全部经 `Dialect` 生成双库通用 SQL：
+
+- MySQL：`MATCH(col) AGAINST(? IN NATURAL LANGUAGE MODE|IN BOOLEAN MODE|WITH QUERY EXPANSION)`，中文建议配 `FULLTEXT(col) WITH PARSER ngram`；
+- PostgreSQL：`to_tsvector @@ to_tsquery`（需 GIN 索引），中文建议配 `pg_jieba` / `zhparser`。
+
+```php
+// 自然语言检索（最常用）
+Article::query()->whereFullText(['title', 'body'], 'Laravel 查询构造器')->get();
+
+// 布尔模式：+ 必须包含 / - 排除 / "短语" / word* 前缀
+Post::query()->whereFullTextBoolean('title', '+Laravel -Vue')->get();
+
+// 按相关度排序（需与 whereFullText 列/词一致）
+Article::query()
+    ->whereFullText(['title', 'body'], 'Laravel')
+    ->orderByFullTextRelevance(['title', 'body'], 'Laravel')
+    ->get();
+
+// 将相关度分数作为字段返回（可展示「相关度 92%」）
+Article::query()
+    ->whereFullText(['title', 'body'], 'Laravel')
+    ->selectFullTextScore(['title', 'body'], 'Laravel', 'relevance')
+    ->get();
+
+// 按相关度阈值过滤（降噪）
+Article::query()
+    ->whereFullText(['title', 'body'], 'Laravel')
+    ->whereFullTextScoreGte(['title', 'body'], 'Laravel', 1.5)
+    ->get();
+
+// 两阶段检索：全文索引命中 OR LOCATE 兜底（召回更鲁棒）
+Article::query()->whereFullTextOrLike(['title', 'body'], 'Laravel')->get();
+```
+
+## 19. 日期时间分桶系列（DateTimeMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+把「按时间维度聚合」的常见模式抽象为语义化宏，避免在各处手写易错、易注入的裸 SQL：
+
+```php
+// 按 日/周/月/季/年 分桶（用于统计报表）
+Order::query()->dateBucket('created_at', 'month')->get();           // MySQL: DATE_FORMAT / PG: date_trunc
+Order::query()->dateBucket('created_at', 'week')->get();
+
+// 按 N 分钟分桶（如每 15 分钟一个时段）
+Log::query()->timeBucket('created_at', 15)->get();                // MySQL: FROM_UNIXTIME / PG: to_timestamp
+
+// 索引友好的日期范围（闭区间，走 created_at 索引）
+Report::query()->whereDateRange('created_at', '2025-01-01', '2025-12-31')->get();
+
+// 时段冲突检测（会议室/排期，区间重叠校验）
+Room::query()->whereTimeOverlap('start_at', 'end_at', '2025-01-01 09:00', '2025-01-01 10:00')->get();
+```
+
+## 20. 数值/比较运算系列（MathMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+```php
+// NULL 安全等值比较（NULL = NULL 判定为真，避免 where('x', null) 被转成 IS NULL 的漏判）
+Category::query()->whereNullSafeEqual('parent_id', null)->get();   // MySQL: <=>  / PG: IS NOT DISTINCT FROM
+
+// 区间夹紧封顶（评分/百分比限制）
+Product::query()->selectClamp('discount', 0, 0.5, 'safe_discount')->get();   // GREATEST(?, LEAST(?, col))
+
+// 多级兜底取值（昵称 > 用户名 > 默认值）
+User::query()->selectCoalesce(['nickname','username'], '匿名用户', 'display_name')->get();  // COALESCE(..., ?)
+
+// 加权综合排序（搜索/推荐复合打分）
+Post::query()->orderByWeighted([
+    ['column' => 'hot',   'weight' => 0.3],
+    ['column' => 'sales', 'weight' => 0.2],
+    ['column' => 'score', 'weight' => 0.5],
+])->get();
+
+// 精度控制（金额截断到 2 位，避免浮点误差）
+Order::query()->selectRound('amount', 2, true, 'amount_2f')->get();   // MySQL: TRUNCATE / PG: TRUNC
+```
+
+## 21. 锁机制系列（LockingMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+```php
+// 行锁 + SKIP LOCKED（抢单/任务调度，跳过已被锁定的行）
+Task::query()->lockForUpdateSkipLocked()->where('status', 'pending')->get();
+
+// 行锁 + NOWAIT（获取不到锁立即失败，避免等待）
+Task::query()->lockForUpdateNoWait()->where('status', 'pending')->get();
+
+// 共享锁 + SKIP LOCKED
+Doc::query()->sharedLockSkipLocked()->where('id', 1)->get();
+
+// 会话级咨询锁（跨请求互斥，MySQL GET_LOCK / PG pg_advisory_lock）
+LockingMacro::advisoryLock('order:123');     // 业务处理...
+LockingMacro::advisoryUnlock('order:123');
+```
+
+## 22. 相关度搜索系列（SearchRelevanceMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+无需全文索引的两阶段相关度检索，作为 MATCH...AGAINST 的轻量替代 / 兜底：
+
+```php
+// 按子串相关度命中筛选（无需全文索引）
+Ticket::query()->whereRelevance('content', '退款')->get();
+
+// 按多列组合相关度排序（越相关越靠前）
+Product::query()->orderByRelevance(['name','description'], '手机')->get();
+
+// 返回单列的命中相关度分数（可展示「匹配度 87%」）
+Product::query()->selectRelevance('name', '手机', 'score')->get();
+
+// 一站式轻量搜索（命中筛选 + 相关度排序）
+Article::query()->searchRank(['title','body'], 'laravel')->get();
+```
+
+---
+
+## 23. 索引与优化器提示系列（IndexHintMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+`study_mysql` 指出「优化器选错索引导致全表扫描」是生产环境最常见的性能瓶颈之一。本系列把
+索引提示与优化器提示抽象为语义化宏，让开发者在确认执行计划后**精确引导优化器走正确索引 / 限制执行成本**。
+
+```php
+// 强制走复合索引，避免优化器误判（支持 USE/FORCE/IGNORE；PG 经 pg_hint_plan）
+Order::query()->useIndex(['idx_user_created'])->where('user_id', $uid)->get();
+Order::query()->forceIndex('idx_status')->where('status', 1)->get();
+Order::query()->ignoreIndex('idx_bad')->whereBetween('created_at', [$s, $e])->get();
+
+// 注入任意 MySQL 优化器提示（包裹在 /*+ ... */ 中，幂等仅出现一次）
+Order::query()
+    ->optimizerHints(['JOIN_PREFIX(u)', 'MAX_EXECUTION_TIME(3000)'])
+    ->where('user_id', $uid)->get();
+
+// 单次查询最大执行毫秒数（性能守卫，防卡死；PG 经 pg_hint_plan 的 MaxExecTime）
+Report::query()->maxExecutionTime(5000)->where(...)->get();
+
+// 强制 MySQL 按 FROM 顺序做连接（STRAIGHT_JOIN，仅 MySQL 有效）
+DB::table('orders')->straightJoin()->join('users', 'users.id', '=', 'orders.user_id')->get();
+```
+
+> **双库说明**：`USE/FORCE/IGNORE INDEX` 为 MySQL 原生语法；PostgreSQL 无标准等价语法，经
+> `pg_hint_plan` 扩展生成 `/*+ IndexScan/NoIndexScan */` 注释提示（未安装扩展则注释无害）。
+> `MAX_EXECUTION_TIME` / `MaxExecTime` 同理。`STRAIGHT_JOIN` 仅 MySQL 生效，PG 下安全忽略。
+
+## 24. 查询守卫与诊断系列（QueryGuardMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+聚焦「防止查询失控」——这是系统稳定性最常见的风险源。守卫类宏**不改变业务语义**，只做兜底 + 熔断，
+确保大表 / 高并发 / 参数异常场景下不会出现「长时间未响应 / 资源占用高 / 卡死」。
+
+```php
+// 软守卫：仅当未设 LIMIT 时补安全上限（默认 1000），不破坏已有语义
+$query->where(...)->withLimitGuard(1000)->get();
+
+// 硬守卫：未设 LIMIT 或超阈值直接拒绝执行（fail-fast），适用于导出/遍历前置
+->requireLimit(50000)->get();
+
+// 返回执行计划（诊断慢查询第一抓手）
+$plan = Order::query()->where('status', 1)->explain('json');
+// 返回真实执行计划（含耗时/行数，会真正执行，开销更高，慎用于生产热路径）
+$plan = Order::query()->where('status', 1)->explainAnalyze();
+```
+
+> `explain()` 在 MySQL 生成 `EXPLAIN [FORMAT=...]`，在 PostgreSQL 生成 `EXPLAIN (FORMAT ...)`，
+> 结果由 `getConnection()->select()` 返回，可直接用于诊断是否走索引 / 全表扫描 / filesort。
+
+## 25. 分组 Top-N 系列（TopNMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+`study_mysql` 高频模式「取每组最新/最大/前 N 条」（每用户最新订单、每分类 Top3、每文章最新评论）。
+传统写法（GROUP BY 丢字段、关联子查询逐行执行）是大表性能瓶颈；本系列用窗口函数 `ROW_NUMBER()` 一次性改写。
+
+```php
+// 每个用户最新的一笔订单
+Order::query()->whereTopNPerGroup('user_id', 'created_at', 'desc', 1)->get();
+// 每个分类销量前 3 的商品
+Product::query()->whereTopNPerGroup('category_id', 'sales', 'desc', 3)->get();
+// 多列排序：先状态后时间
+Order::query()->whereTopNPerGroup('user_id', ['status','created_at'], ['asc','desc'], 1)->get();
+```
+
+> 实现：构造 `ROW_NUMBER() OVER (PARTITION BY 分组 ORDER BY 排序) AS _rn` 子查询，再用
+> `whereIn(主键, 子查询 WHERE _rn <= N)` 过滤，双构建器（ORM/DB）通用。
+
+## 26. 条件聚合系列（ConditionalAggregateMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+报表常见的「按状态 / 渠道 / 时间区间拆分统计」，新手常写 N 条独立 `COUNT/SUM` 查询再应用层拼装（N+1 与多次往返）。
+本系列用 `SUM/COUNT/AVG/MAX/MIN(CASE WHEN ...)` 在**单条 SQL** 内完成多维统计。
+
+```php
+// 单条 SQL 同时统计「已支付金额」与「退款金额」
+Order::query()
+    ->selectSumIf('amount', 'status = ?', [1], 'paid_amount')
+    ->selectSumIf('amount', 'status = ?', [4], 'refund_amount')
+    ->first();
+
+// 各状态订单数（单条 SQL 完成多条件计数）
+Order::query()
+    ->selectCountIf('id', 'status = ?', [1], 'paid_count')
+    ->selectCountIf('id', 'status = ?', [0], 'unpaid_count')
+    ->first();
+
+// 已支付订单的平均/最大/最小金额
+Order::query()
+    ->selectAvgIf('amount', 'status = ?', [1], 'paid_avg')
+    ->selectMaxIf('amount', 'status = ?', [1], 'paid_max')
+    ->selectMinIf('amount', 'status = ?', [1], 'paid_min')
+    ->first();
+```
+
+> **语义正确性**：`SUM` 非匹配行返回 `0`（等价「仅累加匹配行」）；`COUNT` 用 `THEN 1`；
+> `AVG/MAX/MIN` 非匹配行返回 `NULL`（被聚合函数忽略），**不会**把 0 计入结果而失真。
+
+## 27. 列选择纪律系列（SelectColumnMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+`SELECT *` 是生产环境最常见的隐性性能与资源杀手（放大 I/O、内存、带宽，使覆盖索引失效）。
+本系列把「只取需要的列」抽象为语义化宏，从源头减少结果集体积，直击「资源占用高 / 卡死」。
+
+```php
+// 列表页只取展示字段，避免拉取 body 等大字段
+Article::query()->selectOnly(['id','title','created_at'])->paginate(20);
+
+// 已 select 多列后剔除大字段（需先显式 select；MySQL/PG 无统一 SELECT * EXCEPT 语法）
+Article::query()->select(['id','title','body','created_at'])->selectExcept('body')->get();
+
+// 仅取主键（判断存在性 / 取 ID 列表等轻量场景）
+$ids = Order::query()->where('status', 1)->selectPrimaryKey()->pluck('id');
+```
+
+## 28. 超大 IN / NOT IN 分块系列（ChunkedListMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+`study_mysql` 将「巨型 IN 列表」列为典型查询改写反模式：单条巨 `IN` 会撞上 MySQL 占位符上限（≈65535）、
+使优化器退化全表扫描、并让 PHP 构造超长 SQL 字符串造成内存与网络暴涨。本系列把大数组按 **默认 1000** 切块，
+生成 `(col IN 块1) OR (col IN 块2) ...`（IN 以 OR 合并、等价原语义）或 `(col NOT IN 块1) AND (col NOT IN 块2) ...`
+（NOT IN 以 AND 合并、等价原语义），从源头规避上述三类故障。
+
+```php
+// 一次性筛选 5 万个订单 ID，自动切成 50 个 IN 块 OR 合并，规避占位符上限与优化器退化
+Order::query()->whereInChunked('id', $hugeIdList)->get();
+DB::table('orders')->whereInChunked('id', $hugeIdList, 2000)->get();
+
+// 排除数万条已处理 ID，自动切成多块 NOT IN 以 AND 合并
+Order::query()->whereNotInChunked('id', $processedIds)->get();
+
+// 作为 OR 分支追加（复杂组合筛选中某一分支匹配超大集合）
+Order::query()->where('status', 1)->orWhereInChunked('id', $hugeIdList)->get();
+```
+
+> **安全与效率约定**：列名经 `SqlSecurity::assertValidIdentifier` 白名单校验（防注入）；入参数组先 `array_unique` 去重；
+> `$chunkSize` 强制 `max(1, ...)`；**空集合安全**——`IN ()` 非法故空数组返回零行（`1 = 0`），`NOT IN` 空数组语义为全表故不加约束；
+> **单块最优**——仅 1 块时直接委托原生 `whereIn/whereNotIn`，不产生多余嵌套；全程只拼装查询、**不触发任何 SQL 执行**，绝不会因数据量大而卡死。
+
+## 29. 大表计数加速系列（FastCountMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+对千万/亿级表执行 `SELECT COUNT(*)` 常全索引/全表扫描，拖垮连接、导致大屏与报表接口超时（长时间未响应）。
+本系列在无过滤时直接读取**数据字典估算行数**（MySQL `information_schema.TABLES.TABLE_ROWS` / PostgreSQL `pg_class.reltuples`），
+复杂度 O(1)、不触达业务数据、零锁零 undo；一旦带 WHERE/JOIN/GROUP/HAVING 或复杂 FROM，自动回退精确 `COUNT(*)`，保证结果正确。
+
+```php
+// 大屏展示「全站用户总数」概览：千万级用户表瞬间返回，无需全表扫描
+$total = User::query()->approximateCount();
+
+// 带条件的精确计数（自动识别并回退）
+$paid  = Order::query()->where('status', 1)->approximateCount('id');
+```
+
+> **安全与效率约定**：仅读取系统目录视图，对线上零侵入；所有可能抛异常的目录查询均 `try/catch` 包裹，
+> 失败时**静默回退精确 COUNT**，绝不向上暴露异常；估算值非实时（统计信息可能滞后），适用于概览/近似场景，
+> 对账单、财务报表等强一致场景仍应使用精确 `count()`。
+
+## 30. 防失控写入 / 删除护栏系列（SafeWriteMacro，MySQL 8.0+ / PostgreSQL 15+）
+
+`study_mysql` 事故清单明确记载「无 WHERE 的 UPDATE/DELETE 误操作」「单条巨 DELETE 锁表 / undo 膨胀」
+是生产最致命的稳定性事故源。本系列针对用户「避免卡死 / 资源占用高 / 异常」硬性要求，提供两道护栏：
+
+```php
+// 1) 写前闸门：缺少 WHERE 立即抛异常拦截，杜绝「少写一句 where 全表被改/被删」
+Order::query()->where('id', 123)->mustHaveWhere()->delete();
+// Order::query()->mustHaveWhere()->delete();   // ← 抛 RuntimeException 拦截
+
+// 2) 按主键分批安全删除：千万级数据按每批 1000 行安全删除，不锁死整表
+$removed = AuditLog::query()
+    ->where('created_at', '<', now()->subDays(30))
+    ->deleteInChunks(1000);
+```
+
+> **安全与效率约定**：删除按**主键**分批，复用原始 WHERE/JOIN 条件仅用于「取主键」，删除操作本身不带 JOIN，
+> 兼容 MySQL「单表 DELETE 不支持 LIMIT + 多表语法」等约束；采用 `clone()`（Laravel 深拷贝）隔离「取键」与「删除」两套查询互不污染；
+> `deleteInChunks` 内置 `删除 0 行即终止` + `最大迭代上限（100000）` 双重防死循环，杜绝 CPU/连接耗尽；
+> 内存占用与单批数据量成正比（O(分片大小)），与待删总量无关，稳定可控。
+
+---
+
 ## 性能优化建议
 
 ### 1. 索引优化
@@ -1126,6 +1492,23 @@ Employee::query()->rowNumber('department_id', 'salary', 'desc')->get();
 BigTable::query()->rowNumber(null, 'id', 'asc')->get(); // 全表排序，性能差
 ```
 
+### 4. 宏操作的效率与资源占用保障（v3.2.0 重点）
+
+本扩展包的所有宏均遵循以下原则，确保「**不出现长时间未响应、系统资源占用高、卡死与异常**」：
+
+1. **宏只构建 SQL，不主动执行**：所有宏仅拼接/改写查询（返回 `$this` 或结果集构建器），不会在宏内部调用 `->get()` / `->first()` / `->paginate()` 等触发实际查询的操作，避免宏本身造成不可控的数据加载与内存占用。
+2. **递归深度上限（防环 / 防无限递归）**：`WithRecursiveMacro` 在递归成员中强制 `WHERE depth < ?`，即使数据存在环（a→b→a）也只会产出有限行，不会让数据库无限递归。
+3. **LIMIT 守卫（防全表失控）**：`withLimitGuard()` 在缺失 `LIMIT` 时自动补安全上限；`requireLimit()` 在未设 LIMIT 或超过阈值时直接拒绝执行（fail-fast），杜绝「忘加分页导致全表返回」的事故。
+4. **执行时限守卫（防卡死）**：`maxExecutionTime()` 通过 MySQL 优化器提示 / pg_hint_plan 限制单条查询最大执行毫秒数，作为资源占用的最后一道防线。
+5. **列选择纪律（降 I/O 与内存）**：`selectOnly / selectExcept / selectPrimaryKey` 消除 `SELECT *`，从源头缩小结果集体积，减少磁盘 I/O、网络带宽与 PHP 内存占用。
+6. **分组 Top-N 去重（替代 N+1 / 关联子查询）**：`whereTopNPerGroup` 用窗口函数一次性改写「每组前 N 条」，避免逐行关联子查询在大表上的性能崩塌。
+7. **单条 SQL 多维统计（替代 N+1）**：`selectSumIf / selectCountIf / ...` 用条件聚合在一条语句内完成多维度统计，消除多次查询往返。
+8. **标识符白名单 + 参数绑定（防注入与语法崩坏）**：所有列名 / 别名 / 索引名 / 表名经 `SqlSecurity::assertValidIdentifier` 白名单校验后由 grammar 生成引用；所有字面值一律参数绑定，杜绝 SQL 注入与因拼接非法标识符导致的查询异常。
+9. **双构建器一致、异常清晰**：宏同时注册到 `Eloquent\Builder` 与 `Query\Builder`；不支持当前驱动的功能（如 PG 的 `STRAIGHT_JOIN`）会被安全忽略或抛出**明确可操作的异常**，而非静默产生错误 SQL。
+10. **超大 IN/NOT IN 分块（防占位符异常 / 优化器退化 / 内存暴涨）**：`whereInChunked / whereNotInChunked / orWhereInChunked / orWhereNotInChunked` 将巨型值列表自动切块并以 OR/AND 合并，单块直接委托原生，空集合安全（IN→零行、NOT IN→全表），全程只拼装查询、**绝不触发 SQL 执行**，数据量再大也不会卡死。
+11. **大表计数加速（防大屏/报表超时）**：`approximateCount()` 对无过滤的简单表经数据字典读取 O(1) 估算行数，有过滤/复杂 FROM 自动回退精确 `COUNT(*)`；目录查询异常一律 `try/catch` 静默回退，调用方永远拿到可用数字，绝不向上抛错。
+12. **防失控写入/删除护栏（防全表误操作 / 锁表 / 卡死）**：`mustHaveWhere()` 在 `update/delete` 之前断言已带 WHERE，否则立即抛异常拦截全表操作；`deleteInChunks()` 按主键分批删除，内置「删除 0 行即终止 + 最大迭代上限」双防死循环，内存占用仅与单批大小相关、与待删总量无关，稳定可控。
+
 ---
 
 ## 兼容性说明
@@ -1133,7 +1516,8 @@ BigTable::query()->rowNumber(null, 'id', 'asc')->get(); // 全表排序，性能
 - **PHP**: 8.3+
 - **Laravel**: 11+ / 12+ / 13+
 - **MySQL**: 8.0+（窗口函数/字符串函数需 8.0+，LATERAL JOIN 需 8.0.14+，INTERSECT/EXCEPT 需 8.0.31+，QUALIFY 需 8.0.33+，全文检索需建 FULLTEXT 索引）
-- **无需缓存扩展**: 所有宏均为纯 SQL 优化
+- **PostgreSQL**: 15+（窗口函数/递归 CTE/集合操作/正则 ~ 原生支持；JSON 操作走 jsonb 系列函数；全文检索走 to_tsvector/to_tsquery；UPSERT 走 ON CONFLICT；SOUNDEX 需启用 fuzzystrmatch 扩展）
+- **无需缓存扩展**: 所有宏均为纯 SQL 优化，方言差异由 `zxf\Modules\BuilderQuery\Concerns\Dialect` 统一抽象
 
 ---
 

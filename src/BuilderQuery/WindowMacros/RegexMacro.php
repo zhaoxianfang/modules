@@ -4,29 +4,32 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0+ 正则表达式匹配宏
+ * 正则表达式匹配宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  *
- * 提供强大的正则表达式查询功能：
- * - REGEXP_LIKE: 正则匹配
- * - REGEXP_SUBSTR: 提取子串
- * - REGEXP_REPLACE: 替换文本
- * - REGEXP_INSTR: 定位匹配位置
- * - REGEXP_COUNT: 计数匹配
+ * 提供强大的正则表达式查询能力，所有数据库专属语法经 {@see Dialect} 抽象层生成，
+ * 因此同一套宏在 MySQL 8.0+ 与 PostgreSQL 15+ 上均可直接使用：
+ *  - MySQL 走 REGEXP_LIKE / REGEXP_SUBSTR / REGEXP_REPLACE / REGEXP_INSTR / REGEXP_COUNT
+ *  - PostgreSQL 走 ~ / ~* / regexp_replace / regexp_matches / regexp_count
  *
- * 安全性：列名 / 别名经白名单校验并由 grammar wrap；正则模式、替换文本、
- * 匹配模式一律走参数绑定（?），彻底消除原先将模式裸拼进 SQL 导致的注入风险。
+ * 提供的宏：
+ *  - whereRegexp / whereNotRegexp / whereRegexpAny：正则匹配筛选
+ *  - regexpExtract / regexpExtractAll：提取子串 / 全量提取为数组
+ *  - regexpReplace / regexpReplaceBatch：正则替换
+ *  - regexpPosition：定位匹配位置
+ *  - regexpCount / whereRegexpCount：计数匹配
+ *
+ * 安全性：列名 / 别名经 {@see BaseMacro::assertValidIdentifier()} 白名单校验并由 grammar wrap；
+ * 正则模式、替换文本、匹配模式一律走参数绑定（?），彻底消除原先将模式裸拼进 SQL 导致的注入风险。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
- * @requires MySQL 8.0+
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
  */
-class RegexMacro
+class RegexMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有正则表达式宏
@@ -35,28 +38,29 @@ class RegexMacro
      */
     public static function register(): void
     {
-        self::registerRegexpMatch();
-        self::registerRegexpExtract();
-        self::registerRegexpReplace();
-        self::registerRegexpPosition();
-        self::registerRegexpCount();
+        RegexMacro::registerRegexpMatch();
+        RegexMacro::registerRegexpExtract();
+        RegexMacro::registerRegexpReplace();
+        RegexMacro::registerRegexpPosition();
+        RegexMacro::registerRegexpCount();
     }
 
     /**
-     * 注册正则匹配函数
+     * 注册正则匹配筛选宏
      */
-    protected static function registerRegexpMatch(): void
+public static function registerRegexpMatch(): void
     {
         /**
          * 正则表达式匹配筛选
          *
-         * MySQL 8.0+ 支持完整的 ICU 正则表达式语法
+         * MySQL 8.0+ 与 PostgreSQL 15+ 均支持完整的正则语法；模式字符 c/i/m/n 会被自动
+         * 映射为对应数据库的内联修饰符（PostgreSQL 无 n，以 s 等价）。
          *
          * @param string $column 要匹配的列
          * @param string $pattern 正则表达式模式
          * @param string $mode 匹配模式: 'c'(区分大小写)|'i'(不区分)|'m'(多行)|'n'(点匹配换行)
          * @param string $boolean 连接条件: and|or
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 匹配邮箱格式
@@ -68,22 +72,20 @@ class RegexMacro
          * // 不匹配正则
          * User::query()->whereNotRegexp('username', '^admin', 'i')->get();
          */
-        Builder::macro('whereRegexp', function (
+        static::define('whereRegexp', function (
             string $column,
             string $pattern,
             string $mode = 'c',
             string $boolean = 'and'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'whereRegexp');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
-            return $this->{$method}(
-                "REGEXP_LIKE({$wrappedColumn}, ?, ?)",
-                [$pattern, $mode]
-            );
+            [$sql, $bindings] = BaseMacro::regexMatchFragment($this, $wrappedColumn, $pattern, $mode, false);
+
+            return $this->{$method}($sql, $bindings);
         });
 
         /**
@@ -93,34 +95,32 @@ class RegexMacro
          * @param string $pattern 正则表达式模式
          * @param string $mode 匹配模式
          * @param string $boolean 连接条件
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('whereNotRegexp', function (
+        static::define('whereNotRegexp', function (
             string $column,
             string $pattern,
             string $mode = 'c',
             string $boolean = 'and'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'whereNotRegexp');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
-            return $this->{$method}(
-                "NOT REGEXP_LIKE({$wrappedColumn}, ?, ?)",
-                [$pattern, $mode]
-            );
+            [$sql, $bindings] = BaseMacro::regexMatchFragment($this, $wrappedColumn, $pattern, $mode, true);
+
+            return $this->{$method}($sql, $bindings);
         });
 
         /**
-         * 匹配任意一个正则模式
+         * 匹配任意一个正则模式（OR 组合）
          *
          * @param string $column 要匹配的列
          * @param array $patterns 正则模式数组
          * @param string $mode 匹配模式
          * @param string $boolean 连接条件
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 匹配多种邮箱域名
@@ -130,37 +130,35 @@ class RegexMacro
          *     '@outlook\.com$'
          * ])->get();
          */
-        Builder::macro('whereRegexpAny', function (
+        static::define('whereRegexpAny', function (
             string $column,
             array $patterns,
             string $mode = 'c',
             string $boolean = 'and'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'whereRegexpAny');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $method = $boolean === 'or' ? 'orWhere' : 'where';
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
 
-            $conditions = array_map(function ($pattern) use ($wrappedColumn, $mode) {
-                return "REGEXP_LIKE({$wrappedColumn}, ?, ?)";
-            }, $patterns);
-
-            $sql = '(' . implode(' OR ', $conditions) . ')';
+            $conditions = [];
             $bindings = [];
             foreach ($patterns as $pattern) {
-                $bindings[] = $pattern;
-                $bindings[] = $mode;
+                [$cond, $b] = BaseMacro::regexMatchFragment($this, $wrappedColumn, (string) $pattern, $mode, false);
+                $conditions[] = $cond;
+                $bindings = array_merge($bindings, $b);
             }
 
-            return $this->{$method.'Raw'}($sql, $bindings);
+            $sql = '(' . implode(' OR ', $conditions) . ')';
+            $method = $boolean === 'or' ? 'orWhere' : 'where';
+
+            return $this->{$method . 'Raw'}($sql, $bindings);
         });
     }
 
     /**
-     * 注册正则提取函数
+     * 注册正则提取宏
      */
-    protected static function registerRegexpExtract(): void
+public static function registerRegexpExtract(): void
     {
         /**
          * 使用正则提取子串
@@ -171,137 +169,122 @@ class RegexMacro
          * @param int $occurrence 匹配出现次数（1=第一个）
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('regexpExtract', function (
+        static::define('regexpExtract', function (
             string $column,
             string $pattern,
             int $group = 0,
             int $occurrence = 1,
             string $mode = 'c',
             string $alias = 'extracted'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'regexpExtract');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_SUBSTR({$wrappedColumn}, ?, 1, ?, ?, ?)";
+            [$expr, $bindings] = BaseMacro::regexExtractFragment($this, $wrappedColumn, $pattern, $group, $occurrence, $mode);
 
-            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $occurrence, $mode, $group]);
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
 
         /**
-         * 提取所有匹配项为数组
+         * 提取所有匹配项为 JSON 数组
          *
          * @param string $column 源列
          * @param string $pattern 正则模式
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('regexpExtractAll', function (
+        static::define('regexpExtractAll', function (
             string $column,
             string $pattern,
             string $mode = 'c',
             string $alias = 'all_matches'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'regexpExtractAll');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
-            $expr = "(
-                SELECT JSON_ARRAYAGG(m.match_text)
-                FROM (
-                    SELECT REGEXP_SUBSTR({$wrappedColumn}, ?, 1, n.n, ?, 0) as match_text
-                    FROM (
-                        SELECT a.N + b.N * 10 + 1 n
-                        FROM 
-                            (SELECT 0 AS N UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) a,
-                            (SELECT 0 AS N UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9) b
-                        ORDER BY n
-                    ) n
-                    WHERE REGEXP_SUBSTR({$wrappedColumn}, ?, 1, n.n, ?, 0) IS NOT NULL
-                      AND n.n <= 100
-                ) m
-                WHERE m.match_text IS NOT NULL
-            )";
+            [$expr, $bindings] = BaseMacro::regexExtractAllFragment($this, $wrappedColumn, $pattern, $mode);
 
-            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $mode, $pattern, $mode]);
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
     }
 
     /**
-     * 注册正则替换函数
+     * 注册正则替换宏
      */
-    protected static function registerRegexpReplace(): void
+public static function registerRegexpReplace(): void
     {
         /**
          * 使用正则替换文本
          *
          * @param string $column 源列
          * @param string $pattern 匹配模式
-         * @param string $replacement 替换文本（支持 $1, $2 引用捕获组）
+         * @param string $replacement 替换文本（MySQL 支持 \1、\2 引用捕获组）
          * @param int $occurrence 替换第几次匹配（0=全部替换）
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('regexpReplace', function (
+        static::define('regexpReplace', function (
             string $column,
             string $pattern,
             string $replacement,
             int $occurrence = 0,
             string $mode = 'c',
             string $alias = 'replaced'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'regexpReplace');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_REPLACE({$wrappedColumn}, ?, ?, 1, ?, ?)";
+            [$expr, $bindings] = BaseMacro::regexReplaceFragment($this, $wrappedColumn, $pattern, $replacement, $occurrence, $mode);
 
-            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $replacement, $occurrence, $mode]);
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
 
         /**
-         * 批量正则替换
+         * 批量正则替换（依次应用多条规则）
          *
          * @param string $column 源列
          * @param array $replacements 替换规则 [['pattern' => '...', 'replacement' => '...'], ...]
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('regexpReplaceBatch', function (
+        static::define('regexpReplaceBatch', function (
             string $column,
             array $replacements,
             string $mode = 'c',
             string $alias = 'replaced'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'regexpReplaceBatch');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             $expr = $wrappedColumn;
             $bindings = [];
-
             foreach ($replacements as $rule) {
-                $expr = "REGEXP_REPLACE({$expr}, ?, ?, 1, 0, ?)";
-                $bindings[] = $rule['pattern'];
-                $bindings[] = $rule['replacement'];
-                $bindings[] = $mode;
+                [$expr, $b] = BaseMacro::regexReplaceFragment(
+                    $this,
+                    $expr,
+                    (string) ($rule['pattern'] ?? ''),
+                    (string) ($rule['replacement'] ?? ''),
+                    0,
+                    $mode
+                );
+                $bindings = array_merge($bindings, $b);
             }
 
             return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
@@ -309,9 +292,9 @@ class RegexMacro
     }
 
     /**
-     * 注册正则位置函数
+     * 注册正则位置宏
      */
-    protected static function registerRegexpPosition(): void
+public static function registerRegexpPosition(): void
     {
         /**
          * 查找正则匹配位置
@@ -320,35 +303,34 @@ class RegexMacro
          * @param string $pattern 正则模式
          * @param int $occurrence 第几次匹配
          * @param string $mode 匹配模式
-         * @param int $returnOption 返回选项: 0=位置, 1=匹配后位置
+         * @param int $returnOption 返回选项: 0=匹配起始位置, 1=匹配结束位置
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('regexpPosition', function (
+        static::define('regexpPosition', function (
             string $column,
             string $pattern,
             int $occurrence = 1,
             string $mode = 'c',
             int $returnOption = 0,
             string $alias = 'position'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'regexpPosition');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_INSTR({$wrappedColumn}, ?, 1, ?, ?, ?)";
+            [$expr, $bindings] = BaseMacro::regexPositionFragment($this, $wrappedColumn, $pattern, $occurrence, $mode, $returnOption);
 
-            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $occurrence, $returnOption, $mode]);
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
     }
 
     /**
-     * 注册正则计数函数
+     * 注册正则计数宏
      */
-    protected static function registerRegexpCount(): void
+public static function registerRegexpCount(): void
     {
         /**
          * 统计正则匹配次数
@@ -357,24 +339,23 @@ class RegexMacro
          * @param string $pattern 正则模式
          * @param string $mode 匹配模式
          * @param string $alias 结果列别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('regexpCount', function (
+        static::define('regexpCount', function (
             string $column,
             string $pattern,
             string $mode = 'c',
             string $alias = 'match_count'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'regexpCount');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $mode = RegexMacro::assertRegexMode($mode);
-            $alias = RegexMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = RegexMacro::wrapIdentifier($this, $alias);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $mode = BaseMacro::assertRegexMode($mode);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
-            $expr = "REGEXP_COUNT({$wrappedColumn}, ?, 1, ?)";
+            [$expr, $bindings] = BaseMacro::regexCountFragment($this, $wrappedColumn, $pattern, $mode);
 
-            return $this->selectRaw("{$expr} AS {$wrappedAlias}", [$pattern, $mode]);
+            return $this->selectRaw("{$expr} AS {$wrappedAlias}", $bindings);
         });
 
         /**
@@ -386,27 +367,25 @@ class RegexMacro
          * @param string $operator 比较运算符: =|>|<|>=|<=
          * @param string $mode 匹配模式
          * @param string $boolean 连接条件
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('whereRegexpCount', function (
+        static::define('whereRegexpCount', function (
             string $column,
             string $pattern,
             int $count,
             string $operator = '=',
             string $mode = 'c',
             string $boolean = 'and'
-        ): Builder {
-            /** @var Builder $this */
-            RegexMacro::assertMysql($this, 'whereRegexpCount');
-            $wrappedColumn = RegexMacro::wrapIdentifier($this, RegexMacro::assertValidIdentifier($column, 'column'));
-            $operator = RegexMacro::assertOperator($operator);
-            $mode = RegexMacro::assertRegexMode($mode);
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $operator = BaseMacro::assertOperator($operator);
+            $mode = BaseMacro::assertRegexMode($mode);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
 
-            return $this->{$method}(
-                "REGEXP_COUNT({$wrappedColumn}, ?, 1, ?) {$operator} {$count}",
-                [$pattern, $mode]
-            );
+            [$expr, $bindings] = BaseMacro::regexCountFragment($this, $wrappedColumn, $pattern, $mode);
+
+            return $this->{$method}("{$expr} {$operator} {$count}", $bindings);
         });
     }
 }

@@ -48,8 +48,8 @@ LOG_LEVEL=debug
 # 可选：是否允许 CLI 模式下的日志也写入数据库（默认 false）
 LOG_DB_LOG_CLI=false
 
-# 可选：响应体最大存储字符数（中间件采集响应体时按此截断，默认 20000）
-LOG_DB_MAX_BODY_LENGTH=20000
+# 可选：响应体最大存储字符数（中间件采集响应体时按此截断，默认 200）
+LOG_DB_MAX_BODY_LENGTH=200
 
 # 可选：追加的敏感字段键名（会与内置默认名单合并，而非覆盖），例如：
 # LOG_DB_SENSITIVE_KEYS=pass,credit_card,id_card

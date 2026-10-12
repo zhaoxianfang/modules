@@ -4,14 +4,26 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
-class RandomMacro
+/**
+ * 随机查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
+ *
+ * 基于标准 SQL 窗口函数 ROW_NUMBER() + 数据库随机函数实现「随机取 N 条」与「分组随机取 N 条」：
+ *  - MySQL：随机函数为 RAND()
+ *  - PostgreSQL：随机函数为 random()
+ * 通过 {@see BaseMacro::randomFunction()} 统一生成，因此同一套宏在两种数据库上均可直接使用。
+ *
+ * 安全性：主键 / 分组列名经白名单校验并由 grammar wrap；随机函数由 Driver 决定，不拼接用户输入。
+ *
+ * @package zxf\Modules\BuilderQuery\WindowMacros
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
+ */
+class RandomMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册 random() 宏函数，用于随机查询记录
@@ -21,9 +33,9 @@ class RandomMacro
      */
     public static function register()
     {
-        self::randomBaseHandle();
-        self::randomHandle();
-        self::groupRandomHandle();
+        RandomMacro::randomBaseHandle();
+        RandomMacro::randomHandle();
+        RandomMacro::groupRandomHandle();
     }
 
     public static function randomBaseHandle()
@@ -35,7 +47,7 @@ class RandomMacro
          * @param  QueryBuilder  $source  源查询
          * @param  QueryBuilder  $dest  目标查询
          */
-        Builder::macro('replicateQuery', function (QueryBuilder $source, QueryBuilder $dest) {
+        static::define('replicateQuery', function (QueryBuilder $source, QueryBuilder $dest) {
             // 复制基础属性
             //    $dest->bindings = $source->bindings;
             //    $dest->columns = $source->columns;
@@ -81,7 +93,7 @@ class RandomMacro
          * @param  QueryBuilder  $source  源查询
          * @param  QueryBuilder  $dest  目标查询
          */
-        Builder::macro('replicateWheres', function (QueryBuilder $source, QueryBuilder $dest) {
+        static::define('replicateWheres', function (QueryBuilder $source, QueryBuilder $dest) {
             RandomMacro::copyWheres($source, $dest);
 
             return $dest;
@@ -91,15 +103,15 @@ class RandomMacro
     /**
      * 复制源查询的全部 where 条件到目标查询
      *
-     * 注意：Laravel Macroable 会将宏闭包重绑到 Builder 作用域，闭包内 `self::` 会解析为
-     * Builder 而非本类，因此复制逻辑必须抽为 public static 方法，供宏闭包与 Nested
+     * 注意：Laravel Macroable 会将宏闭包重绑到 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder 作用域，闭包内 `RandomMacro::` 会解析为
+     * \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder 而非本类，因此复制逻辑必须抽为 public static 方法，供宏闭包与 Nested
      * 分支递归调用共用。
      *
-     * @param Builder|QueryBuilder $source 源查询（宏调用者实际为 Eloquent Builder）
+     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $source 源查询（宏调用者实际为 Eloquent \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder）
      * @param QueryBuilder $dest 目标查询
      * @return void
      */
-    public static function copyWheres(Builder|QueryBuilder $source, QueryBuilder $dest): void
+    public static function copyWheres(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $source, QueryBuilder $dest): void
     {
         foreach ($source->wheres as $where) {
             $method = $where['type'] ?? 'Basic';
@@ -138,7 +150,7 @@ class RandomMacro
                     break;
                 case 'Nested':
                     $dest->whereNested(function ($query) use ($where) {
-                        self::copyWheres($where['query'], $query);
+                        RandomMacro::copyWheres($where['query'], $query);
                     }, $boolean);
                     break;
                 case 'Column':
@@ -187,29 +199,30 @@ class RandomMacro
          *
          * @param  int  $limit  返回记录数，默认10
          * @param  string  $primaryKey  主键名，默认'id'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('random', function (int $limit = 10, string $primaryKey = 'id') {
-            /** @var Builder $this */
-            $model = $this->getModel();
+        static::define('random', function (int $limit = 10, string $primaryKey = 'id') {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $primaryKey = RandomMacro::assertValidIdentifier($primaryKey, 'primaryKey');
-            $wrappedPk = RandomMacro::wrapIdentifier($this, $primaryKey);
+            $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+            $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
-            // 构建窗口函数子查询：使用 ROW_NUMBER() + RAND() 实现高效随机
+            // 构建窗口函数子查询：使用 ROW_NUMBER() + 数据库随机函数实现高效随机
+            $randomFn = BaseMacro::randomFunction($this);
             $subQuery = DB::table($table)
                 ->select(
                     $primaryKey,
-                    DB::raw('ROW_NUMBER() OVER (ORDER BY RAND()) AS rnd_rank')
+                    DB::raw("ROW_NUMBER() OVER (ORDER BY {$randomFn}) AS rnd_rank")
                 );
 
             // 复制所有where条件到子查询
-            $this->replicateWheres($this->getQuery(), $subQuery);
+            $this->replicateWheres(BaseMacro::queryOf($this), $subQuery);
 
             // 构建主查询
             return $model->newQuery()
-                ->when(!empty($this->getQuery()->columns), function ($query) {
-                    $query->select($this->getQuery()->columns);
+                ->when(!empty(BaseMacro::queryOf($this)->columns), function ($query) {
+                    $query->select(BaseMacro::queryOf($this)->columns);
                 })
                 ->whereIn("{$table}.{$primaryKey}", function ($query) use ($subQuery, $limit, $primaryKey) {
                     $query->select($primaryKey)
@@ -232,31 +245,32 @@ class RandomMacro
          * @param  string  $groupColumn  分组字段名
          * @param  int  $limit  每组返回记录数，默认10
          * @param  string  $primaryKey  主键名，默认'id'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('groupRandom', function (string $groupColumn, int $limit = 10, string $primaryKey = 'id') {
-            /** @var Builder $this */
-            $model = $this->getModel();
+        static::define('groupRandom', function (string $groupColumn, int $limit = 10, string $primaryKey = 'id') {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $primaryKey = RandomMacro::assertValidIdentifier($primaryKey, 'primaryKey');
-            $groupColumn = RandomMacro::assertValidIdentifier($groupColumn, 'group');
-            $wrappedGroup = RandomMacro::wrapIdentifier($this, $groupColumn);
+            $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+            $groupColumn = BaseMacro::assertValidIdentifier($groupColumn, 'group');
+            $wrappedGroup = BaseMacro::wrapIdentifier($this, $groupColumn);
 
             // 构建窗口函数子查询 - 按分组随机排序
+            $randomFn = BaseMacro::randomFunction($this);
             $subQuery = DB::table($table)
                 ->select(
                     $primaryKey,
                     $groupColumn,
-                    DB::raw("ROW_NUMBER() OVER (PARTITION BY {$wrappedGroup} ORDER BY RAND()) AS group_rnd_rank")
+                    DB::raw("ROW_NUMBER() OVER (PARTITION BY {$wrappedGroup} ORDER BY {$randomFn}) AS group_rnd_rank")
                 );
 
             // 复制所有where条件到子查询
-            $this->replicateWheres($this->getQuery(), $subQuery);
+            $this->replicateWheres(BaseMacro::queryOf($this), $subQuery);
 
             // 构建主查询
             return $model->newQuery()
-                ->when(!empty($this->getQuery()->columns), function ($query) {
-                    $query->select($this->getQuery()->columns);
+                ->when(!empty(BaseMacro::queryOf($this)->columns), function ($query) {
+                    $query->select(BaseMacro::queryOf($this)->columns);
                 })
                 ->whereIn("{$table}.{$primaryKey}", function ($query) use ($subQuery, $limit, $primaryKey) {
                     $query->select($primaryKey)

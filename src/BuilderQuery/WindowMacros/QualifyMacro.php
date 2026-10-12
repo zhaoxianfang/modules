@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0.33+ QUALIFY 子句宏
+ * QUALIFY 子句宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
  *
- * QUALIFY 用于过滤窗口函数的结果，类似于 HAVING 过滤聚合函数
- * MySQL 8.0.33+ 开始支持 QUALIFY 子句
+ * QUALIFY 用于过滤窗口函数的结果，类似于 HAVING 过滤聚合函数。
+ * 本宏以标准 SQL 的 HAVING + 窗口函数结果列实现，因此在 MySQL 8.0.31+ 与 PostgreSQL 15+ 上均可使用：
+ *  - MySQL 8.0.33+ 原生支持 QUALIFY，本宏的 HAVING 实现与其语义等价且向后兼容更早版本；
+ *  - PostgreSQL 15+ 同样不支持 QUALIFY 关键字，HAVING 方案天然通用。
+ *
+ * 安全性：窗口结果列名经白名单校验并由 grammar wrap，运算符经白名单校验，值走参数绑定。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
- * @requires MySQL 8.0.33+
+ * @version 3.0.0
+ * @requires MySQL 8.0.31+ / PostgreSQL 15+
  */
-class QualifyMacro
+class QualifyMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有 QUALIFY 宏
@@ -28,14 +30,14 @@ class QualifyMacro
      */
     public static function register(): void
     {
-        self::registerQualify();
-        self::registerQualifyRaw();
+        QualifyMacro::registerQualify();
+        QualifyMacro::registerQualifyRaw();
     }
 
     /**
      * 注册 QUALIFY 基础方法
      */
-    protected static function registerQualify(): void
+public static function registerQualify(): void
     {
         /**
          * QUALIFY 子句 - 过滤窗口函数结果
@@ -46,7 +48,7 @@ class QualifyMacro
          * @param mixed $operator 运算符或值（当只有两个参数时）
          * @param mixed $value 比较值
          * @param string $boolean 连接条件: and|or
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找每个部门工资排名前3的员工（无需子查询）
@@ -72,13 +74,13 @@ class QualifyMacro
          *     ->orQualify('rn', '=', 2)
          *     ->get();
          */
-        Builder::macro('qualify', function (
+        static::define('qualify', function (
             string $column,
             mixed $operator = null,
             mixed $value = null,
             string $boolean = 'and'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             if (func_num_args() === 2) {
                 $value = $operator;
                 $operator = '=';
@@ -87,8 +89,8 @@ class QualifyMacro
             $method = $boolean === 'or' ? 'orHavingRaw' : 'havingRaw';
 
             // 校验窗口函数结果列名与运算符，防止 SQL 注入
-            $wrappedColumn = QualifyMacro::wrapIdentifier($this, QualifyMacro::assertValidIdentifier($column, 'column'));
-            $operator = QualifyMacro::assertOperator((string) $operator);
+            $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
+            $operator = BaseMacro::assertOperator((string) $operator);
 
             // 使用 HAVING 模拟 QUALIFY（MySQL 8.0.33+ 原生支持 QUALIFY）
             // 这里使用 HAVING 以兼容更多版本，同时语义上更接近 QUALIFY
@@ -101,7 +103,7 @@ class QualifyMacro
          * @param string $column 窗口函数结果列名
          * @param mixed $operator 运算符或值
          * @param mixed $value 比较值
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找排名第一或第三的员工
@@ -111,12 +113,12 @@ class QualifyMacro
          *     ->orQualify('rn', '=', 3)
          *     ->get();
          */
-        Builder::macro('orQualify', function (
+        static::define('orQualify', function (
             string $column,
             mixed $operator = null,
             mixed $value = null
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             if (func_num_args() === 2) {
                 $value = $operator;
                 $operator = '=';
@@ -129,7 +131,7 @@ class QualifyMacro
     /**
      * 注册 QUALIFY RAW 方法
      */
-    protected static function registerQualifyRaw(): void
+public static function registerQualifyRaw(): void
     {
         /**
          * 使用原始 SQL 的 QUALIFY 子句
@@ -137,7 +139,7 @@ class QualifyMacro
          * @param string $sql 原始 SQL 条件
          * @param array $bindings 绑定参数
          * @param string $boolean 连接条件: and|or
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 复杂条件过滤
@@ -155,12 +157,12 @@ class QualifyMacro
          *     ->qualifyRaw('sales_rank <= 10 AND quartile = 1')
          *     ->get();
          */
-        Builder::macro('qualifyRaw', function (
+        static::define('qualifyRaw', function (
             string $sql,
             array $bindings = [],
             string $boolean = 'and'
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             $method = $boolean === 'or' ? 'orHavingRaw' : 'havingRaw';
 
             return $this->{$method}($sql, $bindings);
@@ -171,13 +173,13 @@ class QualifyMacro
          *
          * @param string $sql 原始 SQL 条件
          * @param array $bindings 绑定参数
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          */
-        Builder::macro('orQualifyRaw', function (
+        static::define('orQualifyRaw', function (
             string $sql,
             array $bindings = []
-        ): Builder {
-            /** @var Builder $this */
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
             return $this->qualifyRaw($sql, $bindings, 'or');
         });
     }

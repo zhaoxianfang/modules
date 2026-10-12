@@ -4,23 +4,24 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0.14+ LATERAL JOIN 宏
+ * LATERAL JOIN 宏（MySQL 8.0.14+ / PostgreSQL 15+ 通用）
  *
- * LATERAL 允许子查询引用主查询中的列，实现类似相关子查询但更高效的功能
- * MySQL 8.0.14+ 开始支持 LATERAL derived tables
+ * LATERAL 允许子查询引用主查询中的列，实现「每个主表行关联一个相关子查询」的高效查询
+ * （Top-N、行相关聚合、行相关过滤等）。LATERAL 为标准 SQL，在 MySQL 8.0.14+ 与 PostgreSQL 15+ 上均可直接使用。
+ *
+ * 安全性：用户传入的表别名 / 分组列 / 排序列 / 聚合列经白名单校验并由 grammar wrap；
+ * 关联条件通过 whereColumn / 参数化子查询实现，不裸拼用户输入。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 1.0.0
- * @requires MySQL 8.0.14+
+ * @version 3.0.0
+ * @requires MySQL 8.0.14+ / PostgreSQL 15+
  */
-class LateralJoinMacro
+class LateralJoinMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有 LATERAL JOIN 宏
@@ -29,16 +30,16 @@ class LateralJoinMacro
      */
     public static function register(): void
     {
-        self::registerLateralJoin();
-        self::registerLateralLeftJoin();
-        self::registerLateralLimit();
-        self::registerLateralAggregate();
+        LateralJoinMacro::registerLateralJoin();
+        LateralJoinMacro::registerLateralLeftJoin();
+        LateralJoinMacro::registerLateralLimit();
+        LateralJoinMacro::registerLateralAggregate();
     }
 
     /**
      * 注册 LATERAL INNER JOIN
      */
-    protected static function registerLateralJoin(): void
+public static function registerLateralJoin(): void
     {
         /**
          * LATERAL JOIN - 横向连接（INNER）
@@ -47,7 +48,7 @@ class LateralJoinMacro
          *
          * @param \Closure $callback 子查询闭包，接收主查询当前行的参数
          * @param string $alias 子查询别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找每个用户最近的3条订单
@@ -72,13 +73,12 @@ class LateralJoinMacro
          *     }, 'top_earner')
          *     ->get();
          */
-        Builder::macro('lateralJoin', function (\Closure $callback, string $alias): Builder {
-            /** @var Builder $this */
-            LateralJoinMacro::assertMysql($this, 'lateralJoin');
-            $model = $this->getModel();
+        static::define('lateralJoin', function (\Closure $callback, string $alias): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             // 构建子查询
             $subQuery = $model->newQuery();
@@ -100,7 +100,7 @@ class LateralJoinMacro
     /**
      * 注册 LATERAL LEFT JOIN
      */
-    protected static function registerLateralLeftJoin(): void
+public static function registerLateralLeftJoin(): void
     {
         /**
          * LATERAL LEFT JOIN - 左横向连接
@@ -109,7 +109,7 @@ class LateralJoinMacro
          *
          * @param \Closure $callback 子查询闭包
          * @param string $alias 子查询别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找所有用户及其最新订单（包括没有订单的用户）
@@ -122,12 +122,11 @@ class LateralJoinMacro
          *     }, 'latest_order')
          *     ->get();
          */
-        Builder::macro('lateralLeftJoin', function (\Closure $callback, string $alias): Builder {
-            /** @var Builder $this */
-            LateralJoinMacro::assertMysql($this, 'lateralLeftJoin');
-            $model = $this->getModel();
-            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
+        static::define('lateralLeftJoin', function (\Closure $callback, string $alias): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             // 构建子查询
             $subQuery = $model->newQuery();
@@ -147,7 +146,7 @@ class LateralJoinMacro
     /**
      * 注册 LATERAL LIMIT（Top-N 优化）
      */
-    protected static function registerLateralLimit(): void
+public static function registerLateralLimit(): void
     {
         /**
          * 使用 LATERAL 实现高效的 Top-N 查询
@@ -159,7 +158,7 @@ class LateralJoinMacro
          * @param string $direction 排序方向
          * @param int $limit 每组返回记录数
          * @param string $alias 子查询别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 每个分类下销量最高的5个商品
@@ -172,22 +171,21 @@ class LateralJoinMacro
          *     ->lateralLimit('id', 'created_at', 'desc', 10, 'recent_messages')
          *     ->get();
          */
-        Builder::macro('lateralLimit', function (
+        static::define('lateralLimit', function (
             string $partitionColumn,
             string $orderColumn,
             string $direction = 'desc',
             int $limit = 5,
             string $alias = 'lateral_limit'
-        ): Builder {
-            /** @var Builder $this */
-            LateralJoinMacro::assertMysql($this, 'lateralLimit');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $direction = LateralJoinMacro::assertDirection($direction);
-            $partitionColumn = LateralJoinMacro::assertValidIdentifier($partitionColumn, 'partition');
-            $orderColumn = LateralJoinMacro::assertValidIdentifier($orderColumn, 'order');
-            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
+            $direction = BaseMacro::assertDirection($direction);
+            $partitionColumn = BaseMacro::assertValidIdentifier($partitionColumn, 'partition');
+            $orderColumn = BaseMacro::assertValidIdentifier($orderColumn, 'order');
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             // 构建关联子查询
             $subQuery = $model->newQuery()
@@ -211,7 +209,7 @@ class LateralJoinMacro
     /**
      * 注册 LATERAL 聚合查询
      */
-    protected static function registerLateralAggregate(): void
+public static function registerLateralAggregate(): void
     {
         /**
          * 使用 LATERAL 实现行相关的聚合查询
@@ -223,7 +221,7 @@ class LateralJoinMacro
          * @param string|null $whereColumn 额外过滤列
          * @param mixed $whereValue 额外过滤值
          * @param string $alias 子查询别名
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 计算每个订单的客户历史总消费和平均消费
@@ -235,27 +233,26 @@ class LateralJoinMacro
          *     ], 'status', 'completed', 'customer_stats')
          *     ->get();
          */
-        Builder::macro('lateralAggregate', function (
+        static::define('lateralAggregate', function (
             string $relationColumn,
             array $aggregates,
             ?string $whereColumn = null,
             mixed $whereValue = null,
             string $alias = 'agg_result'
-        ): Builder {
-            /** @var Builder $this */
-            LateralJoinMacro::assertMysql($this, 'lateralAggregate');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $relationColumn = LateralJoinMacro::assertValidIdentifier($relationColumn, 'relation');
-            $alias = LateralJoinMacro::assertValidIdentifier($alias, 'alias');
-            $wrappedAlias = LateralJoinMacro::wrapIdentifier($this, $alias);
+            $relationColumn = BaseMacro::assertValidIdentifier($relationColumn, 'relation');
+            $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
+            $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             $selectParts = [];
             foreach ($aggregates as $agg) {
-                $function = LateralJoinMacro::assertAggregateFunction((string) $agg['function']);
-                $column = $agg['column'] === '*' ? '*' : LateralJoinMacro::wrapIdentifier($this, LateralJoinMacro::assertValidIdentifier((string) $agg['column'], 'column'));
-                $aggAlias = LateralJoinMacro::assertValidIdentifier((string) $agg['alias'], 'alias');
-                $selectParts[] = "{$function}({$column}) AS " . LateralJoinMacro::wrapIdentifier($this, $aggAlias);
+                $function = BaseMacro::assertAggregateFunction((string) $agg['function']);
+                $column = $agg['column'] === '*' ? '*' : BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier((string) $agg['column'], 'column'));
+                $aggAlias = BaseMacro::assertValidIdentifier((string) $agg['alias'], 'alias');
+                $selectParts[] = "{$function}({$column}) AS " . BaseMacro::wrapIdentifier($this, $aggAlias);
             }
 
             $subQuery = $model->newQuery()
@@ -264,7 +261,7 @@ class LateralJoinMacro
                 ->whereRaw("t2.{$relationColumn} = {$table}.{$relationColumn}");
 
             if ($whereColumn !== null && $whereValue !== null) {
-                $whereColumn = LateralJoinMacro::assertValidIdentifier($whereColumn, 'where');
+                $whereColumn = BaseMacro::assertValidIdentifier($whereColumn, 'where');
                 $subQuery->where("t2.{$whereColumn}", $whereValue);
             }
 

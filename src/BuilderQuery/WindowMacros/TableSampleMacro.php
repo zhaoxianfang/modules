@@ -4,28 +4,28 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
-use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * MySQL 8.0+ 数据抽样查询宏
+ * 数据抽样查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  *
  * 提供高效的数据抽样功能：
- * - sample: 基于百分比的表级抽样
- * - randomSample: 基于随机数的精确抽样
- * - stratifiedSample: 分层抽样
- * - systematicSample: 系统抽样（等距抽样）
+ * - sample: 基于百分比的表级随机抽样（RAND() / random()）
+ * - randomSample: 基于窗口函数的精确随机抽样（支持种子可重复）
+ * - stratifiedSample: 分层抽样（按分层列分别随机取 N）
+ * - systematicSample: 系统抽样（等距抽样，基于主键取模）
  *
- * 安全性：分层列名 / 主键经白名单校验并由 grammar wrap；随机种子走参数绑定。
+ * 随机性统一经 {@see BaseMacro::randomFunction()} 生成（MySQL RAND() / PostgreSQL random()）；
+ * 种子可重复的确定性随机序使用跨库通用的 md5(CONCAT(主键, 种子)) 实现，MySQL 与 PostgreSQL 行为一致。
+ * 安全性：抽样列名 / 主键经白名单校验并由 grammar wrap；随机种子走参数绑定。
  *
  * @package zxf\Modules\BuilderQuery\WindowMacros
- * @version 2.0.0
- * @requires MySQL 8.0+
+ * @version 3.0.0
+ * @requires MySQL 8.0+ / PostgreSQL 15+
  */
-class TableSampleMacro
+class TableSampleMacro extends BaseMacro
 {
-    use SqlSecurity;
 
     /**
      * 注册所有抽样宏
@@ -34,16 +34,16 @@ class TableSampleMacro
      */
     public static function register(): void
     {
-        self::registerTableSample();
-        self::registerRandomSample();
-        self::registerStratifiedSample();
-        self::registerSystematicSample();
+        TableSampleMacro::registerTableSample();
+        TableSampleMacro::registerRandomSample();
+        TableSampleMacro::registerStratifiedSample();
+        TableSampleMacro::registerSystematicSample();
     }
 
     /**
      * 注册 TABLESAMPLE 方法
      */
-    protected static function registerTableSample(): void
+public static function registerTableSample(): void
     {
         /**
          * TABLESAMPLE - 表级抽样
@@ -53,7 +53,7 @@ class TableSampleMacro
          *
          * @param float $percentage 抽样百分比 (0-100)
          * @param string $method 抽样方法: 'random'|'system'
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 随机抽取10%的数据进行分析
@@ -65,13 +65,12 @@ class TableSampleMacro
          * // 快速估算统计值（基于样本）
          * $avgAge = User::query()->sample(1)->avg('age');
          */
-        Builder::macro('sample', function (
+        static::define('sample', function (
             float $percentage,
             string $method = 'random'
-        ): Builder {
-            /** @var Builder $this */
-            TableSampleMacro::assertMysql($this, 'sample');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
 
             // 百分比需大于 0，否则 MOD(pk, ceil(100/0)) 会除零
@@ -83,21 +82,22 @@ class TableSampleMacro
             if ($method === 'system') {
                 // 系统抽样：使用主键的模运算
                 $mod = (int) ceil(100 / $percentage);
-                $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
-                $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
+                $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+                $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
                 return $this->whereRaw("MOD({$wrappedPk}, ?) = 0", [$mod]);
             }
 
-            // 随机抽样：使用 RAND()
-            return $this->whereRaw("RAND() * 100 <= ?", [$percentage]);
+            // 随机抽样：使用数据库随机函数（MySQL RAND() / PostgreSQL random()）
+            $randomFn = BaseMacro::randomFunction($this);
+            return $this->whereRaw("{$randomFn} * 100 <= ?", [$percentage]);
         });
     }
 
     /**
      * 注册随机抽样方法
      */
-    protected static function registerRandomSample(): void
+public static function registerRandomSample(): void
     {
         /**
          * randomSample - 精确随机抽样（指定样本量）
@@ -106,7 +106,7 @@ class TableSampleMacro
          *
          * @param int $sampleSize 样本大小
          * @param string|null $seed 随机种子（可重复抽样）
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 精确抽取100条随机记录
@@ -118,33 +118,33 @@ class TableSampleMacro
          * // 带条件的随机抽样
          * Order::query()->where('status', 'completed')->randomSample(50)->get();
          */
-        Builder::macro('randomSample', function (
+        static::define('randomSample', function (
             int $sampleSize,
             ?string $seed = null
-        ): Builder {
-            /** @var Builder $this */
-            TableSampleMacro::assertMysql($this, 'randomSample');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
-            $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
+            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
             if ($seed !== null) {
-                $randExpr = "ROW_NUMBER() OVER (ORDER BY RAND(CRC32(CONCAT(?, {$wrappedPk}))))";
+                // 跨库通用的确定性随机序：以 (主键, 种子) 的 md5 作为确定性伪随机排序键，MySQL 与 PostgreSQL 行为一致。
+                $randExpr = "ROW_NUMBER() OVER (ORDER BY md5(CONCAT({$wrappedPk}, ?)))";
                 $randBindings = [$seed];
             } else {
-                $randExpr = "ROW_NUMBER() OVER (ORDER BY RAND())";
+                $randExpr = "ROW_NUMBER() OVER (ORDER BY " . BaseMacro::randomFunction($this) . ")";
                 $randBindings = [];
             }
 
             // 构建子查询：给每行分配随机排名。
             // 深拷贝当前查询（含全部 where/join 条件），但清空列选择、排序与分页，
             // 避免丢失调用者已添加的过滤条件，同时不影响 ROW_NUMBER 的随机顺序。
-            $subQuery = $model->newQuery()->setQuery(clone $this->getQuery());
-            $subQuery->getQuery()->columns = null;
-            $subQuery->getQuery()->limit = null;
-            $subQuery->getQuery()->offset = null;
-            $subQuery->getQuery()->orders = null;
+            $subQuery = $model->newQuery()->setQuery(clone BaseMacro::queryOf($this));
+            BaseMacro::queryOf($subQuery)->columns = null;
+            BaseMacro::queryOf($subQuery)->limit = null;
+            BaseMacro::queryOf($subQuery)->offset = null;
+            BaseMacro::queryOf($subQuery)->orders = null;
             $subQuery->select("{$table}.*")
                 ->selectRaw("{$randExpr} AS __sample_rank", $randBindings);
 
@@ -161,7 +161,7 @@ class TableSampleMacro
     /**
      * 注册分层抽样方法
      */
-    protected static function registerStratifiedSample(): void
+public static function registerStratifiedSample(): void
     {
         /**
          * stratifiedSample - 分层抽样
@@ -171,7 +171,7 @@ class TableSampleMacro
          * @param string $stratumColumn 分层列
          * @param int $samplesPerStratum 每层样本数
          * @param string|null $seed 随机种子
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 按性别分层，每层抽取50人
@@ -180,34 +180,34 @@ class TableSampleMacro
          * // 按地区分层抽样（保证各地区代表性）
          * Customer::query()->stratifiedSample('region', 100, 'audit_2024')->get();
          */
-        Builder::macro('stratifiedSample', function (
+        static::define('stratifiedSample', function (
             string $stratumColumn,
             int $samplesPerStratum,
             ?string $seed = null
-        ): Builder {
-            /** @var Builder $this */
-            TableSampleMacro::assertMysql($this, 'stratifiedSample');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
-            $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
-            $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
-            $stratumColumn = TableSampleMacro::assertValidIdentifier($stratumColumn, 'stratum');
-            $wrappedStratum = TableSampleMacro::wrapIdentifier($this, $stratumColumn);
+            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
+            $stratumColumn = BaseMacro::assertValidIdentifier($stratumColumn, 'stratum');
+            $wrappedStratum = BaseMacro::wrapIdentifier($this, $stratumColumn);
 
             if ($seed !== null) {
-                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY RAND(CRC32(CONCAT(?, {$wrappedPk}))))";
+                // 跨库通用的确定性随机序：以 (主键, 种子) 的 md5 作为确定性伪随机排序键，MySQL 与 PostgreSQL 行为一致。
+                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY md5(CONCAT({$wrappedPk}, ?)))";
                 $randBindings = [$seed];
             } else {
-                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY RAND())";
+                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY " . BaseMacro::randomFunction($this) . ")";
                 $randBindings = [];
             }
 
             // 构建分层抽样子查询（深拷贝当前查询条件，并清空列选择、排序与分页）
-            $subQuery = $model->newQuery()->setQuery(clone $this->getQuery());
-            $subQuery->getQuery()->columns = null;
-            $subQuery->getQuery()->limit = null;
-            $subQuery->getQuery()->offset = null;
-            $subQuery->getQuery()->orders = null;
+            $subQuery = $model->newQuery()->setQuery(clone BaseMacro::queryOf($this));
+            BaseMacro::queryOf($subQuery)->columns = null;
+            BaseMacro::queryOf($subQuery)->limit = null;
+            BaseMacro::queryOf($subQuery)->offset = null;
+            BaseMacro::queryOf($subQuery)->orders = null;
             $subQuery->select("{$table}.*")
                 ->selectRaw("{$randExpr} AS __stratum_rank", $randBindings);
 
@@ -223,7 +223,7 @@ class TableSampleMacro
     /**
      * 注册系统抽样方法
      */
-    protected static function registerSystematicSample(): void
+public static function registerSystematicSample(): void
     {
         /**
          * systematicSample - 系统抽样（等距抽样）
@@ -232,7 +232,7 @@ class TableSampleMacro
          *
          * @param int $interval 抽样间隔
          * @param int $startOffset 起始偏移量（默认随机）
-         * @return Builder
+         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 每隔10条抽取1条
@@ -244,21 +244,20 @@ class TableSampleMacro
          * // 按时间顺序的系统抽样
          * Event::query()->orderBy('created_at')->systematicSample(100)->get();
          */
-        Builder::macro('systematicSample', function (
+        static::define('systematicSample', function (
             int $interval,
             ?int $startOffset = null
-        ): Builder {
-            /** @var Builder $this */
-            TableSampleMacro::assertMysql($this, 'systematicSample');
-            $model = $this->getModel();
+        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            $model = BaseMacro::modelOf($this);
 
             // 抽样间隔必须大于 0，否则取模运算会除零、rand 区间非法
             if ($interval <= 0) {
                 throw new \InvalidArgumentException('systematicSample 抽样间隔必须大于 0');
             }
 
-            $primaryKey = TableSampleMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
-            $wrappedPk = TableSampleMacro::wrapIdentifier($this, $primaryKey);
+            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
             $offset = $startOffset ?? rand(0, $interval - 1);
 

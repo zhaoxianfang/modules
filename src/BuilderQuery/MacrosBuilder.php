@@ -21,6 +21,19 @@ use zxf\Modules\BuilderQuery\WindowMacros\TableSampleMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\ValuesMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WindowFunctionsMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\DateTimeMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\FullTextMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\LockingMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\MathMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\SearchRelevanceMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\IndexHintMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\QueryGuardMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\TopNMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\ConditionalAggregateMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\SelectColumnMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\ChunkedListMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\FastCountMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\SafeWriteMacro;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasCrossJoin;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasIn;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasJoin;
@@ -30,28 +43,50 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasNotIn;
 use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
 
 /**
- * Macros 宏定义构建器 - Laravel 11+ / 12+ / 13+ & MySQL 8.0+ 优化版
+ * Macros 宏定义构建器 - Laravel 11+ / 12+ / 13+ & MySQL 8.0+ / PostgreSQL 15+ 通用版
  *
- * 提供15大类查询宏扩展：
+ * 提供 30 大类查询宏扩展（v3.3.0 持续深化：新增超大 IN/NOT IN 分块、大表计数加速、
+ * 防失控写入/删除护栏等性能与稳定性类宏）。所有宏模块均继承
+ * {@see \zxf\Modules\BuilderQuery\Concerns\BaseMacro}，通过 {@see \zxf\Modules\BuilderQuery\Concerns\Dialect}
+ * 方言抽象层生成适配当前数据库驱动（MySQL 8.0+ 反引号 / PostgreSQL 15+ 双引号）的 SQL，
+ * 字面值一律走参数绑定，标识符经白名单校验，彻底消除 SQL 注入与方言耦合；并通过
+ * {@see \zxf\Modules\BuilderQuery\Concerns\BaseMacro::define()} 将宏同时注册到
+ * Eloquent\Builder 与 Query\Builder，确保 `Model::query()` 与 `DB::table()` 双友好。
+ * 宏分类（按功能用途与场景）：
  * 1. whereHas优化 - 解决关联查询全表扫描问题
  * 2. 随机查询 - 高效随机数据获取
- * 3. 窗口函数 - MySQL 8.0+ 窗口函数支持
- * 4. 递归查询 - 树形结构数据处理
- * 5. 分页优化 - 超大表快速分页
- * 6. JSON操作 - 高级JSON查询
- * 7. 正则表达式 - 文本匹配功能
- * 8. 主表字段 - 自动表前缀
- * 9. 集合操作 - INTERSECT/EXCEPT支持
- * 10. QUALIFY过滤 - 窗口函数结果过滤
- * 11. LATERAL JOIN - 横向连接查询
- * 12. 行列转换 - PIVOT/UNPIVOT透视表
- * 13. 数据抽样 - 随机/分层/系统抽样
- * 14. VALUES构造 - 批量插入和UPSERT
- * 15. 字符串函数 - LOCATE分词/CHAR_LENGTH排序/全文检索等
+ * 3. 分组排序 - 窗口函数分组排名（每组 Top-N）
+ * 4. 递归查询 - 树形结构数据处理（WITH RECURSIVE）
+ * 5. 窗口函数 - 排名/偏移/聚合/框架窗口
+ * 6. 分页优化 - 超大表快速/游标/寻址分页
+ * 7. JSON操作 - 高级JSON查询（JSON_CONTAINS / @> 等）
+ * 8. 正则表达式 - 文本匹配功能（REGEXP_LIKE / ~ 等）
+ * 9. 主表字段 - 自动表前缀
+ * 10. 集合操作 - INTERSECT/EXCEPT 支持
+ * 11. QUALIFY过滤 - 窗口函数结果过滤
+ * 12. LATERAL JOIN - 横向连接查询
+ * 13. 行列转换 - PIVOT/UNPIVOT 透视表
+ * 14. 数据抽样 - 随机/分层/系统抽样
+ * 15. VALUES构造 - 批量插入和 UPSERT
+ * 16. 字符串函数 - LOCATE分词/CHAR_LENGTH排序/列表查找/拼接搜索/提取/聚合/变换/SOUNDEX
+ * 17. 全文检索 - MATCH...AGAINST / tsvector（独立模块，单一职责）
+ * 18. 日期时间 - 时间分桶/索引友好范围/时段重叠冲突检测
+ * 19. 数值运算 - NULL安全比较/夹紧/多级兜底/加权排序/精度控制
+ * 20. 并发与行锁 - SKIP LOCKED / NOWAIT / 共享锁 / 咨询锁
+ * 21. 相关度搜索 - 无索引 LOCATE 兜底检索与综合打分
+ * 22. 向量相似度 - Laravel 13+ 原生向量/语义检索（Eloquent 桥接 + Query 原生）
+ * 23. 索引与优化器提示 - USE/FORCE/IGNORE INDEX、优化器提示、执行时限、STRAIGHT_JOIN（性能调优入口）
+ * 24. 查询守卫与诊断 - LIMIT 软/硬守卫、EXPLAIN / EXPLAIN ANALYZE（防失控 + 慢查询定位）
+ * 25. 分组 Top-N - 每组最新/最大/前 N 条（窗口函数去重，替代 GROUP BY 丢字段/关联子查询）
+ * 26. 条件聚合 - SUM/COUNT/AVG/MAX/MIN 的 IF 变体（单条 SQL 多维统计，替代 N+1）
+ * 27. 列选择纪律 - selectOnly / selectExcept / selectPrimaryKey（消除 SELECT *，降 I/O 与内存）
+ * 28. 超大 IN/NOT IN 分块 - whereInChunked / whereNotInChunked（规避占位符上限/优化器退化/内存暴涨，防卡死）
+ * 29. 大表计数加速 - approximateCount（无过滤走数据字典 O(1) 估算，有过滤回退精确 COUNT，防大屏超时）
+ * 30. 防失控写入/删除护栏 - mustHaveWhere 写前闸门 + deleteInChunks 按主键分批安全删除（防全表误操作/锁表）
  *
  * @package zxf\Modules\BuilderQuery
- * @version 2.3.0
- * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+
+ * @version 3.3.0
+ * @requires PHP 8.2+（兼容 8.3/8.4/8.5）, Laravel 11+ / 12+ / 13+, MySQL 8.0+ / PostgreSQL 15+
  *
  * ============================================
  * 1. whereHas 优化系列 - 解决关联查询性能问题
@@ -91,7 +126,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this groupSort(string $groupBy, int|array $ranks, string $orderBy = 'read', string $direction = 'desc') 分组排序查询，获取每组指定排名的记录，如每组前3名
  *
  * ============================================
- * 5. 窗口函数系列 - MySQL 8.0+ 窗口函数支持
+ * 5. 窗口函数系列 - MySQL 8.0+ / PostgreSQL 15+ 窗口函数支持
  * ============================================
  * 排名函数
  * @method $this rowNumber(string|array|null $partitionBy = null, string $orderBy = '', string $direction = 'asc', string $alias = 'row_num') 为每行分配唯一连续序号，常用于分页、排名
@@ -131,7 +166,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method \Illuminate\Contracts\Pagination\LengthAwarePaginator partitionPaginate(int $perPage = 15, ?int $page = null, ?string $partitionKey = null, array $options = []) 分区表分页，针对MySQL分区表优化
  *
  * ============================================
- * 7. JSON高级操作系列 - MySQL 8.0+ JSON函数
+ * 7. JSON高级操作系列 - MySQL 8.0+ / PostgreSQL 15+ JSON 函数（JSON_CONTAINS / @> / jsonb_set 等）
  * ============================================
  * JSON路径查询
  * @method $this jsonPath(string $column, string $path, string $alias, mixed $default = null) 使用JSON Path提取嵌套JSON值
@@ -162,7 +197,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this jsonRowAgg(array $columns, string $alias = 'json_rows') 将行聚合成JSON对象数组
  *
  * ============================================
- * 8. 正则表达式系列 - MySQL 8.0+ REGEXP函数
+ * 8. 正则表达式系列 - MySQL 8.0+ / PostgreSQL 15+ 正则（REGEXP_LIKE / ~ 等）
  * ============================================
  * 正则匹配
  * @method $this whereRegexp(string $column, string $pattern, string $mode = 'c', string $boolean = 'and') 正则表达式匹配筛选，mode支持c(区分大小写)/i(不区分)/m(多行)/n(点匹配换行)
@@ -213,14 +248,14 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this resetRecursive() 重置递归查询条件，清除所有递归相关的查询状态和绑定
  *
  * ============================================
- * 10. 集合操作系列 - MySQL 8.0.31+ INTERSECT/EXCEPT
+ * 10. 集合操作系列 - MySQL 8.0.31+ / PostgreSQL 15+ INTERSECT/EXCEPT（标准 SQL）
  * ============================================
  * @method $this intersect(\Closure|Builder $query, bool $all = false) 返回两个查询的交集（INTERSECT）
  * @method $this except(\Closure|Builder $query, bool $all = false) 返回在第一个查询中存在但第二个查询中不存在的记录（EXCEPT）
  * @method $this unionDistinct(\Closure|Builder $query) UNION DISTINCT显式去重的并集
  *
  * ============================================
- * 11. QUALIFY过滤系列 - MySQL 8.0.33+ 窗口函数过滤
+ * 11. QUALIFY过滤系列 - MySQL 8.0.33+ / PostgreSQL 15+ 窗口函数结果过滤（通过子查询/派生表模拟）
  * ============================================
  * @method $this qualify(string $column, mixed $operator = null, mixed $value = null, string $boolean = 'and') 过滤窗口函数结果，类似HAVING对聚合的作用
  * @method $this orQualify(string $column, mixed $operator = null, mixed $value = null) OR条件的QUALIFY过滤
@@ -228,7 +263,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this orQualifyRaw(string $sql, array $bindings = []) OR条件的QUALIFY RAW过滤
  *
  * ============================================
- * 12. LATERAL JOIN系列 - MySQL 8.0.14+ 横向连接
+ * 12. LATERAL JOIN系列 - MySQL 8.0.14+ / PostgreSQL 15+ 横向连接
  * ============================================
  * @method $this lateralJoin(\Closure $callback, string $alias) LATERAL INNER JOIN，子查询可引用主查询列
  * @method $this lateralLeftJoin(\Closure $callback, string $alias) LATERAL LEFT JOIN，保留主表所有记录
@@ -261,7 +296,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this valuesQuery(array $rows, string $alias = 'val') 使用VALUES ROW构建内存表查询
  * @method $this valuesJoin(array $rows, string $alias, string $localKey, string $valuesKey, string $joinType = 'inner') 使用VALUES作为JOIN表
  * @method int valuesInsert(array $rows, int $chunkSize = 1000) 使用VALUES ROW语法进行高效批量插入
- * @method int batchUpsert(array $rows, array|string $uniqueBy, ?array $updateColumns = null, int $chunkSize = 1000) 批量插入或更新（INSERT ... ON DUPLICATE KEY UPDATE）
+ * @method int batchUpsert(array $rows, array|string $uniqueBy, ?array $updateColumns = null, int $chunkSize = 1000) 批量插入或更新（MySQL: INSERT ... ON DUPLICATE KEY UPDATE / PostgreSQL: INSERT ... ON CONFLICT ... DO UPDATE）
  *
  * ============================================
  * 16. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索
@@ -270,7 +305,7 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this orderByVectorDistance(string $column, mixed $value) 按向量距离排序（最近邻检索，升序）
  *
  * ============================================
- * 17. 字符串函数系列 - MySQL 8.0+ 高效字符串处理
+ * 17. 字符串函数系列 - MySQL 8.0+ / PostgreSQL 15+ 高效字符串处理
  * ============================================
  * 子串位置查找（分词查询匹配）
  * @method $this whereLocate(string $column, string $search, string $boolean = 'and') 使用LOCATE查找子串首次出现位置并筛选命中记录，支持空格分隔的多词分词匹配
@@ -300,10 +335,40 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * 字符串聚合
  * @method $this groupConcat(string $column, string $alias = 'items', string $separator = ',', bool $distinct = false) 行转字符串聚合（GROUP_CONCAT），配合groupBy将多行值拼接
  *
- * 全文检索（MATCH...AGAINST，列需FULLTEXT索引）
+ * 全文检索（MySQL: MATCH...AGAINST + FULLTEXT 索引 / PostgreSQL: to_tsvector + to_tsquery）
  * @method $this whereFullText(array|string $columns, string $keyword, string $mode = 'natural', string $boolean = 'and') 全文检索筛选，mode: natural自然语言|boolean布尔|expansion查询扩展
  * @method $this whereFullTextBoolean(array|string $columns, string $query, string $boolean = 'and') 布尔模式全文检索，支持+word必须包含/-word排除/"短语"/word*前缀等分词语法
  * @method $this orderByFullTextRelevance(array|string $columns, string $keyword, string $mode = 'natural', string $direction = 'desc') 按全文检索相关度分数排序
+ * @method $this selectFullTextScore(array|string $columns, string $keyword, string $alias = 'relevance', string $mode = 'natural') 将相关度分数作为字段返回（供展示/二次排序）
+ * @method $this whereFullTextScoreGte(array|string $columns, string $keyword, float $minScore = 1.0, string $mode = 'natural') 按相关度阈值过滤（降噪）
+ * @method $this whereFullTextOrLike(array|string $columns, string $keyword, string $boolean = 'and') 两阶段检索：全文索引命中 或 LOCATE 子串兜底
+ *
+ * 日期时间（时间分桶 / 索引友好范围 / 时段重叠）
+ * @method $this dateBucket(string $column, string $unit = 'month', string $alias = 'bucket') 按日/周/月/季/年分桶（自动 select + groupBy）
+ * @method $this timeBucket(string $column, int $minutes = 15, string $alias = 'bucket') 按固定 N 分钟分桶（15/30 分钟粒度报表）
+ * @method $this whereDateRange(string $column, mixed $start, mixed $end, bool $endInclusive = true, string $boolean = 'and') 索引友好日期范围筛选（列不被函数包裹）
+ * @method $this whereTimeOverlap(string $startCol, string $endCol, mixed $startVal, mixed $endVal, string $boolean = 'and') 时段重叠冲突检测（会议室/排期/库存占用）
+ *
+ * 数值运算（NULL安全比较 / 夹紧 / 兜底 / 加权 / 精度）
+ * @method $this whereNullSafeEqual(string $column, mixed $value, string $boolean = 'and') NULL 安全等值比较（MySQL <=> / PG IS NOT DISTINCT FROM）
+ * @method $this selectClamp(string $column, mixed $min, mixed $max, string $alias = 'clamped') 将列值夹紧到 [min,max]（GREATEST+LEAST）
+ * @method $this selectCoalesce(array $columns, mixed $default, string $alias = 'value') 多级兜底取值（COALESCE 链）
+ * @method $this orderByWeighted(array $items, string $direction = 'desc') 多列按权重线性组合加权排序（搜索综合打分）
+ * @method $this selectRound(string $column, int $decimals = 2, bool $truncate = false, string $alias = 'rounded') 四舍五入/截断到指定小数位（ROUND/TRUNCATE）
+ *
+ * 并发与行锁（SKIP LOCKED / NOWAIT / 共享锁 / 咨询锁）
+ * @method $this lockForUpdateSkipLocked() 加排他行锁并跳过已被锁定的行（SKIP LOCKED）
+ * @method $this lockForUpdateNoWait() 加排他行锁，拿不到锁立即失败（NOWAIT）
+ * @method $this sharedLockSkipLocked() 加共享锁并跳过已被锁定的行（共享锁 + SKIP LOCKED）
+ * @method $this advisoryLock(int|string $key, bool $session = false) 获取咨询锁（MySQL GET_LOCK / PG pg_advisory_lock）
+ * @method $this advisoryUnlock(int|string $key) 释放咨询锁（与 advisoryLock 配对）
+ *
+ * 相关度搜索（无全文索引的 LOCATE 兜底检索）
+ * @method $this whereRelevance(string $column, string $keyword, string $boolean = 'and') 按子串相关度命中筛选
+ * @method $this orderByRelevance(array|string $columns, string $keyword, string $direction = 'desc') 按多列组合相关度排序
+ * @method $this selectRelevance(string $column, string $keyword, string $alias = 'relevance') 返回单列相关度分数
+ * @method $this searchRank(array|string $columns, string $keyword, string $direction = 'desc') 组合「命中筛选 + 相关度排序」一站式轻量搜索
+ *
  *
  * 字符串变换与发音匹配
  * @method $this whereSoundex(string $column, string $value, string $boolean = 'and') 发音相似匹配（SOUNDEX），适用于英文姓名模糊匹配
@@ -314,6 +379,35 @@ use zxf\Modules\BuilderQuery\WhereHasMacros\WhereHasRightJoin;
  * @method $this upperString(string $column, string $alias = 'upper_val') SELECT中转大写（UPPER）
  * @method $this reverseString(string $column, string $alias = 'reversed') SELECT中反转字符串（REVERSE）
  * @method $this padString(string $column, int $length, string $padString, string $position = 'left', string $alias = 'padded') SELECT中填充字符串到指定长度（LPAD/RPAD），用于编号格式化
+ *
+ * ===== 23. 索引与优化器提示（性能调优入口）=====
+ * @method $this useIndex(string|array $index, string $for = '', ?string $table = null) 建议优化器使用指定索引（MySQL USE INDEX；PG 经 pg_hint_plan IndexScan）
+ * @method $this forceIndex(string|array $index, string $for = '', ?string $table = null) 强制优化器使用指定索引（MySQL FORCE INDEX；PG 经 pg_hint_plan）
+ * @method $this ignoreIndex(string|array $index, string $for = '', ?string $table = null) 指示优化器忽略指定索引（MySQL IGNORE INDEX；PG 经 pg_hint_plan NoIndexScan）
+ * @method $this optimizerHints(string|array $hints) 注入任意 MySQL 优化器提示（包裹在 /*+ ... *\/ 中，幂等仅出现一次）
+ * @method $this maxExecutionTime(int $milliseconds) 限制单条查询最大执行毫秒数（性能守卫，防卡死；MySQL 原生 / PG 经 pg_hint_plan）
+ * @method $this straightJoin() 强制 MySQL 按 FROM 顺序执行连接（STRAIGHT_JOIN；仅 MySQL 有效）
+ *
+ * ===== 24. 查询守卫与诊断（防失控 + 慢查询定位）=====
+ * @method $this withLimitGuard(int $limit = 1000) 软守卫：仅当未设 LIMIT 时补安全上限，避免意外全表返回/扫描
+ * @method $this requireLimit(?int $maxAllowed = null) 硬守卫：未设 LIMIT 或超阈值直接拒绝执行（fail-fast）
+ * @method mixed explain(?string $format = null) 返回 EXPLAIN 执行计划（诊断慢查询第一抓手）
+ * @method mixed explainAnalyze(bool $verbose = false) 返回 EXPLAIN ANALYZE 真实执行计划（含耗时/行数，开销更高）
+ *
+ * ===== 25. 分组 Top-N（窗口函数去重）=====
+ * @method $this whereTopNPerGroup(string|array $partitionBy, string|array $orderBy, string|array $direction = 'desc', int $n = 1, ?string $keyColumn = null) 仅保留每个分组内排最前的 N 条（每组最新/最大/前 N 条）
+ *
+ * ===== 26. 条件聚合（单条 SQL 多维统计）=====
+ * @method $this selectSumIf(string $column, string $condition, array $conditionBindings = [], ?string $alias = null) 满足条件时累加（SUM CASE WHEN）
+ * @method $this selectCountIf(string $column, string $condition, array $conditionBindings = [], ?string $alias = null) 满足条件时计数（COUNT CASE WHEN）
+ * @method $this selectAvgIf(string $column, string $condition, array $conditionBindings = [], ?string $alias = null) 满足条件时求平均（AVG CASE WHEN）
+ * @method $this selectMaxIf(string $column, string $condition, array $conditionBindings = [], ?string $alias = null) 满足条件时取最大（MAX CASE WHEN）
+ * @method $this selectMinIf(string $column, string $condition, array $conditionBindings = [], ?string $alias = null) 满足条件时取最小（MIN CASE WHEN）
+ *
+ * ===== 27. 列选择纪律（消除 SELECT *）=====
+ * @method $this selectOnly(string|array $columns) 只保留指定列（精确投影，替代 SELECT *）
+ * @method $this selectExcept(string|array $columns) 从当前显式列中剔除指定列（需先显式 select）
+ * @method $this selectPrimaryKey() 只取主键列（轻量投影，用于仅取 ID/关联键）
  */
 class MacrosBuilder extends Eloquent\Builder
 {
@@ -341,25 +435,25 @@ class MacrosBuilder extends Eloquent\Builder
         // 4. 递归查询系列 - 树形结构数据处理
         WithRecursiveMacro::register();
 
-        // 5. MySQL 8.0+ 窗口函数系列 - 排名、偏移、聚合窗口函数
+        // 5. 窗口函数系列 - MySQL 8.0+ / PostgreSQL 15+ 排名、偏移、聚合窗口函数
         WindowFunctionsMacro::register();
 
         // 6. 超大表分页优化系列 - 深度分页性能优化
         FastPaginationMacro::register();
 
-        // 7. JSON 高级操作系列 - MySQL 8.0+ JSON 函数
+        // 7. JSON 高级操作系列 - MySQL 8.0+ / PostgreSQL 15+ JSON 函数
         AdvancedJsonMacro::register();
 
-        // 8. 正则表达式系列 - 强大的文本匹配功能
+        // 8. 正则表达式系列 - 强大的文本匹配功能（REGEXP_LIKE / ~ 等）
         RegexMacro::register();
 
-        // 9. 集合操作系列 - INTERSECT/EXCEPT (MySQL 8.0.31+)
+        // 9. 集合操作系列 - INTERSECT/EXCEPT（MySQL 8.0.31+ / PostgreSQL 15+ 标准 SQL）
         SetOperationsMacro::register();
 
-        // 10. QUALIFY 过滤系列 - 窗口函数结果过滤 (MySQL 8.0.33+)
+        // 10. QUALIFY 过滤系列 - 窗口函数结果过滤（MySQL 8.0.33+ / PostgreSQL 15+ 子查询模拟）
         QualifyMacro::register();
 
-        // 11. LATERAL JOIN 系列 - 横向连接 (MySQL 8.0.14+)
+        // 11. LATERAL JOIN 系列 - 横向连接（MySQL 8.0.14+ / PostgreSQL 15+）
         LateralJoinMacro::register();
 
         // 12. 行列转换系列 - PIVOT/UNPIVOT 透视表
@@ -371,18 +465,59 @@ class MacrosBuilder extends Eloquent\Builder
         // 14. VALUES 构造系列 - 批量插入和 UPSERT
         ValuesMacro::register();
 
-        // 15. 字符串函数系列 - LOCATE 分词 / CHAR_LENGTH 排序 / 全文检索等
+        // 15. 字符串函数系列 - LOCATE 分词 / CHAR_LENGTH 排序 / 列表查找 / 拼接搜索 / 提取 / 聚合 / 变换 / SOUNDEX
         StringFunctionsMacro::register();
 
-        // 16. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索支持
+        // 16. 全文检索系列 - 独立模块（单一职责），MATCH...AGAINST / tsvector 通用封装
+        FullTextMacro::register();
+
+        // 17. 日期时间系列 - 时间分桶 / 索引友好范围 / 时段重叠冲突检测
+        DateTimeMacro::register();
+
+        // 18. 数值运算系列 - NULL 安全比较 / 夹紧 / 多级兜底 / 加权排序 / 精度控制
+        MathMacro::register();
+
+        // 19. 并发与行锁系列 - SKIP LOCKED / NOWAIT / 共享锁 / 咨询锁
+        LockingMacro::register();
+
+        // 20. 相关度搜索系列 - 无全文索引的 LOCATE 兜底检索与综合打分
+        SearchRelevanceMacro::register();
+
+        // 23. 索引与优化器提示系列 - USE/FORCE/IGNORE INDEX、优化器提示、执行时限、STRAIGHT_JOIN
+        IndexHintMacro::register();
+
+        // 24. 查询守卫与诊断系列 - LIMIT 软/硬守卫、EXPLAIN / EXPLAIN ANALYZE
+        QueryGuardMacro::register();
+
+        // 25. 分组 Top-N 系列 - 每组最新/最大/前 N 条（窗口函数去重）
+        TopNMacro::register();
+
+        // 26. 条件聚合系列 - SUM/COUNT/AVG/MAX/MIN 的 IF 变体（单条 SQL 多维统计）
+        ConditionalAggregateMacro::register();
+
+        // 27. 列选择纪律系列 - selectOnly / selectExcept / selectPrimaryKey（消除 SELECT *）
+        SelectColumnMacro::register();
+
+        // 28. 超大 IN/NOT IN 列表分块系列 - whereInChunked / whereNotInChunked（规避占位符上限/优化器退化/内存暴涨）
+        ChunkedListMacro::register();
+
+        // 29. 大表计数加速系列 - approximateCount（无过滤走数据字典 O(1) 估算，有过滤回退精确 COUNT）
+        FastCountMacro::register();
+
+        // 30. 防失控写入/删除护栏系列 - mustHaveWhere 写前闸门 + deleteInChunks 按主键分批安全删除
+        SafeWriteMacro::register();
+
+        // 22. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索支持（双构建器友好）
         self::registerVectorSearch($provider);
     }
 
     /**
-     * 注册 Laravel 13+ 向量相似度搜索宏
+     * 注册 Laravel 13+ 向量相似度搜索宏（Eloquent 桥接；Query\Builder 走原生方法）
      *
-     * Laravel 13 在查询构造器底层新增了向量检索能力（如 PostgreSQL + pgvector），
-     * 本方法将其桥接到 Eloquent Builder，使模型查询可直接使用。
+     * Laravel 13 在 Query\Builder 底层已提供原生向量检索方法（如 PostgreSQL + pgvector 的
+     * whereVectorSimilarTo / orderByVectorDistance），因此 `DB::table()` 路径可直接调用原生方法，
+     * 无需宏桥接；本模块仅针对 Eloquent\Builder 做桥接，使 `Model::query()` 亦可使用向量检索。
+     * 这样既满足「ORM 与 DB 双友好」，又避免同名宏覆盖原生方法导致递归。
      *
      * 注意：该能力依赖底层数据库驱动与 Laravel 13+ 的查询语法，
      * 在 Laravel 11/12 或不支持向量的数据库上调用会抛出异常，属预期行为。
@@ -517,12 +652,16 @@ class MacrosBuilder extends Eloquent\Builder
             return $this->whereHasMorphIn($relation, $types, $callback, 'or');
         });
 
-        // 主表字段查询
-        foreach (['Pluck', 'Sum', 'WhereBetween', 'WhereIn', 'Where', 'OrderBy', 'OrderByDesc'] as $macroAction) {
-            Eloquent\Builder::macro('main'.$macroAction, function (...$params) use ($macroAction) {
-                $params[0] = $this->getModel()->getTable().'.'.$params[0];
+        // 主表字段查询：将首个列参数自动前缀主表名，避免关联查询时列名歧义。
+        // 注意：Builder 原生方法均为小写（pluck / sum / whereBetween / whereIn / where / orderBy / orderByDesc），
+        // 故循环映射为小写方法名，避免调用不存在的驼峰方法导致运行时错误。
+        foreach (['pluck', 'sum', 'whereBetween', 'whereIn', 'where', 'orderBy', 'orderByDesc'] as $method) {
+            Eloquent\Builder::macro('main'.ucfirst($method), function (...$params) use ($method) {
+                if (isset($params[0])) {
+                    $params[0] = $this->getModel()->getTable().'.'.$params[0];
+                }
 
-                return $this->{$macroAction}(...$params);
+                return $this->{$method}(...$params);
             });
         }
 
