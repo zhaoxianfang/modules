@@ -11,7 +11,6 @@ use zxf\Modules\Support\ModuleInfo;
 
 /**
  * 模块信息命令
- *
  * 展示指定模块的详细信息，包括路径、命名空间、配置、视图、
  * 迁移、文件数量与体积等。
  */
@@ -34,15 +33,12 @@ class ModuleInfoCommand extends Command
 
     /**
      * 执行命令
-     *
      * 显示模块的以下信息：
      * 1. 基本信息（名称、路径、命名空间等）
      * 2. 功能信息（配置、路由、视图等）
      * 3. 路由文件列表
      * 4. 统计信息（文件数量、占用空间）
      * 5. 服务提供者信息
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -53,16 +49,17 @@ class ModuleInfoCommand extends Command
 
         if (! $module) {
             $this->error("模块 [{$moduleName}] 不存在");
-            $this->line("提示：使用 php artisan module:list 查看所有可用模块");
+            $this->line('提示：使用 php artisan module:list 查看所有可用模块');
+
             return Command::FAILURE;
         }
 
         // 获取模块信息
         $info = ModuleInfo::getInfo($module);
 
-        $this->info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->info("  模块 [{$moduleName}] 详细信息");
-        $this->info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->newLine();
 
         // 基本信息
@@ -125,7 +122,7 @@ class ModuleInfoCommand extends Command
         }
 
         $this->newLine();
-        $this->info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         return Command::SUCCESS;
     }

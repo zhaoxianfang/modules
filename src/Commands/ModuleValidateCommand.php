@@ -11,7 +11,6 @@ use zxf\Modules\Support\ModuleValidator;
 
 /**
  * 模块校验命令
- *
  * 校验指定（或全部）模块的目录结构、服务提供者、配置文件完整性，
  * 并输出错误与警告信息。
  */
@@ -33,8 +32,6 @@ class ModuleValidateCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -49,9 +46,6 @@ class ModuleValidateCommand extends Command
 
     /**
      * 验证指定模块
-     *
-     * @param string $moduleName
-     * @return int
      */
     protected function validateModule(string $moduleName): int
     {
@@ -104,8 +98,6 @@ class ModuleValidateCommand extends Command
 
     /**
      * 验证所有模块
-     *
-     * @return int
      */
     protected function validateAllModules(): int
     {
@@ -143,8 +135,8 @@ class ModuleValidateCommand extends Command
             $rows[] = [
                 $name,
                 $status,
-                $result['errors'] . ' 个错误',
-                $result['warnings'] . ' 个警告',
+                $result['errors'].' 个错误',
+                $result['warnings'].' 个警告',
             ];
         }
 

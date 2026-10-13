@@ -25,7 +25,6 @@ trait ControllerTrait
      * 返回上一页, 并带上提示信息
      *
      * @param  string  $info  提示信息「字符串」
-     * @return RedirectResponse
      */
     public function backWithSuccess(string $info = ''): RedirectResponse
     {
@@ -125,6 +124,7 @@ trait ControllerTrait
             if (! empty($request->input('is_layer', ''))) {
                 $jumpUrl = '';
             }
+
             return $this->json($data, 500, $jumpUrl);
         }
         // 不是来自本站，没有上一个页面，直接返回错误页面
@@ -138,5 +138,4 @@ trait ControllerTrait
         // 来自本站，有上一个页面，携错返回上一个页面
         return $this->backWithError($data['message']);
     }
-
 }

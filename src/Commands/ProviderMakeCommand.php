@@ -6,11 +6,9 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建服务提供者命令
- *
  * 在指定模块中创建服务提供者
  */
 class ProviderMakeCommand extends AbstractMakeCommand
@@ -34,8 +32,6 @@ class ProviderMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -52,6 +48,6 @@ class ProviderMakeCommand extends AbstractMakeCommand
         $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
         $generator->addReplacement('{{NAME}}', $module->getName());
 
-        return $this->writeStub($generator, 'provider.stub', 'Providers/' . $providerName . '.php', '服务提供者', $force);
+        return $this->writeStub($generator, 'provider.stub', 'Providers/'.$providerName.'.php', '服务提供者', $force);
     }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 /**
  * 数据库日志模块（zxf\Modules\Logging）运行时验证脚本。
- *
  * 覆盖核心重构点：
  *  - Support\Redactor：键名脱敏 / 自由文本脱敏 / 头脱敏 / Throwable→字符串（全模块唯一事实来源）
  *  - DatabaseLogHandler::buildAttributes：LogRecord → logs 表字段的归一化映射 + 脱敏
@@ -12,13 +11,11 @@ declare(strict_types=1);
  *    （handler_with 是按位置（而非命名）注入构造函数，顺序错乱会导致配置错位）
  *  - 架构契约：RedactorContract / LogWriter（含 QueuedDatabaseLogWriter）/ LogRecorded 事件 /
  *    LoggingConfig 强类型配置对象
- *
  * 运行：php tests/verify_logging.php
  * 依赖宿主 Laravel 项目的 vendor/autoload.php（默认 /Users/aha/www/wsf），仅用于加载类，
  * 不依赖完整的 Laravel 启动（Redactor / buildAttributes / 配置对象 均不触发门面）。
  * 退出码：0=全 PASS，1=有 FAIL。
  */
-
 $loader = require '/Users/aha/www/wsf/vendor/autoload.php';
 // 优先从本仓库 src 加载 zxf\Modules\* 类（覆盖 wsf vendor 中的 zxf/modules 旧副本）。
 // 直接在 Composer 之前注册一个 prepended 自动加载器：命中本仓库源码即 require 并短路，
@@ -28,7 +25,7 @@ spl_autoload_register(function (string $class): bool {
         return false;
     }
     $rel = substr($class, 12);
-    $file = '/Users/aha/www/modules/src/' . str_replace('\\', '/', $rel) . '.php';
+    $file = '/Users/aha/www/modules/src/'.str_replace('\\', '/', $rel).'.php';
     if (is_file($file)) {
         require $file;
 
@@ -64,7 +61,7 @@ function check(bool $cond, string $label): void
 }
 
 // ===================== Redactor =====================
-$r = new Redactor();
+$r = new Redactor;
 
 $maskedArr = $r->maskArray([
     'password' => 'hunter2',
@@ -102,8 +99,10 @@ check(mb_strlen($trunc['note'], 'UTF-8') <= 20000, 'Redactor 超长字段截断(
 check($trunc['pwd'] === Redactor::MASK, 'Redactor 敏感字段优先脱敏(不泄露、不截断)');
 
 // ===================== DatabaseLogHandler::buildAttributes =====================
-$fake = new class implements LogWriter {
+$fake = new class implements LogWriter
+{
     public array $captured = [];
+
     public function write(array $attributes): void
     {
         $this->captured = $attributes;
@@ -111,7 +110,7 @@ $fake = new class implements LogWriter {
 };
 
 $record = new LogRecord(
-    datetime: new DateTimeImmutable(),
+    datetime: new DateTimeImmutable,
     channel: 'test',
     level: Level::Error,
     message: 'login failed',
@@ -162,7 +161,7 @@ check(! isset($attrs['context']['console_to_log']), 'buildAttributes 剔除一�
 
 // response_content 同样经过脱敏（与 response_body 一致，避免 JSON 响应泄露敏感字段）
 $recMask = new LogRecord(
-    datetime: new DateTimeImmutable(),
+    datetime: new DateTimeImmutable,
     channel: 't',
     level: Level::Info,
     message: 'm',
@@ -175,7 +174,7 @@ check($attrsMask['response_content'] === '{"token":"***"}', 'buildAttributes res
 // 其它等级的 level 归一化（info / warning / critical）
 foreach ([Level::Info, Level::Warning, Level::Critical] as $lv) {
     $lvlRecord = new LogRecord(
-        datetime: new DateTimeImmutable(),
+        datetime: new DateTimeImmutable,
         channel: 't',
         level: $lv,
         message: 'm',
@@ -188,7 +187,9 @@ foreach ([Level::Info, Level::Warning, Level::Critical] as $lv) {
 }
 
 // ===================== 爬虫检测 =====================
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use zxf\Modules\Logging\LogContext;
 
 $reqWithUa = static function (string $ua): Request {
     return Request::create('/', 'GET', [], [], [], $ua === '' ? [] : ['HTTP_USER_AGENT' => $ua]);
@@ -201,26 +202,58 @@ check(LogContextMiddleware::detectCrawler($emptyReq) === true, 'detectCrawler �
 check(LogContextMiddleware::detectCrawler($reqWithUa('Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36')) === false, 'detectCrawler 普通浏览器');
 
 // ===================== 响应内容语义解析 =====================
-$viewResp = new class {
-    public function getOriginalContent(): object { return new class implements \Illuminate\Contracts\View\View {
-        public function getName(): string { return 'users::index'; }
-        public function name(): string { return 'users::index'; }
-        public function with($key, $value = null) { return $this; }
-        public function getData(): array { return []; }
-        public function render(): string { return ''; }
-    }; }
+$viewResp = new class
+{
+    public function getOriginalContent(): object
+    {
+        return new class implements View
+        {
+            public function getName(): string
+            {
+                return 'users::index';
+            }
+
+            public function name(): string
+            {
+                return 'users::index';
+            }
+
+            public function with($key, $value = null)
+            {
+                return $this;
+            }
+
+            public function getData(): array
+            {
+                return [];
+            }
+
+            public function render(): string
+            {
+                return '';
+            }
+        };
+    }
 };
 $rcm = new ReflectionMethod(LogContextMiddleware::class, 'resolveResponseContent');
 $rcm->setAccessible(true);
 check(LogContextMiddleware::resolveResponseContent($viewResp, 'text/html; charset=UTF-8', '<html></html>') === 'users::index', 'resolveResponseContent 视图页面记录视图名');
 
-$jsonResp = new class {
-    public function getOriginalContent() { return ['ok' => 1]; }
+$jsonResp = new class
+{
+    public function getOriginalContent()
+    {
+        return ['ok' => 1];
+    }
 };
 check(LogContextMiddleware::resolveResponseContent($jsonResp, 'application/json', '{"ok":1}') === '{"ok":1}', 'resolveResponseContent JSON 记录数据');
 
-$redirectResp = new class {
-    public function getOriginalContent() { return null; }
+$redirectResp = new class
+{
+    public function getOriginalContent()
+    {
+        return null;
+    }
 };
 check(LogContextMiddleware::resolveResponseContent($redirectResp, 'text/html; charset=UTF-8', '') === null, 'resolveResponseContent 重定向/无内容返回 null');
 
@@ -228,23 +261,52 @@ check(LogContextMiddleware::resolveResponseContent($redirectResp, 'text/html; ch
 // 回归：Laravel JSON 接口返回 JsonResponse（非 Illuminate\Http\Response 子类），
 // 旧实现因限定 instanceof Illuminate\Http\Response 导致 JSON 响应体永不采集、
 // response_content 恒为 null。此处验证 JsonResponse 也能正确采集 JSON 数据。
-$mw = new LogContextMiddleware(new Redactor());
-$jsonHeaderBag = new class {
-    public function get(string $k, $default = null) { return $k === 'content-type' ? 'application/json' : $default; }
-    public function all(): array { return []; }
+$mw = new LogContextMiddleware(new Redactor);
+$jsonHeaderBag = new class
+{
+    public function get(string $k, $default = null)
+    {
+        return $k === 'content-type' ? 'application/json' : $default;
+    }
+
+    public function all(): array
+    {
+        return [];
+    }
 };
-$jsonResp = new class($jsonHeaderBag) {
+$jsonResp = new class($jsonHeaderBag)
+{
     public $headers;
-    public function __construct($h) { $this->headers = $h; }
-    public function getStatusCode(): int { return 200; }
-    public function getReasonPhrase(): string { return 'OK'; }
-    public function getContent(): string { return '{"ok":1}'; }
-    public function getOriginalContent() { return ['ok' => 1]; }
+
+    public function __construct($h)
+    {
+        $this->headers = $h;
+    }
+
+    public function getStatusCode(): int
+    {
+        return 200;
+    }
+
+    public function getReasonPhrase(): string
+    {
+        return 'OK';
+    }
+
+    public function getContent(): string
+    {
+        return '{"ok":1}';
+    }
+
+    public function getOriginalContent()
+    {
+        return ['ok' => 1];
+    }
 };
 $mwRef = new ReflectionMethod(LogContextMiddleware::class, 'captureResponse');
 $mwRef->setAccessible(true);
 $mwRef->invoke($mw, Request::create('/api/x'), $jsonResp);
-$respCtx = \zxf\Modules\Logging\LogContext::getResponse();
+$respCtx = LogContext::getResponse();
 check(($respCtx['content'] ?? null) === '{"ok":1}', 'captureResponse JSON(JsonResponse) 采集响应体并记录 JSON 数据');
 
 // ===================== 构造参数顺序守卫 =====================
@@ -256,9 +318,9 @@ check($actualHead === $expectedHead, 'DatabaseLogHandler 构造参数顺序（ha
 
 // 无参构造可用（Laravel 以 handler_with 传值，其余取默认）
 try {
-    new DatabaseLogHandler();
+    new DatabaseLogHandler;
     check(true, 'DatabaseLogHandler 默认构造可用');
-} catch (\Throwable $e) {
+} catch (Throwable $e) {
     check(false, 'DatabaseLogHandler 默认构造可用: '.$e->getMessage());
 }
 
@@ -271,7 +333,7 @@ check($cfg->captureRequestBody === true, 'LoggingConfig 默认 captureRequestBod
 check($cfg->captureResponseBody === true, 'LoggingConfig 默认 captureResponseBody=true');
 
 check($r instanceof RedactorContract, 'Redactor 实现 RedactorContract');
-check(new QueuedDatabaseLogWriter() instanceof LogWriter, 'QueuedDatabaseLogWriter 实现 LogWriter');
+check(new QueuedDatabaseLogWriter instanceof LogWriter, 'QueuedDatabaseLogWriter 实现 LogWriter');
 
 $evt = new LogRecorded(['message' => 'x']);
 check($evt->attributes === ['message' => 'x'] && $evt->model === null, 'LogRecorded 事件构建');

@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建配置文件命令
- *
  * 在指定模块中创建配置文件
  */
 class ConfigMakeCommand extends AbstractMakeCommand
@@ -33,8 +31,6 @@ class ConfigMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -52,6 +48,6 @@ class ConfigMakeCommand extends AbstractMakeCommand
         // 会生成内容错误的模块配置。配置文件仅体现在目标路径 Config/{name}.php。
         $generator->addReplacement('{{MODULE_NAME}}', $module->getName());
 
-        return $this->writeStub($generator, 'config.stub', 'Config/' . $configName . '.php', '配置文件', $force);
+        return $this->writeStub($generator, 'config.stub', 'Config/'.$configName.'.php', '配置文件', $force);
     }
 }

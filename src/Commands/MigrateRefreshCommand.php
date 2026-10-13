@@ -5,28 +5,22 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\MigrationPathHelper;
 
 /**
  * 模块迁移刷新命令
- *
  * 回滚并重新运行指定模块或全部模块的迁移（reset + migrate）。
- *
  * 参照 nWidart/laravel-modules 的 MigrateRefreshCommand 设计：
  * - 先 module:migrate-reset，后 module:migrate
  * - --seed 标志触发 module:seed
  * - --seeder 指定特定 Seeder，内部委托给 module:seed --class=...
  * - 生产环境强制确认
- *
  * 使用示例：
  *   php artisan module:migrate-refresh Blog                    # 刷新 Blog 模块
  *   php artisan module:migrate-refresh Blog --seed             # 刷新后运行 Seeder
  *   php artisan module:migrate-refresh Blog --seeder=PostSeeder # 刷新后运行指定 Seeder
  *   php artisan module:migrate-refresh                         # 刷新所有模块
- *
- * @package zxf\Modules\Commands
  */
 class MigrateRefreshCommand extends Command
 {
@@ -52,8 +46,6 @@ class MigrateRefreshCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -86,12 +78,6 @@ class MigrateRefreshCommand extends Command
 
     /**
      * 重置并重新运行指定模块的迁移
-     *
-     * @param string $moduleName
-     * @param bool $force
-     * @param bool $seed
-     * @param string|null $seeder
-     * @return int
      */
     protected function refreshModule(string $moduleName, bool $force, bool $seed, ?string $seeder = null): int
     {
@@ -140,11 +126,6 @@ class MigrateRefreshCommand extends Command
 
     /**
      * 重置并重新运行所有模块的迁移
-     *
-     * @param bool $force
-     * @param bool $seed
-     * @param string|null $seeder
-     * @return int
      */
     protected function refreshAllModules(bool $force, bool $seed, ?string $seeder = null): int
     {

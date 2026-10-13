@@ -4,30 +4,30 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
+use Illuminate\Database\Eloquent\Builder;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 集合操作宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
- *
  * 基于标准 SQL 集合操作，同一套宏在 MySQL 8.0.31+ 与 PostgreSQL 15+ 上均可直接使用：
  * - intersect: 返回两个查询的交集（INTERSECT）
  * - except: 返回第一个查询中存在但第二个查询中不存在的记录（EXCEPT）
  * - unionDistinct: UNION DISTINCT 显式去重
- *
  * 安全性：子查询通过 grammar 编译，绑定参数沿用 Laravel 绑定合并机制，不存在字符串裸拼注入；
  * 衍生结果表别名（intersect_result / except_result）为固定字面量，非用户输入。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires MySQL 8.0.31+ / PostgreSQL 15+
+ *
+ * @scenario 集合操作宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
  */
 class SetOperationsMacro extends BaseMacro
 {
-
     /**
      * 注册所有集合操作宏
      *
-     * @return void
+     * @scenario 注册所有集合操作宏
      */
     public static function register(): void
     {
@@ -38,17 +38,18 @@ class SetOperationsMacro extends BaseMacro
 
     /**
      * 注册 INTERSECT 交集操作
+     *
+     * @scenario 注册 INTERSECT 交集操作
      */
-public static function registerIntersect(): void
+    public static function registerIntersect(): void
     {
         /**
          * 返回两个查询结果的交集（去重）
-         *
          * 应用场景：查找同时满足两组条件的记录
          *
-         * @param \Closure|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 第二个查询构建器或闭包
-         * @param bool $all 是否保留重复行 true=INTERSECT ALL, false=INTERSECT DISTINCT
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  \Closure|Builder|\Illuminate\Database\Query\Builder  $query  第二个查询构建器或闭包
+         * @param  bool  $all  是否保留重复行 true=INTERSECT ALL, false=INTERSECT DISTINCT
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找既购买了A商品又购买了B商品的用户
@@ -63,14 +64,19 @@ public static function registerIntersect(): void
          *           });
          *     })
          *     ->get();
-         *
          * // 使用 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder 实例
          * $q1 = User::query()->select('id')->where('status', 1);
          * $q2 = User::query()->select('id')->where('vip', 1);
          * $q1->intersect($q2)->get();
+         *
+         * @scenario 返回两个查询结果的交集（去重）
          */
-        static::define('intersect', function ($query, bool $all = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        static::define('intersect', function ($query, bool $all = false): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $sql = $this->toSql();
             $bindings = $this->getBindings();
 
@@ -94,17 +100,18 @@ public static function registerIntersect(): void
 
     /**
      * 注册 EXCEPT 差集操作
+     *
+     * @scenario 注册 EXCEPT 差集操作
      */
-public static function registerExcept(): void
+    public static function registerExcept(): void
     {
         /**
          * 返回在第一个查询中存在但在第二个查询中不存在的记录
-         *
          * 应用场景：查找满足某条件但不满足另一条件的记录
          *
-         * @param \Closure|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 第二个查询构建器或闭包
-         * @param bool $all 是否保留重复行 true=EXCEPT ALL, false=EXCEPT DISTINCT
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  \Closure|Builder|\Illuminate\Database\Query\Builder  $query  第二个查询构建器或闭包
+         * @param  bool  $all  是否保留重复行 true=EXCEPT ALL, false=EXCEPT DISTINCT
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找活跃但未验证邮箱的用户
@@ -113,14 +120,19 @@ public static function registerExcept(): void
          *         $q->select('id')->from('users')->whereNotNull('email_verified_at');
          *     })
          *     ->get();
-         *
          * // 查找有订单但未评价的用户
          * $orderedUsers = User::query()->select('id')->whereHas('orders');
          * $reviewedUsers = User::query()->select('id')->whereHas('reviews');
          * $orderedUsers->except($reviewedUsers)->get();
+         *
+         * @scenario 返回在第一个查询中存在但在第二个查询中不存在的记录
          */
-        static::define('except', function ($query, bool $all = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        static::define('except', function ($query, bool $all = false): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $sql = $this->toSql();
             $bindings = $this->getBindings();
 
@@ -144,14 +156,16 @@ public static function registerExcept(): void
 
     /**
      * 注册 UNION DISTINCT 显式去重
+     *
+     * @scenario 注册 UNION DISTINCT 显式去重
      */
-public static function registerUnionDistinct(): void
+    public static function registerUnionDistinct(): void
     {
         /**
          * UNION DISTINCT - 显式去重的并集（默认行为，但显式声明更清晰）
          *
-         * @param \Closure|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 第二个查询构建器或闭包
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  \Closure|Builder|\Illuminate\Database\Query\Builder  $query  第二个查询构建器或闭包
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 合并两个查询结果并去重
@@ -162,9 +176,15 @@ public static function registerUnionDistinct(): void
          *           ->where('permissions.level', '>=', 5);
          *     })
          *     ->get();
+         *
+         * @scenario UNION DISTINCT - 显式去重的并集（默认行为，但显式声明更清晰）
          */
-        static::define('unionDistinct', function ($query): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        static::define('unionDistinct', function ($query): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             if ($query instanceof \Closure) {
                 $callback = $query;
                 $query = BaseMacro::freshQuery($this);

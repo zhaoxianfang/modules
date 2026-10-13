@@ -4,29 +4,29 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
+use Illuminate\Database\Eloquent\Builder;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * QUALIFY 子句宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
- *
  * QUALIFY 用于过滤窗口函数的结果，类似于 HAVING 过滤聚合函数。
  * 本宏以标准 SQL 的 HAVING + 窗口函数结果列实现，因此在 MySQL 8.0.31+ 与 PostgreSQL 15+ 上均可使用：
  *  - MySQL 8.0.33+ 原生支持 QUALIFY，本宏的 HAVING 实现与其语义等价且向后兼容更早版本；
  *  - PostgreSQL 15+ 同样不支持 QUALIFY 关键字，HAVING 方案天然通用。
- *
  * 安全性：窗口结果列名经白名单校验并由 grammar wrap，运算符经白名单校验，值走参数绑定。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires MySQL 8.0.31+ / PostgreSQL 15+
+ *
+ * @scenario QUALIFY 子句宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
  */
 class QualifyMacro extends BaseMacro
 {
-
     /**
      * 注册所有 QUALIFY 宏
      *
-     * @return void
+     * @scenario 注册所有 QUALIFY 宏
      */
     public static function register(): void
     {
@@ -36,19 +36,20 @@ class QualifyMacro extends BaseMacro
 
     /**
      * 注册 QUALIFY 基础方法
+     *
+     * @scenario 注册 QUALIFY 基础方法
      */
-public static function registerQualify(): void
+    public static function registerQualify(): void
     {
         /**
          * QUALIFY 子句 - 过滤窗口函数结果
-         *
          * 作用：对窗口函数计算后的结果进行过滤，无需子查询或 CTE
          *
-         * @param string $column 窗口函数结果列名或表达式
-         * @param mixed $operator 运算符或值（当只有两个参数时）
-         * @param mixed $value 比较值
-         * @param string $boolean 连接条件: and|or
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $column  窗口函数结果列名或表达式
+         * @param  mixed  $operator  运算符或值（当只有两个参数时）
+         * @param  mixed  $value  比较值
+         * @param  string  $boolean  连接条件: and|or
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找每个部门工资排名前3的员工（无需子查询）
@@ -57,14 +58,12 @@ public static function registerQualify(): void
          *     ->selectRaw('RANK() OVER (PARTITION BY department_id ORDER BY salary DESC) as dept_rank')
          *     ->qualify('dept_rank', '<=', 3)
          *     ->get();
-         *
          * // 查找销售额超过部门平均的员工
          * Sales::query()
          *     ->select('*')
          *     ->selectRaw('amount - AVG(amount) OVER (PARTITION BY department_id) as above_avg')
          *     ->qualify('above_avg', '>', 0)
          *     ->get();
-         *
          * // 使用 orQualify
          * Employee::query()
          *     ->select('*')
@@ -73,14 +72,20 @@ public static function registerQualify(): void
          *     ->qualify('rn', '=', 1)
          *     ->orQualify('rn', '=', 2)
          *     ->get();
+         *
+         * @scenario QUALIFY 子句 - 过滤窗口函数结果
          */
         static::define('qualify', function (
             string $column,
             mixed $operator = null,
             mixed $value = null,
             string $boolean = 'and'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             if (func_num_args() === 2) {
                 $value = $operator;
                 $operator = '=';
@@ -100,10 +105,10 @@ public static function registerQualify(): void
         /**
          * OR QUALIFY 子句
          *
-         * @param string $column 窗口函数结果列名
-         * @param mixed $operator 运算符或值
-         * @param mixed $value 比较值
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $column  窗口函数结果列名
+         * @param  mixed  $operator  运算符或值
+         * @param  mixed  $value  比较值
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找排名第一或第三的员工
@@ -112,13 +117,19 @@ public static function registerQualify(): void
          *     ->qualify('rn', '=', 1)
          *     ->orQualify('rn', '=', 3)
          *     ->get();
+         *
+         * @scenario OR QUALIFY 子句
          */
         static::define('orQualify', function (
             string $column,
             mixed $operator = null,
             mixed $value = null
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             if (func_num_args() === 2) {
                 $value = $operator;
                 $operator = '=';
@@ -130,16 +141,18 @@ public static function registerQualify(): void
 
     /**
      * 注册 QUALIFY RAW 方法
+     *
+     * @scenario 注册 QUALIFY RAW 方法
      */
-public static function registerQualifyRaw(): void
+    public static function registerQualifyRaw(): void
     {
         /**
          * 使用原始 SQL 的 QUALIFY 子句
          *
-         * @param string $sql 原始 SQL 条件
-         * @param array $bindings 绑定参数
-         * @param string $boolean 连接条件: and|or
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $sql  原始 SQL 条件
+         * @param  array  $bindings  绑定参数
+         * @param  string  $boolean  连接条件: and|or
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 复杂条件过滤
@@ -148,7 +161,6 @@ public static function registerQualifyRaw(): void
          *     ->selectRaw('DENSE_RANK() OVER (PARTITION BY dept_id ORDER BY salary DESC) as dr')
          *     ->qualifyRaw('dr BETWEEN ? AND ?', [1, 5])
          *     ->get();
-         *
          * // 多窗口函数条件
          * Sales::query()
          *     ->select('*')
@@ -156,13 +168,19 @@ public static function registerQualifyRaw(): void
          *     ->selectRaw('NTILE(4) OVER (ORDER BY amount DESC) as quartile')
          *     ->qualifyRaw('sales_rank <= 10 AND quartile = 1')
          *     ->get();
+         *
+         * @scenario 使用原始 SQL 的 QUALIFY 子句
          */
         static::define('qualifyRaw', function (
             string $sql,
             array $bindings = [],
             string $boolean = 'and'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $method = $boolean === 'or' ? 'orHavingRaw' : 'havingRaw';
 
             return $this->{$method}($sql, $bindings);
@@ -171,15 +189,25 @@ public static function registerQualifyRaw(): void
         /**
          * OR QUALIFY RAW 子句
          *
-         * @param string $sql 原始 SQL 条件
-         * @param array $bindings 绑定参数
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $sql  原始 SQL 条件
+         * @param  array  $bindings  绑定参数
+         * @return Builder|\Illuminate\Database\Query\Builder
+         *
+         * @example
+         * Model::query()->orQualifyRaw($s, $b)->get();
+         *
+         * @scenario OR QUALIFY RAW 子句
          */
         static::define('orQualifyRaw', function (
             string $sql,
             array $bindings = []
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
+
             return $this->qualifyRaw($sql, $bindings, 'or');
         });
     }

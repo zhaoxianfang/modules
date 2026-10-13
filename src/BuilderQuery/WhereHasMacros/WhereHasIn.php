@@ -4,38 +4,49 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WhereHasMacros;
 
-use Illuminate\Database\Eloquent;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Str;
 
 class WhereHasIn
 {
     /**
-     * @var Eloquent\Builder
+     * @var Builder
+     *
+     * @scenario 本类/成员说明。
      */
     protected $builder;
 
     /**
      * @var string
+     *
+     * @scenario 本类/成员说明。
      */
     protected $relation;
 
     /**
      * @var string
+     *
+     * @scenario 本类/成员说明。
      */
     protected $nextRelation;
 
     /**
      * @var \Closure
+     *
+     * @scenario 本类/成员说明。
      */
     protected $callback;
 
     /**
      * @var string
+     *
+     * @scenario 本类/成员说明。
      */
     protected $method = 'whereIn';
 
-    public function __construct(Eloquent\Builder $builder, $relation, $callback)
+    public function __construct(Builder $builder, $relation, $callback)
     {
         $this->builder = $builder;
         $this->relation = $relation;
@@ -43,9 +54,11 @@ class WhereHasIn
     }
 
     /**
-     * @return Eloquent\Builder
+     * @return Builder
      *
      * @throws \Exception
+     *
+     * @scenario 本类/成员说明。
      */
     public function execute()
     {
@@ -59,10 +72,12 @@ class WhereHasIn
     }
 
     /**
-     * @param  Relations\Relation  $relation
-     * @return Eloquent\Builder
+     * @param  Relation  $relation
+     * @return Builder
      *
      * @throws \Exception
+     *
+     * @scenario 本类/成员说明。
      */
     protected function where($relation)
     {
@@ -82,6 +97,7 @@ class WhereHasIn
                 $this->withRelationQueryCallback(
                     $relationQuery
                         ->select($relation->getQualifiedForeignKeyName())
+                        ->distinct()
                         ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignKeyName())
                         ->where($relation->getQualifiedMorphType(), $relation->getMorphClass())
                 )
@@ -94,6 +110,7 @@ class WhereHasIn
                 $this->withRelationQueryCallback(
                     $relationQuery
                         ->select($relation->getQualifiedForeignPivotKeyName())
+                        ->distinct()
                         ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignPivotKeyName())
                         ->where($relation->getTable().'.'.$relation->getMorphType(), $relation->getMorphClass())
                 )
@@ -107,6 +124,7 @@ class WhereHasIn
                 $this->withRelationQueryCallback(
                     $relationQuery
                         ->select($relation->getQualifiedOwnerKeyName())
+                        ->distinct()
                         ->whereColumn($this->getRelationQualifiedForeignKeyName($relation), $relation->getQualifiedOwnerKeyName())
                 )
             );
@@ -121,6 +139,7 @@ class WhereHasIn
                 $this->withRelationQueryCallback(
                     $relationQuery
                         ->select($relation->getQualifiedForeignKeyName())
+                        ->distinct()
                         ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignKeyName())
                 )
             );
@@ -133,6 +152,7 @@ class WhereHasIn
                 $this->withRelationQueryCallback(
                     $relationQuery
                         ->select($relation->getQualifiedForeignPivotKeyName())
+                        ->distinct()
                         ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignPivotKeyName())
                 )
             );
@@ -147,6 +167,7 @@ class WhereHasIn
                 $this->withRelationQueryCallback(
                     $relationQuery
                         ->select($relation->getQualifiedFirstKeyName())
+                        ->distinct()
                         ->whereColumn($relation->getQualifiedLocalKeyName(), $relation->getQualifiedFirstKeyName())
                 )
             );
@@ -156,8 +177,10 @@ class WhereHasIn
     }
 
     /**
-     * @param  Relations\Relation  $relation
-     * @return \Illuminate\Database\Eloquent\Builder
+     * @param  Relation  $relation
+     * @return Builder
+     *
+     * @scenario 本类/成员说明。
      */
     protected function getRelationQuery($relation)
     {
@@ -177,7 +200,15 @@ class WhereHasIn
 
     protected function getRelationDatabaseName($q)
     {
-        return config('database.connections.'.$q->getModel()->getConnectionName().'.database');
+        // 连接配置在进程生命周期内不可变，按连接名缓存避免每次跨库关联都读取 config()。
+        static $cache = [];
+        $name = $q->getModel()->getConnectionName();
+        // 未显式指定连接时使用默认连接名，避免拼接出 database.connections..database 的非法键（双点）导致返回 null。
+        if ($name === null) {
+            $name = config('database.default');
+        }
+
+        return $cache[$name] ??= config('database.connections.'.$name.'.database');
     }
 
     protected function getRelationQualifiedForeignKeyName($relation)
@@ -190,7 +221,9 @@ class WhereHasIn
     }
 
     /**
-     * @return \Illuminate\Database\Eloquent\Relations\Relation
+     * @return Relation
+     *
+     * @scenario 本类/成员说明。
      */
     protected function formatRelation()
     {
@@ -202,7 +235,7 @@ class WhereHasIn
 
             $method = $relationNames[0];
 
-            $relation = Relations\Relation::noConstraints(function () use ($method) {
+            $relation = Relation::noConstraints(function () use ($method) {
                 return $this->builder->getModel()->$method();
             });
         }
@@ -211,11 +244,19 @@ class WhereHasIn
     }
 
     /**
-     * @param  Eloquent\Builder  $relation
-     * @return Eloquent\Builder
+     * @param  Builder  $relation
+     * @return Builder
+     *
+     * @scenario 本类/成员说明。
      */
     protected function withRelationQueryCallback($relationQuery)
     {
-        return call_user_func($this->callback, $this->nextRelation, $relationQuery);
+        if ($this->callback === null) {
+            return $relationQuery;
+        }
+
+        // 兼容「就地修改关系查询（回调返回 null）」与「返回查询对象」两种风格；
+        // 若回调仅就地修改而未返回查询对象，则回退为已修改的 $relationQuery 本身。
+        return call_user_func($this->callback, $this->nextRelation, $relationQuery) ?: $relationQuery;
     }
 }

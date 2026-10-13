@@ -17,7 +17,6 @@ use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
 
 /**
  * 数据库日志子系统服务提供者。
- *
  * 职责（本模块只负责「采集 + 落库」，刻意不提供任何后台管理界面）：
  * 1. 通过 mergeConfigFrom 把 database 日志通道合并进应用的 config/logging.php，
  *    使得在 .env 设置 LOG_CHANNEL=database 即可启用数据库日志（无需先 vendor:publish 配置）。
@@ -29,11 +28,8 @@ use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
  * 5. 监听日志事件，使 Laravel 的 report($e) 等携带异常的日志也能落入 database 通道
  *    （被 datatable 检索），且避免重复写入。
  * 6. 绑定核心抽象（RedactorContract / LogWriter），LogWriter 可按配置切换为队列异步写入。
- *
  * 说明：日志的查看 / 检索 / 删除等管理功能不在本模块职责范围内（已由控制器 / 视图中移除），
  * 需要检索时直接使用 Log 模型或接入外部日志平台即可。
- *
- * @package zxf\Modules\Logging
  */
 class LoggingServiceProvider extends ServiceProvider
 {
@@ -55,6 +51,7 @@ class LoggingServiceProvider extends ServiceProvider
         $this->app->singleton(RedactorContract::class, function () {
             $keys = $this->app['config']->get('logging.db.sensitive_keys', []);
             $maxFieldLength = (int) $this->app['config']->get('logging.db.max_field_length', 20000);
+
             return new Redactor(is_array($keys) ? $keys : [], $maxFieldLength);
         });
 
@@ -84,8 +81,7 @@ class LoggingServiceProvider extends ServiceProvider
         // 全新项目只需运行本文件即可完成建表 + 演进。
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__.'/Database/Migrations/0001_01_01_000000_create_logs_table.php'
-                    => database_path('migrations/0001_01_01_000000_create_logs_table.php'),
+                __DIR__.'/Database/Migrations/0001_01_01_000000_create_logs_table.php' => database_path('migrations/0001_01_01_000000_create_logs_table.php'),
             ], 'modules-logging');
         }
 
@@ -97,7 +93,7 @@ class LoggingServiceProvider extends ServiceProvider
                 $router = $this->app['router'];
                 $router->pushMiddlewareToGroup('web', LogContextMiddleware::class);
                 $router->pushMiddlewareToGroup('api', LogContextMiddleware::class);
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 // 忽略（如路由组不存在）
             }
         }

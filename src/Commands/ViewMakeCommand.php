@@ -10,15 +10,11 @@ use Illuminate\Support\Str;
 
 /**
  * 创建视图命令
- *
  * 在指定模块中创建 Blade 视图文件。
  * 支持创建普通视图和布局视图。
- *
  * 使用示例：
  *   php artisan module:make-view Blog posts.index
  *   php artisan module:make-view Blog layouts.sidebar
- *
- * @package zxf\Modules\Commands
  */
 class ViewMakeCommand extends AbstractMakeCommand
 {
@@ -57,12 +53,13 @@ class ViewMakeCommand extends AbstractMakeCommand
         }
 
         // 将点号转换为路径分隔符
-        $viewPath = 'Resources/views/' . str_replace('.', '/', $viewName) . '.blade.php';
+        $viewPath = 'Resources/views/'.str_replace('.', '/', $viewName).'.blade.php';
         $fullPath = $this->targetPath($viewPath);
 
         if (File::exists($fullPath) && ! $force) {
             $this->error("模块 [{$moduleName}] 中已存在视图 [{$viewName}]");
             $this->line('提示：使用 --force 选项覆盖已存在的视图');
+
             return Command::FAILURE;
         }
 
@@ -85,6 +82,7 @@ class ViewMakeCommand extends AbstractMakeCommand
 
         if (! File::put($fullPath, $content)) {
             $this->error("创建视图 [{$viewName}] 失败");
+
             return Command::FAILURE;
         }
 
@@ -97,9 +95,9 @@ class ViewMakeCommand extends AbstractMakeCommand
     /**
      * 使用预置模板生成视图
      *
-     * @param string $type     模板类型：index（列表页）或 show（详情页）
-     * @param string $viewName 视图名称（点号分隔）
-     * @param bool   $force    是否覆盖已存在文件
+     * @param  string  $type  模板类型：index（列表页）或 show（详情页）
+     * @param  string  $viewName  视图名称（点号分隔）
+     * @param  bool  $force  是否覆盖已存在文件
      * @return int 退出码
      */
     protected function generateFromTemplate(string $type, string $viewName, bool $force): int
@@ -110,12 +108,12 @@ class ViewMakeCommand extends AbstractMakeCommand
         ];
 
         if (! isset($stubMap[$type])) {
-            $this->error("不支持的视图类型 [{$type}]，可选值: " . implode(' / ', array_keys($stubMap)));
+            $this->error("不支持的视图类型 [{$type}]，可选值: ".implode(' / ', array_keys($stubMap)));
 
             return Command::FAILURE;
         }
 
-        $relativePath = 'Resources/views/' . str_replace('.', '/', $viewName) . '.blade.php';
+        $relativePath = 'Resources/views/'.str_replace('.', '/', $viewName).'.blade.php';
 
         return $this->writeStub(
             $this->makeStubGenerator(),
@@ -128,11 +126,10 @@ class ViewMakeCommand extends AbstractMakeCommand
 
     /**
      * 生成 Blade 视图内容
-     *
      * 生成带布局扩展的标准视图文件，开发者可按需修改。
      *
-     * @param string $moduleName 模块名称
-     * @param string $viewName   视图名称（点号分隔）
+     * @param  string  $moduleName  模块名称
+     * @param  string  $viewName  视图名称（点号分隔）
      * @return string Blade 视图文件内容
      */
     protected function generateViewContent(string $moduleName, string $viewName): string
@@ -144,9 +141,9 @@ class ViewMakeCommand extends AbstractMakeCommand
         }, $parts);
         $title = implode(' - ', $titleParts);
 
-        $bladeCommentStart = '{' . '{--';
-        $bladeCommentEnd = '--}' . '}';
-        $extendsLine = '@extends(' . "'layouts.app'" . ')';
+        $bladeCommentStart = '{'.'{--';
+        $bladeCommentEnd = '--}'.'}';
+        $extendsLine = '@extends('."'layouts.app'".')';
         $sectionTitle = "@section('title', '{$title}')";
         $sectionContent = "@section('content')";
 

@@ -11,7 +11,6 @@ use zxf\Modules\Facades\Module;
 
 /**
  * 检查模块本地化文件差异命令
- *
  * 用于对比模块内不同语言的翻译文件,找出缺失的配置项
  */
 class ModuleCheckLangCommand extends Command
@@ -34,8 +33,6 @@ class ModuleCheckLangCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -50,9 +47,6 @@ class ModuleCheckLangCommand extends Command
 
     /**
      * 检查指定模块的本地化文件
-     *
-     * @param string $moduleName
-     * @return int
      */
     protected function checkModuleLang(string $moduleName): int
     {
@@ -78,13 +72,13 @@ class ModuleCheckLangCommand extends Command
 
         if ($result['total_languages'] < 2) {
             $this->warn("模块 [{$moduleName}] 只有 {$result['total_languages']} 种语言,无法进行对比");
-            $this->line('语言列表: ' . implode(', ', $result['languages']));
+            $this->line('语言列表: '.implode(', ', $result['languages']));
 
             return Command::SUCCESS;
         }
 
         $this->newLine();
-        $this->info("发现 {$result['total_languages']} 种语言: " . implode(', ', $result['languages']));
+        $this->info("发现 {$result['total_languages']} 种语言: ".implode(', ', $result['languages']));
 
         if (empty($result['missing_keys'])) {
             $this->newLine();
@@ -101,7 +95,7 @@ class ModuleCheckLangCommand extends Command
             $this->line("<fg=red>语言 [{$language}] 缺失的配置项：</>");
 
             foreach ($missing as $file => $keys) {
-                $this->line("  文件 [{$file}] 缺失 " . count($keys) . " 个配置项:");
+                $this->line("  文件 [{$file}] 缺失 ".count($keys).' 个配置项:');
                 foreach ($keys as $key) {
                     $this->line("    - {$key}");
                 }
@@ -113,8 +107,6 @@ class ModuleCheckLangCommand extends Command
 
     /**
      * 检查所有模块的本地化文件
-     *
-     * @return int
      */
     protected function checkAllModules(): int
     {
@@ -140,6 +132,7 @@ class ModuleCheckLangCommand extends Command
                     'status' => 'no_lang',
                     'message' => '无本地化目录',
                 ];
+
                 continue;
             }
 
@@ -148,9 +141,10 @@ class ModuleCheckLangCommand extends Command
             if ($result['total_languages'] < 2) {
                 $results[$moduleName] = [
                     'status' => 'single_lang',
-                    'message' => '只有 ' . $result['total_languages'] . ' 种语言',
+                    'message' => '只有 '.$result['total_languages'].' 种语言',
                     'issues' => 0,
                 ];
+
                 continue;
             }
 
@@ -160,6 +154,7 @@ class ModuleCheckLangCommand extends Command
                     'message' => '完整',
                     'issues' => 0,
                 ];
+
                 continue;
             }
 
@@ -216,15 +211,11 @@ class ModuleCheckLangCommand extends Command
 
     /**
      * 分析本地化文件
-     *
-     * @param string $langPath
-     * @param string $moduleName
-     * @return array
      */
     protected function analyzeLangFiles(string $langPath, string $moduleName): array
     {
         // 获取所有语言目录
-        $languageDirs = glob($langPath . '/*', GLOB_ONLYDIR);
+        $languageDirs = glob($langPath.'/*', GLOB_ONLYDIR);
 
         if (empty($languageDirs)) {
             return [
@@ -243,7 +234,7 @@ class ModuleCheckLangCommand extends Command
             $lang = basename($langDir);
             $languages[] = $lang;
 
-            $files = glob($langDir . '/*.php');
+            $files = glob($langDir.'/*.php');
 
             foreach ($files as $file) {
                 $fileName = basename($file, '.php');
@@ -299,9 +290,6 @@ class ModuleCheckLangCommand extends Command
 
     /**
      * 加载本地化文件
-     *
-     * @param string $filePath
-     * @return array
      */
     protected function loadLangFile(string $filePath): array
     {
@@ -312,17 +300,13 @@ class ModuleCheckLangCommand extends Command
 
     /**
      * 获取数组中的所有键（支持嵌套）
-     *
-     * @param array $array
-     * @param string $prefix
-     * @return array
      */
     protected function getAllKeys(array $array, string $prefix = ''): array
     {
         $keys = [];
 
         foreach ($array as $key => $value) {
-            $fullKey = $prefix ? $prefix . '.' . $key : $key;
+            $fullKey = $prefix ? $prefix.'.'.$key : $key;
 
             if (is_array($value)) {
                 $keys = array_merge($keys, $this->getAllKeys($value, $fullKey));
@@ -337,37 +321,32 @@ class ModuleCheckLangCommand extends Command
     /**
      * 获取模块的本地化路径
      *
-     * @param mixed $module
-     * @return string
+     * @param  mixed  $module
      */
     protected function getLangPath($module): string
     {
         $customPath = $this->option('path');
 
         if ($customPath) {
-            return $module->getPath() . '/' . trim($customPath, '/');
+            return $module->getPath().'/'.trim($customPath, '/');
         }
 
-        return $module->getPath() . '/' . config('modules.translations.path', 'Resources/lang');
+        return $module->getPath().'/'.config('modules.translations.path', 'Resources/lang');
     }
 
     /**
      * 显示模块的问题详情
-     *
-     * @param string $moduleName
-     * @param array $details
-     * @return void
      */
     protected function displayModuleIssues(string $moduleName, array $details): void
     {
-        $this->line('语言列表: ' . implode(', ', $details['languages']));
+        $this->line('语言列表: '.implode(', ', $details['languages']));
         $this->newLine();
 
         foreach ($details['missing_keys'] as $language => $missing) {
             $this->line("<fg=red>语言 [{$language}] 缺失的配置项：</>");
 
             foreach ($missing as $file => $keys) {
-                $this->line("  文件 [{$file}] 缺失 " . count($keys) . " 个配置项:");
+                $this->line("  文件 [{$file}] 缺失 ".count($keys).' 个配置项:');
                 foreach ($keys as $key) {
                     $this->line("    - {$key}");
                 }

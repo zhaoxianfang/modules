@@ -5,26 +5,22 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 
 /**
  * 模块数据填充命令
- *
  * 执行指定模块或全部模块的数据填充器（Seeder）。
- *
  * 参照 nWidart/laravel-modules 的 SeedCommand 设计：
  * - 支持 --class 选项单独运行某个 Seeder 类
  * - 自动从模块配置发现 seeder
  * - 回退到约定命名：{ModuleName}DatabaseSeeder
  * - 支持 --database 和 --force 选项
- *
  * 使用示例：
  *   php artisan module:seed Blog                           # 运行 Blog 模块所有 Seeder
  *   php artisan module:seed Blog --class=PostSeeder        # 运行指定 Seeder
  *   php artisan module:seed Blog --class=UsersTableSeeder  # 运行指定 Seeder
  *   php artisan module:seed                                # 运行所有模块的 Seeder
- *
- * @package zxf\Modules\Commands
  */
 class SeedCommand extends Command
 {
@@ -48,8 +44,6 @@ class SeedCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -64,9 +58,6 @@ class SeedCommand extends Command
 
     /**
      * 运行指定模块的数据填充
-     *
-     * @param string $moduleName
-     * @return int
      */
     protected function seedModule(string $moduleName): int
     {
@@ -98,8 +89,6 @@ class SeedCommand extends Command
 
     /**
      * 运行所有已启用模块的数据填充
-     *
-     * @return int
      */
     protected function seedAllModules(): int
     {
@@ -132,6 +121,7 @@ class SeedCommand extends Command
             // 避免将无 Seeder 的模块静默计入成功数。
             if (empty($this->discoverSeeders($module))) {
                 $totalSkipped++;
+
                 continue;
             }
 
@@ -159,21 +149,19 @@ class SeedCommand extends Command
 
     /**
      * 运行指定的 Seeder 类
-     *
      * 拼接模块完整命名空间：{namespace}\{ModuleName}\Database\Seeders\{ClassName}
      *
-     * @param \zxf\Modules\Contracts\ModuleInterface $module
-     * @param string $className  仅类名（如 PostSeeder）
-     * @return int
+     * @param  ModuleInterface  $module
+     * @param  string  $className  仅类名（如 PostSeeder）
      */
     protected function runSpecificSeeder($module, string $className): int
     {
         // 拼接完整类名：Modules\Blog\Database\Seeders\PostSeeder
-        $fullClass = $module->getClassNamespace() . '\\Database\\Seeders\\' . $className;
+        $fullClass = $module->getClassNamespace().'\\Database\\Seeders\\'.$className;
 
         if (! class_exists($fullClass)) {
             $this->error("数据填充器 [{$fullClass}] 不存在。");
-            $this->line("提示：确保文件位于 " . $module->getPath('Database/Seeders/' . $className . '.php'));
+            $this->line('提示：确保文件位于 '.$module->getPath('Database/Seeders/'.$className.'.php'));
 
             return Command::FAILURE;
         }
@@ -185,13 +173,11 @@ class SeedCommand extends Command
 
     /**
      * 运行模块的所有 Seeder
-     *
      * 发现策略（参照 nWidart）：
      * 1. 优先：模块配置文件中的 seeds 数组（完整类名）
      * 2. 回退：扫描 Database/Seeders 目录下的所有 .php 文件（PSR-4 约定命名）
      *
-     * @param \zxf\Modules\Contracts\ModuleInterface $module
-     * @return int
+     * @param  ModuleInterface  $module
      */
     protected function runAllModuleSeeders($module): int
     {
@@ -203,7 +189,7 @@ class SeedCommand extends Command
             return Command::SUCCESS;
         }
 
-        $this->components->info("  发现 " . count($seeders) . " 个数据填充器");
+        $this->components->info('  发现 '.count($seeders).' 个数据填充器');
 
         $hasFailures = false;
         foreach ($seeders as $seederClass) {
@@ -219,7 +205,7 @@ class SeedCommand extends Command
     /**
      * 发现模块的 Seeder 类列表
      *
-     * @param \zxf\Modules\Contracts\ModuleInterface $module
+     * @param  ModuleInterface  $module
      * @return array<int, string>
      */
     protected function discoverSeeders($module): array
@@ -245,7 +231,7 @@ class SeedCommand extends Command
             return [];
         }
 
-        $files = glob($seederPath . DIRECTORY_SEPARATOR . '*.php');
+        $files = glob($seederPath.DIRECTORY_SEPARATOR.'*.php');
         if (empty($files)) {
             return [];
         }
@@ -253,7 +239,7 @@ class SeedCommand extends Command
         $seeders = [];
         foreach ($files as $file) {
             $className = basename($file, '.php');
-            $fullClass = $module->getClassNamespace() . '\\Database\\Seeders\\' . $className;
+            $fullClass = $module->getClassNamespace().'\\Database\\Seeders\\'.$className;
 
             if (class_exists($fullClass)) {
                 $seeders[] = $fullClass;
@@ -266,8 +252,7 @@ class SeedCommand extends Command
     /**
      * 调用 Laravel 原生 db:seed 命令
      *
-     * @param string $fullClass 完整的 Seeder 类名（含命名空间）
-     * @return int
+     * @param  string  $fullClass  完整的 Seeder 类名（含命名空间）
      */
     protected function callDbSeed(string $fullClass): int
     {
@@ -289,7 +274,7 @@ class SeedCommand extends Command
             // 子命令失败（非 0 退出码）必须透传，否则调用方会误判为成功
             return $exitCode === Command::SUCCESS ? Command::SUCCESS : Command::FAILURE;
         } catch (\Throwable $e) {
-            $this->error("运行数据填充器 [{$fullClass}] 失败: " . $e->getMessage());
+            $this->error("运行数据填充器 [{$fullClass}] 失败: ".$e->getMessage());
 
             return Command::FAILURE;
         }

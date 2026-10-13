@@ -6,10 +6,10 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use zxf\Modules\Facades\Module;
+use zxf\Modules\Support\ModuleAutoDiscovery;
 
 /**
  * 模块缓存命令
- *
  * 将模块清单（启用的模块列表、配置快照等）写入缓存文件，
  * 提升运行时模块发现性能。
  */
@@ -31,10 +31,7 @@ class ModuleCacheCommand extends Command
 
     /**
      * 执行命令
-     *
      * 绕过可能过期的缓存，以磁盘真实状态重新扫描并写入模块缓存。
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -51,7 +48,7 @@ class ModuleCacheCommand extends Command
                 $warmed = 0;
                 foreach (Module::allEnabled() as $module) {
                     try {
-                        \zxf\Modules\Support\ModuleAutoDiscovery::warm($module);
+                        ModuleAutoDiscovery::warm($module);
                         $warmed++;
                     } catch (\Throwable) {
                         // 单个模块预热失败不影响整体

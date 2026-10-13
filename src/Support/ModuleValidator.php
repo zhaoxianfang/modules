@@ -8,16 +8,12 @@ use zxf\Modules\Contracts\ModuleInterface;
 
 /**
  * 模块验证器
- *
  * 用于验证模块的完整性和正确性
  */
 class ModuleValidator
 {
     /**
      * 验证模块
-     *
-     * @param ModuleInterface $module
-     * @return array
      */
     public static function validate(ModuleInterface $module): array
     {
@@ -42,7 +38,7 @@ class ModuleValidator
         // 避免因项目未配置 Modules\ 命名空间的 PSR-4 而误报“缺少主服务提供者文件”。
         $providerPath = $module->getProvidersPath();
         $hasProviderFile = is_dir($providerPath)
-            && ! empty(glob($providerPath . DIRECTORY_SEPARATOR . '*ServiceProvider.php'));
+            && ! empty(glob($providerPath.DIRECTORY_SEPARATOR.'*ServiceProvider.php'));
 
         if (! $hasProviderFile) {
             $errors[] = '缺少主服务提供者文件 (Providers/*ServiceProvider.php)';
@@ -50,7 +46,7 @@ class ModuleValidator
             $providerClass = $module->getServiceProviderClass();
             if ($providerClass === null || ! class_exists($providerClass)) {
                 $warnings[] = '服务提供者类无法被自动加载，请确认 composer.json 已配置 '
-                    . $module->getNamespace() . '\\ 命名空间并运行 composer dump-autoload';
+                    .$module->getNamespace().'\\ 命名空间并运行 composer dump-autoload';
             }
         }
 
@@ -93,30 +89,26 @@ class ModuleValidator
 
     /**
      * 验证模块配置文件
-     *
      * 检查 Config/{lower_name}.php 或 Config/config.php 是否存在
      * 并验证必要的配置项
-     *
-     * @param ModuleInterface $module
-     * @return array
      */
     public static function validateConfig(ModuleInterface $module): array
     {
         // 尝试找到配置文件
         $configPath = $module->getConfigPath();
-        $file = $module->getLowerName() . '.php';
-        $configFile = $configPath . DIRECTORY_SEPARATOR . $file;
+        $file = $module->getLowerName().'.php';
+        $configFile = $configPath.DIRECTORY_SEPARATOR.$file;
 
         // 回退到 config.php
         if (! file_exists($configFile)) {
             $file = 'config.php';
-            $configFile = $configPath . DIRECTORY_SEPARATOR . $file;
+            $configFile = $configPath.DIRECTORY_SEPARATOR.$file;
         }
 
         if (! file_exists($configFile)) {
             return [
                 'valid' => false,
-                'errors' => ['模块配置文件不存在，请创建 Config/' . $module->getLowerName() . '.php 或 Config/config.php'],
+                'errors' => ['模块配置文件不存在，请创建 Config/'.$module->getLowerName().'.php 或 Config/config.php'],
             ];
         }
 
@@ -125,14 +117,14 @@ class ModuleValidator
         } catch (\Throwable $e) {
             return [
                 'valid' => false,
-                'errors' => ['配置文件加载失败 (' . $configFile . '): ' . $e->getMessage()],
+                'errors' => ['配置文件加载失败 ('.$configFile.'): '.$e->getMessage()],
             ];
         }
 
         if (! is_array($config)) {
             return [
                 'valid' => false,
-                'errors' => ['配置文件必须返回一个数组: ' . $file],
+                'errors' => ['配置文件必须返回一个数组: '.$file],
             ];
         }
 
@@ -152,10 +144,8 @@ class ModuleValidator
 
     /**
      * 验证模块路由文件
-     *
      * 检查每个路由文件是否真实存在且可读，避免运行时 require 失败。
      *
-     * @param ModuleInterface $module
      * @return array{valid: bool, errors: array<int, string>, warnings: array<int, string>}
      */
     public static function validateRoutes(ModuleInterface $module): array
@@ -173,10 +163,11 @@ class ModuleValidator
         }
 
         foreach ($routeFiles as $routeFile) {
-            $routePath = $module->getRoutesPath() . DIRECTORY_SEPARATOR . $routeFile . '.php';
+            $routePath = $module->getRoutesPath().DIRECTORY_SEPARATOR.$routeFile.'.php';
 
             if (! file_exists($routePath)) {
                 $errors[] = "路由文件 {$routeFile}.php 不存在";
+
                 continue;
             }
 

@@ -6,11 +6,9 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建中间件命令
- *
  * 在指定模块中创建中间件
  */
 class MiddlewareMakeCommand extends AbstractMakeCommand
@@ -34,8 +32,6 @@ class MiddlewareMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -52,6 +48,6 @@ class MiddlewareMakeCommand extends AbstractMakeCommand
         $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
         $generator->addReplacement('{{NAME}}', $module->getName());
 
-        return $this->writeStub($generator, 'middleware.stub', 'Http/Middleware/' . $middlewareName . '.php', '中间件', $force);
+        return $this->writeStub($generator, 'middleware.stub', 'Http/Middleware/'.$middlewareName.'.php', '中间件', $force);
     }
 }

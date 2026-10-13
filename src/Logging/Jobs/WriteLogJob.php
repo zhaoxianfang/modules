@@ -14,11 +14,8 @@ use zxf\Modules\Logging\Models\Log;
 
 /**
  * 真正执行日志落库的队列任务。
- *
  * 由 QueuedDatabaseLogWriter 投递；在 worker 进程中创建 Log 并 save，
  * 随后派发 LogRecorded 事件（与同步路径保持一致的事件语义）。
- *
- * @package zxf\Modules\Logging
  */
 class WriteLogJob implements ShouldQueue
 {
@@ -28,21 +25,20 @@ class WriteLogJob implements ShouldQueue
     use SerializesModels;
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     public function __construct(
         public array $attributes,
         public ?string $model = null,
         public ?string $table = null,
-    ) {
-    }
+    ) {}
 
     public function handle(): void
     {
         $modelClass = $this->model ?: Log::class;
 
         /** @var Log $log */
-        $log = new $modelClass();
+        $log = new $modelClass;
         if ($this->table !== null) {
             $log->setTable($this->table);
         }

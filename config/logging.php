@@ -1,30 +1,25 @@
 <?php
 
+use zxf\Modules\Logging\Handler\DatabaseLogHandler;
+use zxf\Modules\Logging\Handler\DatabaseLogTap;
+
 /**
  * ============================================================================
  * zxf/modules —— 数据库日志通道（database channel）配置
  * ============================================================================
- *
  * 本文件由 LoggingServiceProvider 通过 mergeConfigFrom 合并进应用的
  * config('logging')，从而向 logging.channels 注入一个名为 database 的通道。
- *
  * 因此使用方式极为简单：在 .env 中设置
- *
  *     LOG_CHANNEL=database
- *
  * 即可让全站日志（以及每次 HTTP 请求自动产生的「请求 → 响应」汇总日志）写入
  * logs 数据表。无需手动修改应用的 config/logging.php。
- *
  * 如需覆盖默认行为，可在应用自身的 config/logging.php 中重新定义
  * channels.database 或 logging.db 段（应用配置优先）。
- *
  * logs 数据表核心字段说明（详见迁移）：
  *   - module_name      模块名称（由宿主应用的 module_name() 助手获取，小写下划线）
  *   - level            日志等级（PSR 小写键：error / info / warning / critical …，与 Monolog 一致）
  *   - is_crawler       是否为爬虫 / 机器人请求（bool）
  *   - response_content 响应内容：视图页面响应记录「视图页面地址（视图名）」，JSON 响应记录「JSON 数据」
- *
- * @package zxf\Modules\Logging
  */
 
 return [
@@ -34,7 +29,7 @@ return [
         'database' => [
             'driver' => 'monolog',
             'level' => env('LOG_LEVEL', 'debug'),
-            'handler' => \zxf\Modules\Logging\Handler\DatabaseLogHandler::class,
+            'handler' => DatabaseLogHandler::class,
             // handler_with 的键必须与 DatabaseLogHandler 构造参数名完全一致
             'handler_with' => [
                 'model' => null,                 // 自定义日志模型（默认 zxf\Modules\Logging\Models\Log）
@@ -43,7 +38,7 @@ return [
                 'captureResponseBody' => true,    // 是否采集响应头 / 响应体
             ],
             'tap' => [
-                \zxf\Modules\Logging\Handler\DatabaseLogTap::class,
+                DatabaseLogTap::class,
             ],
             'processors' => [],
         ],

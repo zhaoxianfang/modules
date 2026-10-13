@@ -6,19 +6,14 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建测试命令
- *
  * 在指定模块中创建 PHPUnit 测试类。
  * 支持单元测试和功能测试两种类型。
- *
  * 使用示例：
  *   php artisan module:make-test Blog PostTest
  *   php artisan module:make-test Blog PostFeatureTest --feature
- *
- * @package zxf\Modules\Commands
  */
 class TestMakeCommand extends AbstractMakeCommand
 {
@@ -62,7 +57,7 @@ class TestMakeCommand extends AbstractMakeCommand
             '{{NAME}}' => $module->getName(),
         ]);
 
-        $result = $this->writeStub($generator, 'test.stub', 'Tests/' . $testName . '.php', '测试', $force);
+        $result = $this->writeStub($generator, 'test.stub', 'Tests/'.$testName.'.php', '测试', $force);
 
         if ($result === Command::SUCCESS) {
             $testType = $isFeature ? '功能测试' : '单元测试';

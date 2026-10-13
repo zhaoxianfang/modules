@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Support;
 
+use Illuminate\Console\Command;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Routing\Router;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use zxf\Modules\Contracts\ModuleInterface;
 
 /**
  * 模块自动发现器
- *
  * 提供智能的模块组件自动发现和加载能力。
- *
  * 自动发现顺序：
  * 1. 配置文件（最先加载）
  * 2. 服务提供者
@@ -27,7 +31,6 @@ use zxf\Modules\Contracts\ModuleInterface;
  * 10. 模型观察者
  * 11. 策略类
  * 12. 仓库类
- *
  * 性能说明（v5.x）：
  * - 当 modules.cache.enabled=true 时，扫描得到的「发现清单」会被持久化到
  *   storage/framework/cache/modules/discovery.json（JSON 格式，原子写入）。
@@ -36,7 +39,6 @@ use zxf\Modules\Contracts\ModuleInterface;
  * - 清单与模块元数据缓存同生命周期：module:cache 重建、module:clear 清除。
  * - 任何清单读取/解析失败都会安全回退到实时扫描，绝不阻断启动。
  *
- * @package zxf\Modules
  * @version 5.0.0
  */
 class ModuleAutoDiscovery
@@ -56,7 +58,7 @@ class ModuleAutoDiscovery
     /**
      * 应用实例
      */
-    protected \Illuminate\Contracts\Foundation\Application $app;
+    protected Application $app;
 
     /**
      * 发现缓存（调试/摘要用，键 => 值）
@@ -90,17 +92,17 @@ class ModuleAutoDiscovery
      * @var array<string, mixed>
      */
     protected array $discovered = [
-        'providers'       => [],
-        'aliases'         => [],
-        'commands'        => [],
-        'events'          => [],
-        'repositories'    => [],
-        'observers'       => [],
-        'policies'        => [],
-        'configs'         => [],
-        'routes'          => [],
-        'view_path'       => null,
-        'migration_path'  => null,
+        'providers' => [],
+        'aliases' => [],
+        'commands' => [],
+        'events' => [],
+        'repositories' => [],
+        'observers' => [],
+        'policies' => [],
+        'configs' => [],
+        'routes' => [],
+        'view_path' => null,
+        'migration_path' => null,
         'translation_path' => null,
     ];
 
@@ -134,8 +136,8 @@ class ModuleAutoDiscovery
     /**
      * 注册事件钩子
      *
-     * @param string   $event    事件名: before_discover, after_discover, before_load, after_load
-     * @param callable $callback 回调函数
+     * @param  string  $event  事件名: before_discover, after_discover, before_load, after_load
+     * @param  callable  $callback  回调函数
      */
     public static function hook(string $event, callable $callback): void
     {
@@ -233,7 +235,6 @@ class ModuleAutoDiscovery
 
     /**
      * 注册所有已发现的组件
-     *
      * 注册是「运行时状态」，不随缓存持久化，因此无论是否命中清单都必须执行。
      */
     protected function registerAll(): void
@@ -292,7 +293,7 @@ class ModuleAutoDiscovery
                 }
 
                 $className = $file->getBasename('.php');
-                $providerClass = $this->module->getClassNamespace() . '\\Providers\\' . $className;
+                $providerClass = $this->module->getClassNamespace().'\\Providers\\'.$className;
 
                 if (! class_exists($providerClass)) {
                     continue;
@@ -300,7 +301,7 @@ class ModuleAutoDiscovery
 
                 $reflection = new \ReflectionClass($providerClass);
 
-                if ($reflection->isSubclassOf(\Illuminate\Support\ServiceProvider::class) && ! $reflection->isAbstract()) {
+                if ($reflection->isSubclassOf(ServiceProvider::class) && ! $reflection->isAbstract()) {
                     $this->discovered['providers'][] = $providerClass;
                     $this->cache["provider.{$className}"] = $providerClass;
                 }
@@ -377,7 +378,7 @@ class ModuleAutoDiscovery
                     continue;
                 }
 
-                $configKey = $isMain ? $moduleLower : $moduleLower . '.' . strtolower($filename);
+                $configKey = $isMain ? $moduleLower : $moduleLower.'.'.strtolower($filename);
 
                 $this->discovered['configs'][$configKey] = $configValue;
                 $this->cache["config.{$configKey}"] = true;
@@ -429,10 +430,10 @@ class ModuleAutoDiscovery
                     }
 
                     $className = $file->getBasename('.php');
-                    $middlewareClass = $this->module->getClassNamespace() . '\\Http\\Middleware\\' . $className;
+                    $middlewareClass = $this->module->getClassNamespace().'\\Http\\Middleware\\'.$className;
 
                     if (! class_exists($middlewareClass)) {
-                        $middlewareClass = $this->module->getClassNamespace() . '\\Http\\Filters\\' . $className;
+                        $middlewareClass = $this->module->getClassNamespace().'\\Http\\Filters\\'.$className;
                     }
 
                     if (class_exists($middlewareClass)) {
@@ -488,7 +489,7 @@ class ModuleAutoDiscovery
 
         try {
             foreach ($this->discovered['routes'] as $filename) {
-                $file = $routesPath . DIRECTORY_SEPARATOR . $filename . '.php';
+                $file = $routesPath.DIRECTORY_SEPARATOR.$filename.'.php';
 
                 if (! file_exists($file)) {
                     continue;
@@ -512,15 +513,15 @@ class ModuleAutoDiscovery
 
             // Laravel 13 属性路由支持（#[Get] / #[Post] / #[Middleware] 等 PHP 属性）
             // 约定：模块 Routes/Attributes/ 目录下的控制器使用 PHP 属性声明路由
-            $attributesPath = $routesPath . DIRECTORY_SEPARATOR . 'Attributes';
+            $attributesPath = $routesPath.DIRECTORY_SEPARATOR.'Attributes';
             if (is_dir($attributesPath)) {
-                /** @var \Illuminate\Routing\Router $router */
+                /** @var Router $router */
                 $router = app('router');
                 $prefix = Str::snake($this->module->getName());
 
                 try {
                     $router->attribute($prefix)->group(function () use ($attributesPath) {
-                        foreach (glob($attributesPath . DIRECTORY_SEPARATOR . '*.php') ?: [] as $attrFile) {
+                        foreach (glob($attributesPath.DIRECTORY_SEPARATOR.'*.php') ?: [] as $attrFile) {
                             require $attrFile;
                         }
                     });
@@ -691,7 +692,6 @@ class ModuleAutoDiscovery
 
     /**
      * 扫描并注册 Artisan 命令
-     *
      * 公开方法，供 module:debug-commands 等直接调用。
      */
     public function discoverCommands(): void
@@ -733,7 +733,7 @@ class ModuleAutoDiscovery
 
             $this->scanPhpFiles($commandsPath, function (\SplFileInfo $file) use ($ns) {
                 $className = $file->getBasename('.php');
-                $commandClass = $this->module->getClassNamespace() . $ns . '\\' . $className;
+                $commandClass = $this->module->getClassNamespace().$ns.'\\'.$className;
 
                 if (! class_exists($commandClass)) {
                     return;
@@ -741,7 +741,7 @@ class ModuleAutoDiscovery
 
                 $reflection = new \ReflectionClass($commandClass);
 
-                if ($reflection->isSubclassOf(\Illuminate\Console\Command::class) && ! $reflection->isAbstract()) {
+                if ($reflection->isSubclassOf(Command::class) && ! $reflection->isAbstract()) {
                     $this->discovered['commands'][] = $commandClass;
                 }
             }, 'Command scan');
@@ -767,7 +767,7 @@ class ModuleAutoDiscovery
 
         // 注册命令到 Artisan（通过 Kernel，而非 Application）
         try {
-            $kernel = $this->app->make(\Illuminate\Contracts\Console\Kernel::class);
+            $kernel = $this->app->make(Kernel::class);
             foreach ($foundCommands as $commandClass) {
                 try {
                     $kernel->registerCommand($this->app->make($commandClass));
@@ -778,7 +778,7 @@ class ModuleAutoDiscovery
         } catch (\Throwable) {
             // 降级方案：通过 Artisan facade
             try {
-                \Illuminate\Support\Facades\Artisan::addCommands($foundCommands);
+                Artisan::addCommands($foundCommands);
             } catch (\Throwable $e) {
                 $this->log("Command registration failed: {$e->getMessage()}");
             }
@@ -799,7 +799,7 @@ class ModuleAutoDiscovery
 
         $this->scanPhpFiles($eventsPath, function (\SplFileInfo $file) {
             $className = $file->getBasename('.php');
-            $eventClass = $this->module->getClassNamespace() . '\\Events\\' . $className;
+            $eventClass = $this->module->getClassNamespace().'\\Events\\'.$className;
 
             if (class_exists($eventClass)) {
                 $this->discovered['events'][] = $eventClass;
@@ -833,7 +833,7 @@ class ModuleAutoDiscovery
                 }
 
                 $className = $file->getBasename('.php');
-                $observerClass = $this->module->getClassNamespace() . '\\Observers\\' . $className;
+                $observerClass = $this->module->getClassNamespace().'\\Observers\\'.$className;
 
                 if (! class_exists($observerClass)) {
                     continue;
@@ -841,7 +841,7 @@ class ModuleAutoDiscovery
 
                 // 使用正则只替换后缀，防止类名中间的 "Observer" 被误替换（如 ObserverObserver）
                 $modelName = preg_replace('/Observer$/', '', $className);
-                $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
+                $modelClass = $this->module->getClassNamespace().'\\Models\\'.$modelName;
 
                 if (class_exists($modelClass)) {
                     $this->discovered['observers'][] = [
@@ -893,7 +893,7 @@ class ModuleAutoDiscovery
                 }
 
                 $className = $file->getBasename('.php');
-                $policyClass = $this->module->getClassNamespace() . '\\Policies\\' . $className;
+                $policyClass = $this->module->getClassNamespace().'\\Policies\\'.$className;
 
                 if (! class_exists($policyClass)) {
                     continue;
@@ -901,7 +901,7 @@ class ModuleAutoDiscovery
 
                 // 使用正则只替换后缀，防止类名中间的 "Policy" 被误替换
                 $modelName = preg_replace('/Policy$/', '', $className);
-                $modelClass = $this->module->getClassNamespace() . '\\Models\\' . $modelName;
+                $modelClass = $this->module->getClassNamespace().'\\Models\\'.$modelName;
 
                 if (class_exists($modelClass)) {
                     $this->discovered['policies'][] = [
@@ -953,7 +953,7 @@ class ModuleAutoDiscovery
                 }
 
                 $className = $file->getBasename('.php');
-                $repoClass = $this->module->getClassNamespace() . '\\Repositories\\' . $className;
+                $repoClass = $this->module->getClassNamespace().'\\Repositories\\'.$className;
 
                 if (class_exists($repoClass)) {
                     $this->discovered['repositories'][$className] = $repoClass;
@@ -976,12 +976,11 @@ class ModuleAutoDiscovery
     {
         $dir = ModuleContext::getConfig('modules.cache.path', storage_path('framework/cache/modules'));
 
-        return rtrim((string) $dir, '/\\') . '/discovery.json';
+        return rtrim((string) $dir, '/\\').'/discovery.json';
     }
 
     /**
      * 从文件加载清单缓存（进程内仅加载一次）
-     *
      * 过期校验：清单写入时记录了各模块 Config 目录的 mtime 快照（__meta__ 键）。
      * 若任一个 Config 目录的 mtime 发生变化（例如修改了模块 Config 下的
      * providers/routes/aliases 等），说明清单已不能反映磁盘真实状态，直接丢弃
@@ -1027,7 +1026,7 @@ class ModuleAutoDiscovery
     /**
      * 判断清单中记录的组件目录 mtime 是否与磁盘当前一致
      *
-     * @param array<string, int|null> $stored
+     * @param  array<string, int|null>  $stored
      */
     protected static function configMtimesUnchanged(array $stored): bool
     {
@@ -1044,7 +1043,6 @@ class ModuleAutoDiscovery
 
     /**
      * 记录模块关键组件目录的 mtime 快照，供 loadManifestCache 做过期校验
-     *
      * 仅记录 Config 目录不够：组件文件（Providers/Events/Observers 等）的增删
      * 只改变所在目录的 mtime，不会改变 Config 目录 mtime。因此将各组件目录
      * 一并纳入快照，保证「新增/删除组件文件」后清单必然失效并回退实时扫描。
@@ -1115,7 +1113,6 @@ class ModuleAutoDiscovery
 
     /**
      * 预热单个模块的发现清单（用于 module:cache）
-     *
      * 仅扫描并持久化，不注册，避免在 CLI 中产生副作用。
      */
     public static function warm(ModuleInterface $module): void
@@ -1180,8 +1177,6 @@ class ModuleAutoDiscovery
 
     /**
      * 获取本次发现的缓存结果
-     *
-     * @return array
      */
     public function getCache(): array
     {
@@ -1203,8 +1198,6 @@ class ModuleAutoDiscovery
 
     /**
      * 获取发现过程中的日志
-     *
-     * @return array
      */
     public function getLogs(): array
     {
@@ -1213,8 +1206,6 @@ class ModuleAutoDiscovery
 
     /**
      * 获取所有模块累积注册到全局的命令列表
-     *
-     * @return array
      */
     public static function getGlobalCommands(): array
     {
@@ -1231,11 +1222,8 @@ class ModuleAutoDiscovery
 
     /**
      * 获取当前模块的发现结果摘要
-     *
      * 用于调试或展示各模块的 providers / routes / views / migrations 等
      * 自动发现数量统计。
-     *
-     * @return array
      */
     public function getDiscoverySummary(): array
     {
@@ -1258,14 +1246,13 @@ class ModuleAutoDiscovery
 
     /**
      * 通用 PHP 文件扫描器
-     *
      * 统一处理「遍历模块子目录中的 .php 文件」这一高度重复的模式：
      * 目录存在性检查、File::files 遍历、.php 扩展名过滤、异常捕获与日志
      * 均在此完成，调用方只需通过 $callback 关注单个文件的实际业务逻辑。
      *
-     * @param string   $path     待扫描的目录绝对路径
-     * @param callable $callback 处理单个文件的回调，签名为 (SplFileInfo $file): void
-     * @param string   $label    日志标签（用于错误定位）
+     * @param  string  $path  待扫描的目录绝对路径
+     * @param  callable  $callback  处理单个文件的回调，签名为 (SplFileInfo $file): void
+     * @param  string  $label  日志标签（用于错误定位）
      */
     protected function scanPhpFiles(string $path, callable $callback, string $label = 'scan'): void
     {

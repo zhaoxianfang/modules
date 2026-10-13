@@ -9,16 +9,13 @@ use zxf\Modules\Contracts\RepositoryInterface;
 
 /**
  * 模块上下文解析器
- *
  * 抽象框架依赖，提供统一的上下文解析接口。
  * 这是降低 Laravel 框架依赖的核心类——所有 helper 函数通过此类间接访问框架功能。
- *
  * 设计原则：
  * - 使用静态缓存减少重复调用
  * - 自动降级：框架功能不可用时返回安全默认值
  * - 零异常传播：所有方法内部捕获异常
  *
- * @package zxf\Modules
  * @version 4.0.0
  */
 class ModuleContext
@@ -35,7 +32,6 @@ class ModuleContext
 
     /**
      * 模块配置值静态缓存（{小写模块名}:{key} => value）
-     *
      * 存于此而非 helper 函数内的 static，是为了让 module_set_config 等写入
      * 操作能定位并清除对应模块的缓存项，避免读到过期值。
      *
@@ -46,8 +42,8 @@ class ModuleContext
     /**
      * 从模块配置缓存取值，未命中时通过加载器计算并缓存
      *
-     * @param string   $cacheKey 缓存键（{小写模块名}:{key}）
-     * @param \Closure $loader   未命中时的取值加载器
+     * @param  string  $cacheKey  缓存键（{小写模块名}:{key}）
+     * @param  \Closure  $loader  未命中时的取值加载器
      */
     public static function getModuleConfigCached(string $cacheKey, \Closure $loader): mixed
     {
@@ -61,16 +57,17 @@ class ModuleContext
     /**
      * 清除模块配置缓存
      *
-     * @param string|null $module 模块名（null 清除全部）
+     * @param  string|null  $module  模块名（null 清除全部）
      */
     public static function clearModuleConfigCache(?string $module = null): void
     {
         if ($module === null) {
             self::$moduleConfigCache = [];
+
             return;
         }
 
-        $prefix = strtolower($module) . ':';
+        $prefix = strtolower($module).':';
         foreach (array_keys(self::$moduleConfigCache) as $key) {
             if (str_starts_with($key, $prefix)) {
                 unset(self::$moduleConfigCache[$key]);
@@ -90,6 +87,7 @@ class ModuleContext
         if (function_exists('app')) {
             try {
                 self::$repository = app(RepositoryInterface::class);
+
                 return self::$repository;
             } catch (\Throwable) {
                 // 降级：返回空仓库
@@ -117,8 +115,8 @@ class ModuleContext
     /**
      * 获取配置值
      *
-     * @param string $key     配置键
-     * @param mixed  $default 默认值
+     * @param  string  $key  配置键
+     * @param  mixed  $default  默认值
      */
     public static function getConfig(string $key, mixed $default = null): mixed
     {
@@ -136,8 +134,8 @@ class ModuleContext
     /**
      * 设置配置值
      *
-     * @param string $key   配置键
-     * @param mixed  $value 配置值
+     * @param  string  $key  配置键
+     * @param  mixed  $value  配置值
      */
     public static function setConfig(string $key, mixed $value): void
     {
@@ -168,12 +166,10 @@ class ModuleContext
 
     /**
      * 检测当前模块名称
-     *
      * 自动识别当前代码或请求所在的模块上下文。
      *
-     * @param bool $toLower        是否返回小写蛇形命名
-     * @param bool $requestModule  路由检测模式
-     * @return string
+     * @param  bool  $toLower  是否返回小写蛇形命名
+     * @param  bool  $requestModule  路由检测模式
      */
     public static function detectModuleName(bool $toLower = false, bool $requestModule = true): string
     {
@@ -219,7 +215,7 @@ class ModuleContext
                 $class = explode('@', $action)[0];
                 $namespace = self::getConfig('modules.namespace', 'Modules');
 
-                if (preg_match('/^' . preg_quote($namespace, '/') . '\\\\([^\\\\]+)/', $class, $matches)) {
+                if (preg_match('/^'.preg_quote($namespace, '/').'\\\\([^\\\\]+)/', $class, $matches)) {
                     $result = $matches[1];
                 } elseif (preg_match('/^Modules\\\\([^\\\\]+)/', $class, $matches)) {
                     $result = $matches[1];
@@ -268,6 +264,7 @@ class ModuleContext
         }
 
         self::$cachedModuleName = $result;
+
         return self::applyFormat($result, $toLower);
     }
 
@@ -278,7 +275,7 @@ class ModuleContext
     {
         $configured = self::getConfig('modules.path', base_path('Modules'));
         $real = realpath($configured);
-        $modulePath = rtrim(str_replace('\\', '/', $real !== false ? $real : $configured), '/') . '/';
+        $modulePath = rtrim(str_replace('\\', '/', $real !== false ? $real : $configured), '/').'/';
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15);
         $result = 'App';
 

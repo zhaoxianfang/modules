@@ -4,33 +4,32 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Builder;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 数据抽样查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
- *
  * 提供高效的数据抽样功能：
  * - sample: 基于百分比的表级随机抽样（RAND() / random()）
  * - randomSample: 基于窗口函数的精确随机抽样（支持种子可重复）
  * - stratifiedSample: 分层抽样（按分层列分别随机取 N）
  * - systematicSample: 系统抽样（等距抽样，基于主键取模）
- *
  * 随机性统一经 {@see BaseMacro::randomFunction()} 生成（MySQL RAND() / PostgreSQL random()）；
  * 种子可重复的确定性随机序使用跨库通用的 md5(CONCAT(主键, 种子)) 实现，MySQL 与 PostgreSQL 行为一致。
  * 安全性：抽样列名 / 主键经白名单校验并由 grammar wrap；随机种子走参数绑定。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires MySQL 8.0+ / PostgreSQL 15+
+ *
+ * @scenario 数据抽样查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class TableSampleMacro extends BaseMacro
 {
-
     /**
      * 注册所有抽样宏
      *
-     * @return void
+     * @scenario 注册所有抽样宏
      */
     public static function register(): void
     {
@@ -42,34 +41,39 @@ class TableSampleMacro extends BaseMacro
 
     /**
      * 注册 TABLESAMPLE 方法
+     *
+     * @scenario 注册 TABLESAMPLE 方法
      */
-public static function registerTableSample(): void
+    public static function registerTableSample(): void
     {
         /**
          * TABLESAMPLE - 表级抽样
-         *
          * 从表中按指定百分比或行数随机抽取样本
          * MySQL 8.0+ 对 InnoDB 表的抽样有进一步优化
          *
-         * @param float $percentage 抽样百分比 (0-100)
-         * @param string $method 抽样方法: 'random'|'system'
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  float  $percentage  抽样百分比 (0-100)
+         * @param  string  $method  抽样方法: 'random'|'system'
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 随机抽取10%的数据进行分析
          * User::query()->sample(10)->get();
-         *
          * // 系统抽样5%的数据
          * Log::query()->sample(5, 'system')->get();
-         *
          * // 快速估算统计值（基于样本）
          * $avgAge = User::query()->sample(1)->avg('age');
+         *
+         * @scenario TABLESAMPLE - 表级抽样
          */
         static::define('sample', function (
             float $percentage,
             string $method = 'random'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
 
@@ -79,50 +83,49 @@ public static function registerTableSample(): void
             }
             $percentage = max(0, min(100, $percentage));
 
-            if ($method === 'system') {
-                // 系统抽样：使用主键的模运算
-                $mod = (int) ceil(100 / $percentage);
-                $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
-                $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
+            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
-                return $this->whereRaw("MOD({$wrappedPk}, ?) = 0", [$mod]);
-            }
+            [$sql, $bindings] = BaseMacro::tableSampleFragment($this, $wrappedPk, $percentage, $method);
 
-            // 随机抽样：使用数据库随机函数（MySQL RAND() / PostgreSQL random()）
-            $randomFn = BaseMacro::randomFunction($this);
-            return $this->whereRaw("{$randomFn} * 100 <= ?", [$percentage]);
+            return $this->whereRaw($sql, $bindings);
         });
     }
 
     /**
      * 注册随机抽样方法
+     *
+     * @scenario 注册随机抽样方法
      */
-public static function registerRandomSample(): void
+    public static function registerRandomSample(): void
     {
         /**
          * randomSample - 精确随机抽样（指定样本量）
-         *
          * 使用窗口函数实现精确的随机抽样，保证返回指定数量的记录
          *
-         * @param int $sampleSize 样本大小
-         * @param string|null $seed 随机种子（可重复抽样）
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  int  $sampleSize  样本大小
+         * @param  string|null  $seed  随机种子（可重复抽样）
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 精确抽取100条随机记录
          * User::query()->randomSample(100)->get();
-         *
          * // 使用种子保证可重复性
          * Survey::query()->randomSample(500, 'seed_2024')->get();
-         *
          * // 带条件的随机抽样
          * Order::query()->where('status', 'completed')->randomSample(50)->get();
+         *
+         * @scenario randomSample - 精确随机抽样（指定样本量）
          */
         static::define('randomSample', function (
             int $sampleSize,
             ?string $seed = null
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
             $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
@@ -133,7 +136,7 @@ public static function registerRandomSample(): void
                 $randExpr = "ROW_NUMBER() OVER (ORDER BY md5(CONCAT({$wrappedPk}, ?)))";
                 $randBindings = [$seed];
             } else {
-                $randExpr = "ROW_NUMBER() OVER (ORDER BY " . BaseMacro::randomFunction($this) . ")";
+                $randExpr = 'ROW_NUMBER() OVER (ORDER BY '.BaseMacro::randomFunction($this).')';
                 $randBindings = [];
             }
 
@@ -160,32 +163,38 @@ public static function registerRandomSample(): void
 
     /**
      * 注册分层抽样方法
+     *
+     * @scenario 注册分层抽样方法
      */
-public static function registerStratifiedSample(): void
+    public static function registerStratifiedSample(): void
     {
         /**
          * stratifiedSample - 分层抽样
-         *
          * 按指定列分层，每层抽取指定数量或比例的样本
          *
-         * @param string $stratumColumn 分层列
-         * @param int $samplesPerStratum 每层样本数
-         * @param string|null $seed 随机种子
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $stratumColumn  分层列
+         * @param  int  $samplesPerStratum  每层样本数
+         * @param  string|null  $seed  随机种子
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 按性别分层，每层抽取50人
          * User::query()->stratifiedSample('gender', 50)->get();
-         *
          * // 按地区分层抽样（保证各地区代表性）
          * Customer::query()->stratifiedSample('region', 100, 'audit_2024')->get();
+         *
+         * @scenario stratifiedSample - 分层抽样
          */
         static::define('stratifiedSample', function (
             string $stratumColumn,
             int $samplesPerStratum,
             ?string $seed = null
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
             $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
@@ -198,7 +207,7 @@ public static function registerStratifiedSample(): void
                 $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY md5(CONCAT({$wrappedPk}, ?)))";
                 $randBindings = [$seed];
             } else {
-                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY " . BaseMacro::randomFunction($this) . ")";
+                $randExpr = "ROW_NUMBER() OVER (PARTITION BY {$wrappedStratum} ORDER BY ".BaseMacro::randomFunction($this).')';
                 $randBindings = [];
             }
 
@@ -222,33 +231,38 @@ public static function registerStratifiedSample(): void
 
     /**
      * 注册系统抽样方法
+     *
+     * @scenario 注册系统抽样方法
      */
-public static function registerSystematicSample(): void
+    public static function registerSystematicSample(): void
     {
         /**
          * systematicSample - 系统抽样（等距抽样）
-         *
          * 按固定间隔抽取样本，适合有序数据
          *
-         * @param int $interval 抽样间隔
-         * @param int $startOffset 起始偏移量（默认随机）
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  int  $interval  抽样间隔
+         * @param  int  $startOffset  起始偏移量（默认随机）
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 每隔10条抽取1条
          * Log::query()->systematicSample(10)->get();
-         *
          * // 从第5条开始，每隔20条抽取
          * Order::query()->systematicSample(20, 5)->get();
-         *
          * // 按时间顺序的系统抽样
          * Event::query()->orderBy('created_at')->systematicSample(100)->get();
+         *
+         * @scenario systematicSample - 系统抽样（等距抽样）
          */
         static::define('systematicSample', function (
             int $interval,
             ?int $startOffset = null
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $model = BaseMacro::modelOf($this);
 
             // 抽样间隔必须大于 0，否则取模运算会除零、rand 区间非法

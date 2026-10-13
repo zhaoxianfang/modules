@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -12,146 +13,273 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 递归查询宏类 - 树形结构数据处理的完整解决方案
- *
  * 提供 MySQL 8.0+ / PostgreSQL 15+ 通用 WITH RECURSIVE 递归 CTE 的封装，支持：
  * - 上下级递归查询（withAllChildren/withAllParents）
  * - 路径追踪（withBreadcrumbs/withFullPath）
  * - 层级关系判断（isParentOf/isChildOf）
  * - 树形构建（withTree/withRoot/withLeafNodes）
- *
  * 安全性：所有表名 / 列名 / 别名均经白名单校验并由 grammar wrap（适配 MySQL 反引号
  * 与 PostgreSQL 双引号），字面值走参数绑定；递归 CTE 为双方言标准语法（WITH RECURSIVE）。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+ / PostgreSQL 15+
+ *
+ * @scenario 递归查询宏类 - 树形结构数据处理的完整解决方案
  */
 class WithRecursiveMacro extends BaseMacro
 {
-
-    /** @var mixed 根节点值，默认0，可设为null表示根节点parent_id为NULL */
+    /**
+     * @var mixed 根节点值，默认0，可设为null表示根节点parent_id为NULL
+     *
+     * @scenario 本类/成员说明。
+     */
     protected static mixed $rootValue = 0;
 
-    /** @var int 默认最大递归深度，防止无限递归 */
+    /**
+     * @var int 默认最大递归深度，防止无限递归
+     *
+     * @scenario 本类/成员说明。
+     */
     protected static int $defaultMaxDepth = 100;
 
     /**
      * 设置根节点值
-     * @param mixed $value 根节点标识值，null表示使用IS NULL判断
+     *
+     * @param  mixed  $value  根节点标识值，null表示使用IS NULL判断
+     *
+     * @scenario 设置根节点值
      */
     public static function setRootValue(mixed $value): void
     {
         WithRecursiveMacro::$rootValue = $value;
     }
 
-    /** 获取当前根节点值 */
+    /**
+     *  获取当前根节点值
+     *
+     * @scenario 获取当前根节点值
+     */
     public static function getRootValue(): mixed
     {
         return WithRecursiveMacro::$rootValue;
     }
 
-    /** 设置默认最大递归深度 */
+    /**
+     *  设置默认最大递归深度
+     *
+     * @scenario 设置默认最大递归深度
+     */
     public static function setDefaultMaxDepth(int $depth): void
     {
         WithRecursiveMacro::$defaultMaxDepth = max(1, $depth);
     }
 
-    /** 获取默认最大递归深度 */
+    /**
+     *  获取默认最大递归深度
+     *
+     * @scenario 获取默认最大递归深度
+     */
     public static function getDefaultMaxDepth(): int
     {
         return WithRecursiveMacro::$defaultMaxDepth;
     }
 
-    /** 生成唯一的WITH临时表名 */
-public static function generateWithTableName(): string
+    /**
+     *  生成唯一的WITH临时表名
+     *
+     * @scenario 生成唯一的WITH临时表名
+     */
+    public static function generateWithTableName(): string
     {
-        return 'recursive_' . Str::random(8);
+        return 'recursive_'.Str::random(8);
     }
 
     /**
      * 注册所有递归查询宏
      * 分类：1.上下级递归 2.路径导航 3.关系判断 4.树形操作 5.高级查询
+     *
+     * @scenario 注册所有递归查询宏
      */
     public static function register(): void
     {
         // ========== 1. 上下级递归查询 ==========
 
-        /** 获取所有后代子节点（向下递归） */
-        static::define('withAllChildren', function (int $id, string $pidColumn = 'pid', int $maxDepth = 100, bool $includeSelf = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取所有后代子节点（向下递归）
+         *
+         * @example
+         * Model::query()->withAllChildren('col', 'val')->get();
+         *
+         * @scenario 获取所有后代子节点（向下递归）
+         */
+        static::define('withAllChildren', function (int $id, string $pidColumn = 'pid', int $maxDepth = 100, bool $includeSelf = false): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::buildRecursiveQuery($this, $id, $pidColumn, 'children', $maxDepth, $includeSelf);
         });
 
-        /** 获取所有祖先父节点（向上递归） */
-        static::define('withAllParents', function (int $id, string $pidColumn = 'pid', int $maxDepth = 100, bool $includeSelf = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取所有祖先父节点（向上递归）
+         *
+         * @example
+         * Model::query()->withAllParents('col', 'val')->get();
+         *
+         * @scenario 获取所有祖先父节点（向上递归）
+         */
+        static::define('withAllParents', function (int $id, string $pidColumn = 'pid', int $maxDepth = 100, bool $includeSelf = false): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::buildRecursiveQuery($this, $id, $pidColumn, 'parents', $maxDepth, $includeSelf);
         });
 
-        /** 获取第N级父节点（0=自身, 1=父节点, 2=祖父） */
-        static::define('withNthParent', function (int $id, int $n, string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取第N级父节点（0=自身, 1=父节点, 2=祖父）
+         *
+         * @example
+         * Model::query()->withNthParent('col', 'val')->get();
+         *
+         * @scenario 获取第N级父节点（0=自身, 1=父节点, 2=祖父）
+         */
+        static::define('withNthParent', function (int $id, int $n, string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findNthLevelRelation($this, $id, $pidColumn, 'parents', $n);
         });
 
-        /** 获取第N级子节点（1=子节点, 2=孙节点） */
-        static::define('withNthChildren', function (int $id, int $n, string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取第N级子节点（1=子节点, 2=孙节点）
+         *
+         * @example
+         * Model::query()->withNthChildren('col', 'val')->get();
+         *
+         * @scenario 获取第N级子节点（1=子节点, 2=孙节点）
+         */
+        static::define('withNthChildren', function (int $id, int $n, string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findNthLevelRelation($this, $id, $pidColumn, 'children', $n);
         });
 
         // ========== 2. 路径与导航 ==========
 
-        /** 获取完整路径信息（返回absolute_path, path_ids, depth字段） */
-        static::define('withFullPath', function (array $ids = [], array $conditions = [], string $pidColumn = 'pid', string $nameColumn = 'name', string $pathSeparator = ' > '): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取完整路径信息（返回absolute_path, path_ids, depth字段）
+         *
+         * @example
+         * Model::query()->withFullPath('col', 'val')->get();
+         *
+         * @scenario 获取完整路径信息（返回absolute_path, path_ids, depth字段）
+         */
+        static::define('withFullPath', function (array $ids = [], array $conditions = [], string $pidColumn = 'pid', string $nameColumn = 'name', string $pathSeparator = ' > '): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findNodePaths($this, $ids, $conditions, $pidColumn, $nameColumn, $pathSeparator);
         });
 
-        /** 获取面包屑路径（从根到当前节点，按depth升序） */
-        static::define('withBreadcrumbs', function (int $id, string $pidColumn = 'pid', string $nameColumn = 'name'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取面包屑路径（从根到当前节点，按depth升序）
+         *
+         * @example
+         * Model::query()->withBreadcrumbs('col', 'val')->get();
+         *
+         * @scenario 获取面包屑路径（从根到当前节点，按depth升序）
+         */
+        static::define('withBreadcrumbs', function (int $id, string $pidColumn = 'pid', string $nameColumn = 'name'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findBreadcrumbs($this, $id, $pidColumn, $nameColumn);
         });
 
-        /** 获取节点到根节点的路径长度 */
-        static::define('withPathLength', function (int $id, string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取节点到根节点的路径长度
+         *
+         * @example
+         * Model::query()->withPathLength('col', 'val')->get();
+         *
+         * @scenario 获取节点到根节点的路径长度
+         */
+        static::define('withPathLength', function (int $id, string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findPathLength($this, $id, $pidColumn);
         });
 
         // ========== 3. 关系判断 ==========
 
-        /** 判断parentId是否为childId的祖先节点（strict=true只检查直接父节点） */
+        /**
+         *  判断parentId是否为childId的祖先节点（strict=true只检查直接父节点）
+         *
+         * @example
+         * Model::query()->isParentOf('col', 'val')->get();
+         *
+         * @scenario 判断parentId是否为childId的祖先节点（strict=true只检查直接父节点）
+         */
         static::define('isParentOf', function (int $parentId, int $childId, string $pidColumn = 'pid', bool $strict = false): bool {
             return WithRecursiveMacro::checkIsParent($this, $parentId, $childId, $pidColumn, $strict);
         });
 
-        /** 判断childId是否为parentId的后代节点 */
+        /**
+         *  判断childId是否为parentId的后代节点
+         *
+         * @example
+         * Model::query()->isChildOf('col', 'val')->get();
+         *
+         * @scenario 判断childId是否为parentId的后代节点
+         */
         static::define('isChildOf', function (int $childId, int $parentId, string $pidColumn = 'pid', bool $strict = false): bool {
             return WithRecursiveMacro::checkIsParent($this, $parentId, $childId, $pidColumn, $strict);
         });
 
-        /** 查找两个节点的最近公共祖先（LCA） */
-        static::define('withNearestAncestor', function (int $id1, int $id2, string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  查找两个节点的最近公共祖先（LCA）
+         *
+         * @example
+         * Model::query()->withNearestAncestor('col', 'val')->get();
+         *
+         * @scenario 查找两个节点的最近公共祖先（LCA）
+         */
+        static::define('withNearestAncestor', function (int $id1, int $id2, string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findNearestAncestor($this, $id1, $id2, $pidColumn);
         });
 
         // ========== 4. 树形结构操作 ==========
 
-        /** 获取同级节点（兄弟节点），includeSelf控制是否包含自身 */
-        static::define('withSiblings', function (int $id, string $pidColumn = 'pid', bool $includeSelf = false): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取同级节点（兄弟节点），includeSelf控制是否包含自身
+         *
+         * @example
+         * Model::query()->withSiblings('col', 'val')->get();
+         *
+         * @scenario 获取同级节点（兄弟节点），includeSelf控制是否包含自身
+         */
+        static::define('withSiblings', function (int $id, string $pidColumn = 'pid', bool $includeSelf = false): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::findSiblings($this, $id, $pidColumn, $includeSelf);
         });
 
-        /** 构建完整树形结构，返回包含tree_path, path_ids, depth字段 */
-        static::define('withTree', function (?int $pid = null, string $pidColumn = 'pid', string $nameColumn = 'name', int $maxDepth = 100, string $pathSeparator = ' > '): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  构建完整树形结构，返回包含tree_path, path_ids, depth字段
+         *
+         * @example
+         * Model::query()->withTree('col', 'val')->get();
+         *
+         * @scenario 构建完整树形结构，返回包含tree_path, path_ids, depth字段
+         */
+        static::define('withTree', function (?int $pid = null, string $pidColumn = 'pid', string $nameColumn = 'name', int $maxDepth = 100, string $pathSeparator = ' > '): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::buildTreeQuery($this, $pid, $pidColumn, $nameColumn, $maxDepth, $pathSeparator);
         });
 
-        /** 获取所有根节点（parent_id等于rootValue或为null） */
-        static::define('withRoot', function (string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取所有根节点（parent_id等于rootValue或为null）
+         *
+         * @example
+         * Model::query()->withRoot('col', 'val')->get();
+         *
+         * @scenario 获取所有根节点（parent_id等于rootValue或为null）
+         */
+        static::define('withRoot', function (string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             $rootValue = WithRecursiveMacro::getRootValue();
+
             return $rootValue === null
                 ? $this->whereNull($pidColumn)
                 : $this->where($pidColumn, $rootValue);
         });
 
-        /** 获取所有叶子节点（没有子节点的节点） */
-        static::define('withLeafNodes', function (string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取所有叶子节点（没有子节点的节点）
+         *
+         * @example
+         * Model::query()->withLeafNodes('col', 'val')->get();
+         *
+         * @scenario 获取所有叶子节点（没有子节点的节点）
+         */
+        static::define('withLeafNodes', function (string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
             $primaryKey = $model->getKeyName();
@@ -163,45 +291,66 @@ public static function generateWithTableName(): string
             });
         });
 
-        /** 获取指定节点的后代节点总数（不含自身） */
-        static::define('withDescendantsCount', function (int $id, string $pidColumn = 'pid'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  获取指定节点的后代节点总数（不含自身）
+         *
+         * @example
+         * Model::query()->withDescendantsCount('col', 'val')->get();
+         *
+         * @scenario 获取指定节点的后代节点总数（不含自身）
+         */
+        static::define('withDescendantsCount', function (int $id, string $pidColumn = 'pid'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::getDescendantsCount($this, $id, $pidColumn);
         });
 
         // ========== 5. 高级递归查询 ==========
 
-        /** 通用递归CTE查询，支持自定义基础查询和递归查询回调 */
-        static::define('recursiveQuery', function (callable $baseQuery, callable $recursiveQuery, array $columns = ['*'], int $maxDepth = 100, string $depthColumn = 'depth'): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  通用递归CTE查询，支持自定义基础查询和递归查询回调
+         *
+         * @example
+         * Model::query()->recursiveQuery('col', 'val')->get();
+         *
+         * @scenario 通用递归CTE查询，支持自定义基础查询和递归查询回调
+         */
+        static::define('recursiveQuery', function (callable $baseQuery, callable $recursiveQuery, array $columns = ['*'], int $maxDepth = 100, string $depthColumn = 'depth'): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::buildGenericRecursiveQuery($this, $baseQuery, $recursiveQuery, $columns, $maxDepth, $depthColumn);
         });
 
-        /** 重置递归查询状态 */
-        static::define('resetRecursive', function (): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+        /**
+         *  重置递归查询状态
+         *
+         * @example
+         * Model::query()->resetRecursive('col', 'val')->get();
+         *
+         * @scenario 重置递归查询状态
+         */
+        static::define('resetRecursive', function (): Builder|\Illuminate\Database\Query\Builder {
             return WithRecursiveMacro::resetRecursiveQuery($this);
         });
     }
 
     /**
      * 构建通用递归查询
-     *
      * 支持向上（parents）和向下（children）两个方向的递归查询
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query         查询构建器实例
-     * @param int     $id            起始节点ID
-     * @param string  $pidColumn     父ID字段名
-     * @param string  $direction     递归方向：'children'=向下，'parents'=向上
-     * @param int     $maxDepth      最大递归深度
-     * @param bool    $includeSelf   是否包含起始节点
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id  起始节点ID
+     * @param  string  $pidColumn  父ID字段名
+     * @param  string  $direction  递归方向：'children'=向下，'parents'=向上
+     * @param  int  $maxDepth  最大递归深度
+     * @param  bool  $includeSelf  是否包含起始节点
+     *
+     * @scenario 构建通用递归查询
      */
     public static function buildRecursiveQuery(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id,
         string $pidColumn,
         string $direction,
         int $maxDepth,
         bool $includeSelf = false
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -231,7 +380,7 @@ public static function generateWithTableName(): string
             JOIN {$wWith} r ON {$joinCondition}
             WHERE r.depth < ?
         )
-        SELECT * FROM {$wWith}" . ($includeSelf ? '' : " WHERE {$wPk} != ?");
+        SELECT * FROM {$wWith}".($includeSelf ? '' : " WHERE {$wPk} != ?");
 
         // 绑定参数
         $bindings = $includeSelf ? [$id, $maxDepth] : [$id, $maxDepth, $id];
@@ -248,20 +397,21 @@ public static function generateWithTableName(): string
     /**
      * 查找第N层级的关系节点
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query      查询构建器实例
-     * @param int     $id         起始节点ID
-     * @param string  $pidColumn  父ID字段名
-     * @param string  $direction  递归方向：'children' 或 'parents'
-     * @param int     $n          目标层级（0=自身，1=直接父/子，2=祖父/孙）
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id  起始节点ID
+     * @param  string  $pidColumn  父ID字段名
+     * @param  string  $direction  递归方向：'children' 或 'parents'
+     * @param  int  $n  目标层级（0=自身，1=直接父/子，2=祖父/孙）
+     *
+     * @scenario 查找第N层级的关系节点
      */
     public static function findNthLevelRelation(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id,
         string $pidColumn,
         string $direction,
         int $n
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -294,25 +444,25 @@ public static function generateWithTableName(): string
 
     /**
      * 查找节点路径信息
-     *
      * 返回包含absolute_path（名称路径）、path_ids（ID链）、depth（深度）字段的结果
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query           查询构建器实例
-     * @param array   $ids             目标节点ID数组
-     * @param array   $conditions      额外筛选条件（如 ['status' => 1]）
-     * @param string  $pidColumn       父ID字段名
-     * @param string  $nameColumn      名称字段名
-     * @param string  $pathSeparator   路径分隔符
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  array  $ids  目标节点ID数组
+     * @param  array  $conditions  额外筛选条件（如 ['status' => 1]）
+     * @param  string  $pidColumn  父ID字段名
+     * @param  string  $nameColumn  名称字段名
+     * @param  string  $pathSeparator  路径分隔符
+     *
+     * @scenario 查找节点路径信息
      */
     public static function findNodePaths(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         array $ids = [],
         array $conditions = [],
         string $pidColumn = 'pid',
         string $nameColumn = 'name',
         string $pathSeparator = ' > '
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -332,7 +482,7 @@ public static function generateWithTableName(): string
         $whereConditions = '';
         $bindings = [];
 
-        if (!empty($conditions)) {
+        if (! empty($conditions)) {
             $whereParts = [];
             $tempBindings = [];
             foreach ($conditions as $key => $value) {
@@ -347,7 +497,7 @@ public static function generateWithTableName(): string
 
         // 构建ID筛选条件
         $idCondition = '';
-        if (!empty($ids)) {
+        if (! empty($ids)) {
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $idCondition = "WHERE {$wWith}.{$wPk} IN ({$placeholders})";
             $bindings = array_merge($bindings, $ids);
@@ -364,8 +514,8 @@ public static function generateWithTableName(): string
                    CAST({$wTable}.{$wPk} AS {$castPk}) AS path_ids,
                    0 AS depth
             FROM {$wTable}
-            WHERE ({$rootCondition})" .
-            (!empty($whereConditions) ? " AND {$whereConditions}" : '') . "
+            WHERE ({$rootCondition})".
+            (! empty($whereConditions) ? " AND {$whereConditions}" : '')."
 
             UNION ALL
 
@@ -375,8 +525,8 @@ public static function generateWithTableName(): string
                    CONCAT(r.path_ids, ',', t.{$wPk}) AS path_ids,
                    r.depth + 1
             FROM {$wTable} t
-            JOIN {$wWith} r ON t.{$wPid} = r.{$wPk}" .
-            (!empty($whereConditions) ? ' WHERE ' . str_replace("{$wTable}.", 't.', $whereConditions) : '') . "
+            JOIN {$wWith} r ON t.{$wPid} = r.{$wPk}".
+            (! empty($whereConditions) ? ' WHERE '.str_replace("{$wTable}.", 't.', $whereConditions) : '')."
         )
         SELECT {$wWith}.* FROM {$wWith} {$idCondition}
         ORDER BY path_ids";
@@ -384,7 +534,7 @@ public static function generateWithTableName(): string
         // 复用原查询对象（保留调用方条件），仅替换数据源为递归 CTE 派生表
         BaseMacro::queryOf($query)->from(new Expression("({$recursiveQuery}) as {$wWith}"));
 
-        if (!empty($bindings)) {
+        if (! empty($bindings)) {
             $query->addBinding($bindings, 'from');
         }
 
@@ -394,18 +544,19 @@ public static function generateWithTableName(): string
     /**
      * 查找面包屑路径（从根节点到当前节点的祖先链）
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query       查询构建器实例
-     * @param int     $id          目标节点ID
-     * @param string  $pidColumn   父ID字段名
-     * @param string  $nameColumn  名称字段名
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id  目标节点ID
+     * @param  string  $pidColumn  父ID字段名
+     * @param  string  $nameColumn  名称字段名
+     *
+     * @scenario 查找面包屑路径（从根节点到当前节点的祖先链）
      */
     public static function findBreadcrumbs(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id,
         string $pidColumn = 'pid',
         string $nameColumn = 'name'
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -435,16 +586,17 @@ public static function generateWithTableName(): string
     /**
      * 查找路径长度（节点到根节点的深度）
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query      查询构建器实例
-     * @param int     $id         目标节点ID
-     * @param string  $pidColumn  父ID字段名
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id  目标节点ID
+     * @param  string  $pidColumn  父ID字段名
+     *
+     * @scenario 查找路径长度（节点到根节点的深度）
      */
     public static function findPathLength(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id,
         string $pidColumn = 'pid'
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -473,15 +625,16 @@ public static function generateWithTableName(): string
     /**
      * 检查是否为祖先节点
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query      查询构建器实例
-     * @param int     $parentId   可能的祖先节点ID
-     * @param int     $childId    目标节点ID
-     * @param string  $pidColumn  父ID字段名
-     * @param bool    $strict     是否严格模式（只检查直接父节点）
-     * @return bool
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $parentId  可能的祖先节点ID
+     * @param  int  $childId  目标节点ID
+     * @param  string  $pidColumn  父ID字段名
+     * @param  bool  $strict  是否严格模式（只检查直接父节点）
+     *
+     * @scenario 检查是否为祖先节点
      */
     public static function checkIsParent(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $parentId,
         int $childId,
         string $pidColumn,
@@ -500,6 +653,7 @@ public static function generateWithTableName(): string
                 "SELECT {$wPid} FROM {$wTable} WHERE {$wPk} = ?",
                 [$childId]
             );
+
             return $result && ($result->{$pidColumn} == $parentId);
         }
 
@@ -521,21 +675,21 @@ public static function generateWithTableName(): string
 
     /**
      * 查找最近公共祖先（LCA）
-     *
      * 使用两个CTE分别向上查找两个节点的祖先链，然后取交集按距离排序
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query      查询构建器实例
-     * @param int     $id1        第一个节点ID
-     * @param int     $id2        第二个节点ID
-     * @param string  $pidColumn  父ID字段名
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id1  第一个节点ID
+     * @param  int  $id2  第二个节点ID
+     * @param  string  $pidColumn  父ID字段名
+     *
+     * @scenario 查找最近公共祖先（LCA）
      */
     public static function findNearestAncestor(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id1,
         int $id2,
         string $pidColumn = 'pid'
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -574,18 +728,19 @@ public static function generateWithTableName(): string
     /**
      * 查找同级节点（兄弟节点）
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query        查询构建器实例
-     * @param int     $id           目标节点ID
-     * @param string  $pidColumn    父ID字段名
-     * @param bool    $includeSelf  是否包含自身
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id  目标节点ID
+     * @param  string  $pidColumn  父ID字段名
+     * @param  bool  $includeSelf  是否包含自身
+     *
+     * @scenario 查找同级节点（兄弟节点）
      */
     public static function findSiblings(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id,
         string $pidColumn,
         bool $includeSelf = false
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -599,19 +754,19 @@ public static function generateWithTableName(): string
                 $sub->select($pidColumn)->from($table)->where($primaryKey, $id);
             })
             // 方式2：或者两者都是根节点（parent_id为null）
-            ->orWhere(function ($q2) use ($pidColumn, $table, $id, $primaryKey) {
-                $q2->whereNull($pidColumn)
-                    ->whereExists(function ($sub) use ($id, $primaryKey, $pidColumn, $table) {
-                        $sub->select(DB::raw(1))
-                            ->from($table . ' as t2')
-                            ->whereColumn('t2.' . $primaryKey, $table . '.' . $primaryKey)
-                            ->where('t2.' . $primaryKey, $id)
-                            ->whereNull('t2.' . $pidColumn);
-                    });
-            });
+                ->orWhere(function ($q2) use ($pidColumn, $table, $id, $primaryKey) {
+                    $q2->whereNull($pidColumn)
+                        ->whereExists(function ($sub) use ($id, $primaryKey, $pidColumn, $table) {
+                            $sub->select(DB::raw(1))
+                                ->from($table.' as t2')
+                                ->whereColumn('t2.'.$primaryKey, $table.'.'.$primaryKey)
+                                ->where('t2.'.$primaryKey, $id)
+                                ->whereNull('t2.'.$pidColumn);
+                        });
+                });
         });
 
-        if (!$includeSelf) {
+        if (! $includeSelf) {
             $query->where($primaryKey, '!=', $id);
         }
 
@@ -621,22 +776,23 @@ public static function generateWithTableName(): string
     /**
      * 构建树形结构查询
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder  $query           查询构建器实例
-     * @param int|null $pid             起始父ID，null表示从根节点开始
-     * @param string   $pidColumn       父ID字段名
-     * @param string   $nameColumn      名称字段名
-     * @param int      $maxDepth        最大递归深度
-     * @param string   $pathSeparator   路径分隔符
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int|null  $pid  起始父ID，null表示从根节点开始
+     * @param  string  $pidColumn  父ID字段名
+     * @param  string  $nameColumn  名称字段名
+     * @param  int  $maxDepth  最大递归深度
+     * @param  string  $pathSeparator  路径分隔符
+     *
+     * @scenario 构建树形结构查询
      */
     public static function buildTreeQuery(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         ?int $pid,
         string $pidColumn,
         string $nameColumn,
         int $maxDepth,
         string $pathSeparator = ' > '
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -693,16 +849,17 @@ public static function generateWithTableName(): string
     /**
      * 获取后代节点数量
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query      查询构建器实例
-     * @param int     $id         目标节点ID
-     * @param string  $pidColumn  父ID字段名
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  int  $id  目标节点ID
+     * @param  string  $pidColumn  父ID字段名
+     *
+     * @scenario 获取后代节点数量
      */
     public static function getDescendantsCount(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         int $id,
         string $pidColumn = 'pid'
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $primaryKey = BaseMacro::keyName($query);
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
@@ -732,23 +889,25 @@ public static function generateWithTableName(): string
     /**
      * 构建通用递归查询（高级用法）
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder  $query           查询构建器实例
-     * @param callable $baseQuery       基础查询回调，返回SQL字符串
-     * @param callable $recursiveQuery  递归查询回调，返回SQL字符串
-     * @param array    $columns         查询列
-     * @param int      $maxDepth        最大递归深度
-     * @param string   $depthColumn     深度字段名
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     * @param  callable  $baseQuery  基础查询回调，返回SQL字符串
+     * @param  callable  $recursiveQuery  递归查询回调，返回SQL字符串
+     * @param  array  $columns  查询列
+     * @param  int  $maxDepth  最大递归深度
+     * @param  string  $depthColumn  深度字段名
+     *
      * @throws InvalidArgumentException 当回调无效时抛出
+     *
+     * @scenario 构建通用递归查询（高级用法）
      */
     public static function buildGenericRecursiveQuery(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|\Illuminate\Database\Query\Builder $query,
         callable $baseQuery,
         callable $recursiveQuery,
         array $columns = ['*'],
         int $maxDepth = 100,
         string $depthColumn = 'depth'
-    ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
+    ): Builder|\Illuminate\Database\Query\Builder {
         $table = BaseMacro::resolveTable($query);
         $depthColumn = BaseMacro::assertValidIdentifier($depthColumn, 'depthColumn');
         $withTable = WithRecursiveMacro::generateWithTableName();
@@ -756,7 +915,7 @@ public static function generateWithTableName(): string
         $wDepth = BaseMacro::wrapIdentifier($query, $depthColumn);
 
         // 验证回调
-        if (!is_callable($baseQuery) || !is_callable($recursiveQuery)) {
+        if (! is_callable($baseQuery) || ! is_callable($recursiveQuery)) {
             throw new InvalidArgumentException('基础查询和递归查询必须是可调用的回调函数');
         }
 
@@ -773,16 +932,16 @@ public static function generateWithTableName(): string
         $baseQuerySql = call_user_func($baseQuery, $query, $withTable);
         $recursiveQuerySql = call_user_func($recursiveQuery, $query, $withTable);
 
-        if (!is_string($baseQuerySql) || !is_string($recursiveQuerySql)) {
+        if (! is_string($baseQuerySql) || ! is_string($recursiveQuerySql)) {
             throw new InvalidArgumentException('回调函数必须返回SQL字符串');
         }
 
         // 自动添加深度字段
-        if (!Str::contains($baseQuerySql, "AS {$wDepth}") && !Str::contains($baseQuerySql, "AS {$depthColumn}")) {
+        if (! Str::contains($baseQuerySql, "AS {$wDepth}") && ! Str::contains($baseQuerySql, "AS {$depthColumn}")) {
             $baseQuerySql = rtrim($baseQuerySql, ';');
             $baseQuerySql .= ", 0 AS {$wDepth}";
         }
-        if (!Str::contains($recursiveQuerySql, "AS {$wDepth}") && !Str::contains($recursiveQuerySql, "AS {$depthColumn}")) {
+        if (! Str::contains($recursiveQuerySql, "AS {$wDepth}") && ! Str::contains($recursiveQuerySql, "AS {$depthColumn}")) {
             $recursiveQuerySql = rtrim($recursiveQuerySql, ';');
             $recursiveQuerySql .= ", r.{$wDepth} + 1 AS {$wDepth}";
         }
@@ -806,13 +965,13 @@ public static function generateWithTableName(): string
 
     /**
      * 重置递归查询状态
-     *
      * 清除所有递归相关的查询状态和绑定
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query  查询构建器实例
-     * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例
+     *
+     * @scenario 重置递归查询状态
      */
-    public static function resetRecursiveQuery(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+    public static function resetRecursiveQuery(Builder|\Illuminate\Database\Query\Builder $query): Builder|\Illuminate\Database\Query\Builder
     {
         $model = BaseMacro::modelOf($query);
         $newQuery = $model->newQuery();
@@ -835,16 +994,17 @@ public static function generateWithTableName(): string
 
     /**
      * 构建根节点条件
-     *
      * 支持NULL值根节点和特定值根节点两种情况
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query         查询构建器实例（用于 grammar wrap 标识符）
-     * @param string  $table         表名
-     * @param string  $pidColumn     父ID字段名
-     * @param string  $primaryKey    主键字段名
+     * @param  Builder|\Illuminate\Database\Query\Builder  $query  查询构建器实例（用于 grammar wrap 标识符）
+     * @param  string  $table  表名
+     * @param  string  $pidColumn  父ID字段名
+     * @param  string  $primaryKey  主键字段名
      * @return string SQL条件字符串
+     *
+     * @scenario 构建根节点条件
      */
-public static function buildRootCondition(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query, string $table, string $pidColumn, string $primaryKey): string
+    public static function buildRootCondition(Builder|\Illuminate\Database\Query\Builder $query, string $table, string $pidColumn, string $primaryKey): string
     {
         $pidColumn = BaseMacro::assertValidIdentifier($pidColumn, 'pidColumn');
         $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
@@ -861,8 +1021,7 @@ public static function buildRootCondition(\Illuminate\Database\Eloquent\Builder|
         // rootValue为特定值时，根节点是parent_id等于该值的节点
         return sprintf(
             "{$wPid} = %s OR NOT EXISTS (SELECT 1 FROM {$wTable} AS parent WHERE parent.{$wPk} = {$wTable}.{$wPid})",
-            is_int($rootValue) ? $rootValue : "'" . str_replace("'", "''", (string) $rootValue) . "'"
+            is_int($rootValue) ? $rootValue : "'".str_replace("'", "''", (string) $rootValue)."'"
         );
     }
-
 }

@@ -8,10 +8,8 @@ use zxf\Modules\Exceptions\ModuleNotFoundException;
 
 /**
  * 模块仓库接口
- *
  * 定义模块仓库的核心契约。
  *
- * @package zxf\Modules
  * @version 4.0.0
  */
 interface RepositoryInterface
@@ -40,7 +38,7 @@ interface RepositoryInterface
     /**
      * 查找模块
      *
-     * @param string $name 模块名称或别名
+     * @param  string  $name  模块名称或别名
      */
     public function find(string $name): ?ModuleInterface;
 
@@ -103,8 +101,8 @@ interface RepositoryInterface
     /**
      * 获取模块路径
      *
-     * @param string      $name 模块名称
-     * @param string|null $path 子路径
+     * @param  string  $name  模块名称
+     * @param  string|null  $path  子路径
      */
     public function getModulePath(string $name, ?string $path = null): string;
 
@@ -115,7 +113,6 @@ interface RepositoryInterface
 
     /**
      * 清除仓库级模块注册清单缓存并强制下次访问重新扫描磁盘
-     *
      * 与 clearCache() 的区别：额外重置「已扫描」标记与内存中的模块注册表，
      * 适用于模块被创建/删除后需要立即与磁盘状态保持一致的场景。
      */

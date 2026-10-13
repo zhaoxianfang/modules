@@ -8,6 +8,8 @@ class WhereHasNotIn extends WhereHasIn
 {
     /**
      * @var string
+     *
+     * @scenario 本类/成员说明。
      */
     protected $method = 'whereNotIn';
 }

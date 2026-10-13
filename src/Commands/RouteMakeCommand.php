@@ -6,12 +6,10 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Str;
 use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建路由文件命令
- *
  * 在指定模块中创建路由文件
  */
 class RouteMakeCommand extends AbstractMakeCommand
@@ -36,8 +34,6 @@ class RouteMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -53,11 +49,11 @@ class RouteMakeCommand extends AbstractMakeCommand
 
         // 类型不再限制，允许任意自定义类型
 
-        $routePath = $this->targetPath('Routes/' . $routeName . '.php');
+        $routePath = $this->targetPath('Routes/'.$routeName.'.php');
 
         if (File::exists($routePath) && ! $force) {
             $this->error("模块 [{$moduleName}] 中已存在路由文件 [{$routeName}]");
-            $this->line("提示：使用 --force 选项覆盖已存在的文件");
+            $this->line('提示：使用 --force 选项覆盖已存在的文件');
 
             return Command::FAILURE;
         }
@@ -72,11 +68,12 @@ class RouteMakeCommand extends AbstractMakeCommand
         // 安全校验文件名（防止路径遍历）
         if (! preg_match('/^[a-zA-Z0-9_\/\-]+\.stub$/', $stubFile)) {
             $this->error("路由类型格式不合法: [{$type}]");
+
             return Command::FAILURE;
         }
 
         // 检查是否有对应的 stub
-        $stubPath = __DIR__ . '/stubs/' . $stubFile;
+        $stubPath = __DIR__.'/stubs/'.$stubFile;
         if (! file_exists($stubPath)) {
             // 使用通用模板
             $content = $this->getGenericRouteContent($moduleName, $routeName, $type);
@@ -88,7 +85,7 @@ class RouteMakeCommand extends AbstractMakeCommand
                 $stubGenerator = new StubGenerator($moduleName);
                 $content = $this->applyReplacements($content, $stubGenerator->getReplacements());
             } catch (\Throwable $e) {
-                $this->error("读取 stub 文件失败: " . $e->getMessage());
+                $this->error('读取 stub 文件失败: '.$e->getMessage());
                 // 回退到通用模板
                 $content = $this->getGenericRouteContent($moduleName, $routeName, $type);
             }
@@ -115,11 +112,6 @@ class RouteMakeCommand extends AbstractMakeCommand
 
     /**
      * 获取通用路由文件内容
-     *
-     * @param string $moduleName
-     * @param string $routeName
-     * @param string $type
-     * @return string
      */
     protected function getGenericRouteContent(string $moduleName, string $routeName, string $type): string
     {
@@ -130,16 +122,13 @@ class RouteMakeCommand extends AbstractMakeCommand
 
     /**
      * 应用变量替换
-     *
-     * @param string $content
-     * @param array $replacements
-     * @return string
      */
     protected function applyReplacements(string $content, array $replacements): string
     {
         foreach ($replacements as $search => $replace) {
             $content = str_replace($search, $replace, $content);
         }
+
         return $content;
     }
 }

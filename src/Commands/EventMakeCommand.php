@@ -6,11 +6,9 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建事件命令
- *
  * 在指定模块中创建事件类
  */
 class EventMakeCommand extends AbstractMakeCommand
@@ -34,8 +32,6 @@ class EventMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -52,6 +48,6 @@ class EventMakeCommand extends AbstractMakeCommand
         $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
         $generator->addReplacement('{{NAME}}', $module->getName());
 
-        return $this->writeStub($generator, 'event.stub', 'Events/' . $eventName . '.php', '事件类', $force);
+        return $this->writeStub($generator, 'event.stub', 'Events/'.$eventName.'.php', '事件类', $force);
     }
 }

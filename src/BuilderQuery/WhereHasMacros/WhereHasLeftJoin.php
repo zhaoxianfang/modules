@@ -8,6 +8,8 @@ class WhereHasLeftJoin extends WhereHasJoin
 {
     /**
      * @var string
+     *
+     * @scenario 本类/成员说明。
      */
     protected $method = 'leftJoin';
 }

@@ -6,19 +6,14 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建 API 资源命令
- *
  * 在指定模块中创建 Laravel API 资源转换器类。
  * 资源类用于将 Eloquent 模型转换为 JSON 响应格式，
  * 支持基础的 Resource 和 ResourceCollection。
- *
  * 使用示例：
  *   php artisan module:make-resource Blog PostResource
- *
- * @package zxf\Modules\Commands
  */
 class ResourceMakeCommand extends AbstractMakeCommand
 {
@@ -61,7 +56,7 @@ class ResourceMakeCommand extends AbstractMakeCommand
         return $this->writeStub(
             $generator,
             $jsonApi ? 'resource.json-api.stub' : 'resource.stub',
-            'Http/Resources/' . $resourceName . '.php',
+            'Http/Resources/'.$resourceName.'.php',
             '资源',
             $force
         );

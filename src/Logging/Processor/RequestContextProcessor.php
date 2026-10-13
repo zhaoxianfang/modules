@@ -10,15 +10,11 @@ use zxf\Modules\Logging\LogContext;
 
 /**
  * 请求 / 响应上下文 Monolog 处理器。
- *
  * 在每条日志记录写入前，把 LogContext 中采集到的请求 / 响应信息注入到
  * $record->extra，最终由 DatabaseLogHandler 映射到数据表字段。
- *
  * - 轻量请求上下文：每条日志都附带（便于事后溯源是哪次请求产生的日志）。
  * - 完整响应上下文：仅当该记录为「请求 → 响应」汇总日志（context 含 __summary__）
  *   时才写入，避免每条日志都重复存储大体积响应体。
- *
- * @package zxf\Modules\Logging
  */
 class RequestContextProcessor implements ProcessorInterface
 {

@@ -5,28 +5,22 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\MigrationPathHelper;
 
 /**
  * 模块迁移命令
- *
  * 运行指定模块或全部模块的数据库迁移，支持迁移后自动数据填充。
- *
  * 参照 nWidart/laravel-modules 的 MigrateCommand 设计：
  * - 通过路径过滤运行模块迁移（--path + --realpath）
  * - --seed 标志触发 module:seed 命令（而非直接调用 db:seed）
  * - --seeder 指定特定 Seeder 类，内部委托给 module:seed --class=...
  * - 生产环境强制确认（app()->environment('production') 时提示）
- *
  * 使用示例：
  *   php artisan module:migrate Blog                          # 运行 Blog 模块迁移
  *   php artisan module:migrate Blog --seed                   # 迁移后运行 Blog 模块 Seeder
  *   php artisan module:migrate Blog --seeder=PostSeeder      # 迁移后运行指定 Seeder
  *   php artisan module:migrate                               # 运行所有已启用模块的迁移
- *
- * @package zxf\Modules\Commands
  */
 class MigrateCommand extends Command
 {
@@ -53,8 +47,6 @@ class MigrateCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -87,13 +79,6 @@ class MigrateCommand extends Command
 
     /**
      * 运行指定模块的迁移
-     *
-     * @param string $moduleName
-     * @param bool $force
-     * @param string|null $customPath
-     * @param bool $seed
-     * @param string|null $seeder
-     * @return int
      */
     protected function migrateModule(
         string $moduleName,
@@ -166,12 +151,6 @@ class MigrateCommand extends Command
 
     /**
      * 运行所有模块的迁移
-     *
-     * @param bool $force
-     * @param string|null $customPath
-     * @param bool $seed
-     * @param string|null $seeder
-     * @return int
      */
     protected function migrateAllModules(
         bool $force,

@@ -6,11 +6,9 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
-use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建数据填充器命令
- *
  * 在指定模块中创建数据填充器
  */
 class SeederMakeCommand extends AbstractMakeCommand
@@ -34,8 +32,6 @@ class SeederMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -52,6 +48,6 @@ class SeederMakeCommand extends AbstractMakeCommand
         $generator->addReplacement('{{NAMESPACE}}', $this->module->getNamespace());
         $generator->addReplacement('{{NAME}}', $module->getName());
 
-        return $this->writeStub($generator, 'seeder.stub', 'Database/Seeders/' . $seederName . '.php', '填充器', $force);
+        return $this->writeStub($generator, 'seeder.stub', 'Database/Seeders/'.$seederName.'.php', '填充器', $force);
     }
 }

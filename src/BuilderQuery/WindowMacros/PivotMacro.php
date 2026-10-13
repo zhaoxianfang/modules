@@ -4,31 +4,30 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
-use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Builder;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 行列转换（PIVOT / UNPIVOT / CrossTab）宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
- *
  * 基于标准 SQL 的 CASE WHEN 条件聚合实现数据透视，无需数据库专属 PIVOT 语法，
  * 因此同一套宏在 MySQL 8.0+ 与 PostgreSQL 15+ 上均可直接使用：
  * - pivot / pivotCount / pivotSum / pivotAvg / pivotMax / pivotMin: 行转列（将某列唯一值旋转为多列）
  * - unpivot: 列转行（将多列展开为 名称-值 对，基于 UNION ALL）
  * - crossTab: 双维交叉表
- *
  * 安全性：透视列 / 聚合列 / 分组列 / 别名经白名单校验并由 grammar wrap；透视值走参数绑定。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires MySQL 8.0+ / PostgreSQL 15+
+ *
+ * @scenario 行列转换（PIVOT / UNPIVOT / CrossTab）宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class PivotMacro extends BaseMacro
 {
-
     /**
      * 注册所有透视宏
      *
-     * @return void
+     * @scenario 注册所有透视宏
      */
     public static function register(): void
     {
@@ -40,20 +39,21 @@ class PivotMacro extends BaseMacro
 
     /**
      * 注册通用 PIVOT 方法
+     *
+     * @scenario 注册通用 PIVOT 方法
      */
-public static function registerPivot(): void
+    public static function registerPivot(): void
     {
         /**
          * PIVOT - 行转列（数据透视）
-         *
          * 将某列的不同值旋转为多列，常用于报表生成
          *
-         * @param string $pivotColumn 要旋转的列（如 status、category）
-         * @param array $values 要转换为列的唯一值列表
-         * @param string $aggregateColumn 要聚合的数值列
-         * @param string $function 聚合函数: SUM|COUNT|AVG|MAX|MIN
-         * @param string|array|null $groupBy 分组列
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $pivotColumn  要旋转的列（如 status、category）
+         * @param  array  $values  要转换为列的唯一值列表
+         * @param  string  $aggregateColumn  要聚合的数值列
+         * @param  string  $function  聚合函数: SUM|COUNT|AVG|MAX|MIN
+         * @param  string|array|null  $groupBy  分组列
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 统计每个用户各状态订单的金额汇总
@@ -61,11 +61,12 @@ public static function registerPivot(): void
          *     ->pivot('status', ['pending', 'paid', 'shipped', 'completed'], 'amount', 'SUM', 'user_id')
          *     ->get();
          * // 结果: user_id | pending | paid | shipped | completed
-         *
          * // 按月统计各产品类别销售额
          * Sales::query()
          *     ->pivot('category', ['electronics', 'clothing', 'food'], 'amount', 'SUM', 'month')
          *     ->get();
+         *
+         * @scenario PIVOT - 行转列（数据透视）
          */
         static::define('pivot', function (
             string $pivotColumn,
@@ -73,8 +74,12 @@ public static function registerPivot(): void
             string $aggregateColumn,
             string $function = 'SUM',
             string|array|null $groupBy = null
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $function = BaseMacro::assertAggregateFunction($function);
             $pivotColumn = BaseMacro::assertValidIdentifier($pivotColumn, 'pivot');
             $aggregateColumn = BaseMacro::assertValidIdentifier($aggregateColumn, 'aggregate');
@@ -87,6 +92,7 @@ public static function registerPivot(): void
             $groupColumns = is_array($groupBy) ? $groupBy : ($groupBy ? [$groupBy] : []);
             $selectColumns = array_map(function ($col) use ($table, $model) {
                 $col = BaseMacro::assertValidIdentifier($col, 'group');
+
                 return BaseMacro::wrapIdentifier($model->newQuery(), "{$table}.{$col}");
             }, $groupColumns);
             $bindings = [];
@@ -94,7 +100,7 @@ public static function registerPivot(): void
             // 构建 CASE WHEN 聚合表达式（值使用参数绑定防止SQL注入；列名/函数名已白名单校验）
             foreach ($values as $value) {
                 $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $value);
-                $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_' . $safeAlias : $safeAlias;
+                $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_'.$safeAlias : $safeAlias;
                 $safeAlias = BaseMacro::assertValidIdentifier($safeAlias, 'alias');
                 $wrappedAlias = BaseMacro::wrapIdentifier($this, $safeAlias);
                 if (is_null($value)) {
@@ -111,7 +117,7 @@ public static function registerPivot(): void
                 ->selectRaw(implode(', ', $selectColumns), $bindings);
 
             // 复制原始 WHERE 条件到新查询
-            if (!empty(BaseMacro::queryOf($baseQuery)->wheres)) {
+            if (! empty(BaseMacro::queryOf($baseQuery)->wheres)) {
                 BaseMacro::queryOf($query)->wheres = BaseMacro::queryOf($baseQuery)->wheres;
                 $query->addBinding(BaseMacro::queryOf($baseQuery)->bindings['where'] ?? [], 'where');
             }
@@ -128,8 +134,10 @@ public static function registerPivot(): void
 
     /**
      * 注册常用聚合透视快捷方法
+     *
+     * @scenario 注册常用聚合透视快捷方法
      */
-public static function registerPivotAggregates(): void
+    public static function registerPivotAggregates(): void
     {
         $aggregates = [
             'pivotCount' => 'COUNT',
@@ -143,23 +151,30 @@ public static function registerPivotAggregates(): void
             /**
              * {$function} 聚合透视快捷方法
              *
-             * @param string $pivotColumn 要旋转的列
-             * @param array $values 要转换为列的唯一值
-             * @param string $aggregateColumn 要聚合的列
-             * @param string|array|null $groupBy 分组列
-             * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+             * @param  string  $pivotColumn  要旋转的列
+             * @param  array  $values  要转换为列的唯一值
+             * @param  string  $aggregateColumn  要聚合的列
+             * @param  string|array|null  $groupBy  分组列
+             * @return Builder|\Illuminate\Database\Query\Builder
              *
              * @example
              * // 统计每个地区各状态订单数量
              * Order::query()->pivotCount('status', ['pending', 'paid', 'shipped'], 'id', 'region')->get();
+             *
+             * @scenario {$function} 聚合透视快捷方法
              */
             static::define($macroName, function (
                 string $pivotColumn,
                 array $values,
                 string $aggregateColumn,
                 string|array|null $groupBy = null
-            ) use ($function): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-                /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            ) use ($function): Builder|\Illuminate\Database\Query\Builder {
+                /**
+                 * @var Builder|\Illuminate\Database\Query\Builder $this
+                 *
+                 * @scenario 本类/成员说明。
+                 */
+
                 return $this->pivot($pivotColumn, $values, $aggregateColumn, $function, $groupBy);
             });
         }
@@ -167,18 +182,19 @@ public static function registerPivotAggregates(): void
 
     /**
      * 注册 UNPIVOT 方法
+     *
+     * @scenario 注册 UNPIVOT 方法
      */
-public static function registerUnpivot(): void
+    public static function registerUnpivot(): void
     {
         /**
          * UNPIVOT - 列转行
-         *
          * 将多列转换为名称-值对的行格式
          *
-         * @param array $columns 要转换的列 [['column' => 'jan_sales', 'alias' => '一月'], ...]
-         * @param string $nameColumn 转换后的名称列
-         * @param string $valueColumn 转换后的值列
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  array  $columns  要转换的列 [['column' => 'jan_sales', 'alias' => '一月'], ...]
+         * @param  string  $nameColumn  转换后的名称列
+         * @param  string  $valueColumn  转换后的值列
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 将月度销售列转换为行
@@ -190,13 +206,19 @@ public static function registerUnpivot(): void
          *     ], 'month', 'sales_amount')
          *     ->get();
          * // 结果: product_id | month | sales_amount
+         *
+         * @scenario UNPIVOT - 列转行
          */
         static::define('unpivot', function (
             array $columns,
             string $nameColumn = 'attribute',
             string $valueColumn = 'value'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
             $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
@@ -219,10 +241,10 @@ public static function registerUnpivot(): void
                 $selectColumns = [
                     $wrappedPk,
                     "? AS {$wrappedName}",
-                    BaseMacro::wrapIdentifier($this, $column) . " AS {$wrappedValue}",
+                    BaseMacro::wrapIdentifier($this, $column)." AS {$wrappedValue}",
                 ];
 
-                $unionParts[] = "SELECT " . implode(', ', $selectColumns) . " FROM {$wrappedTable}";
+                $unionParts[] = 'SELECT '.implode(', ', $selectColumns)." FROM {$wrappedTable}";
             }
 
             $unionSql = implode(' UNION ALL ', $unionParts);
@@ -234,20 +256,21 @@ public static function registerUnpivot(): void
 
     /**
      * 注册交叉表（Cross Tabulation）
+     *
+     * @scenario 注册交叉表（Cross Tabulation）
      */
-public static function registerCrossTab(): void
+    public static function registerCrossTab(): void
     {
         /**
          * CROSS TAB - 交叉表查询（双维透视）
-         *
          * 同时按行和列两个维度进行透视，生成矩阵式报表
          *
-         * @param string $rowColumn 行维度列
-         * @param string $colColumn 列维度列
-         * @param string $aggregateColumn 聚合列
-         * @param string $function 聚合函数
-         * @param array $colValues 指定的列维度值（可选，自动探测时为null）
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $rowColumn  行维度列
+         * @param  string  $colColumn  列维度列
+         * @param  string  $aggregateColumn  聚合列
+         * @param  string  $function  聚合函数
+         * @param  array  $colValues  指定的列维度值（可选，自动探测时为null）
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 按地区和月份交叉统计销售额
@@ -255,6 +278,8 @@ public static function registerCrossTab(): void
          *     ->crossTab('region', 'month', 'amount', 'SUM', ['01', '02', '03', '04'])
          *     ->get();
          * // 结果: region | jan | feb | mar | apr | total
+         *
+         * @scenario CROSS TAB - 交叉表查询（双维透视）
          */
         static::define('crossTab', function (
             string $rowColumn,
@@ -262,8 +287,12 @@ public static function registerCrossTab(): void
             string $aggregateColumn,
             string $function = 'SUM',
             ?array $colValues = null
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $function = BaseMacro::assertAggregateFunction($function);
             $rowColumn = BaseMacro::assertValidIdentifier($rowColumn, 'row');
             $colColumn = BaseMacro::assertValidIdentifier($colColumn, 'col');
@@ -288,7 +317,7 @@ public static function registerCrossTab(): void
 
             foreach ($colValues as $value) {
                 $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $value);
-                $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_' . $safeAlias : $safeAlias;
+                $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_'.$safeAlias : $safeAlias;
                 $safeAlias = BaseMacro::assertValidIdentifier($safeAlias, 'alias');
                 $wrappedAlias = BaseMacro::wrapIdentifier($this, $safeAlias);
                 if (is_null($value)) {
@@ -300,7 +329,7 @@ public static function registerCrossTab(): void
             }
 
             // 添加总计列
-            $selectColumns[] = "{$function}({$wrappedAgg}) AS " . BaseMacro::wrapIdentifier($this, 'total');
+            $selectColumns[] = "{$function}({$wrappedAgg}) AS ".BaseMacro::wrapIdentifier($this, 'total');
 
             // 复制原始 WHERE 条件
             $baseQuery = $this->clone();
@@ -309,7 +338,7 @@ public static function registerCrossTab(): void
                 ->groupByRaw(implode(', ', $groupByColumns));
 
             // 复制原始 WHERE 条件到新查询
-            if (!empty(BaseMacro::queryOf($baseQuery)->wheres)) {
+            if (! empty(BaseMacro::queryOf($baseQuery)->wheres)) {
                 BaseMacro::queryOf($query)->wheres = BaseMacro::queryOf($baseQuery)->wheres;
                 $query->addBinding(BaseMacro::queryOf($baseQuery)->bindings['where'] ?? [], 'where');
             }

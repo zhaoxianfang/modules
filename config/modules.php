@@ -4,21 +4,18 @@
  * ============================================================================
  * zxf/modules - 模块系统全局配置
  * ============================================================================
- *
  * 本文件为整个模块系统的核心配置文件，控制所有模块的加载行为。
- *
  * 配置分为两大层级：
  *   1. 全局配置（本文件）：控制模块系统的整体行为
  *   2. 模块配置（Modules/{Module}/Config/{lower_name}.php）：控制单个模块的元数据
- *
  * v5.0 重要变更：
  *   - 模块不再使用 composer.json 管理元数据，所有模块级配置均在 Config/ 下的
  *     PHP 配置文件中定义（如 Modules/Blog/Config/blog.php）
  *   - 支持 'enabled'、'priority'、'aliases'、'providers'、'laravel_aliases'、
  *     'options' 等内置元数据键
  *
- * @package   zxf\Modules
  * @version   5.0.0
+ *
  * @requires  PHP 8.3+ / Laravel 11+ / 12+ / 13+
  */
 
@@ -208,76 +205,76 @@ return [
         */
         'generator' => [
             // 服务提供者 —— 模块入口，必须生成
-            'provider'       => ['path' => 'Providers',              'generate' => true],
+            'provider' => ['path' => 'Providers',              'generate' => true],
 
             // 配置文件 —— 模块元数据入口，必须生成（v5.0 替代 composer.json）
-            'config'         => ['path' => 'Config',                 'generate' => true],
+            'config' => ['path' => 'Config',                 'generate' => true],
 
             // 路由文件 —— 模块路由入口，必须生成
-            'route'          => ['path' => 'Routes',                 'generate' => true],
+            'route' => ['path' => 'Routes',                 'generate' => true],
 
             // 控制器基类 —— 提供模块内控制器的基础封装
-            'controller'     => ['path' => 'Http/Controllers',       'generate' => true],
+            'controller' => ['path' => 'Http/Controllers',       'generate' => true],
 
             // Web 控制器 —— 处理浏览器请求，返回 Blade 视图
-            'controller.web'  => ['path' => 'Http/Controllers/Web',   'generate' => true],
+            'controller.web' => ['path' => 'Http/Controllers/Web',   'generate' => true],
 
             // API 控制器 —— 处理 API 请求，返回 JSON 数据
-            'controller.api'  => ['path' => 'Http/Controllers/Api',   'generate' => true],
+            'controller.api' => ['path' => 'Http/Controllers/Api',   'generate' => true],
 
             // Admin 控制器 —— 处理后台管理请求（默认不生成，按需创建）
             'controller.admin' => ['path' => 'Http/Controllers/Admin', 'generate' => false],
 
             // Eloquent 模型 —— 数据库表映射，默认生成
-            'model'          => ['path' => 'Models',                 'generate' => true],
+            'model' => ['path' => 'Models',                 'generate' => true],
 
             // 模型观察者 —— 监听模型生命周期事件，按需创建
-            'observer'       => ['path' => 'Observers',              'generate' => false],
+            'observer' => ['path' => 'Observers',              'generate' => false],
 
             // 授权策略 —— 控制模型访问权限，按需创建
-            'policy'         => ['path' => 'Policies',               'generate' => false],
+            'policy' => ['path' => 'Policies',               'generate' => false],
 
             // 数据仓库 —— 封装数据访问逻辑，按需创建
-            'repository'     => ['path' => 'Repositories',           'generate' => false],
+            'repository' => ['path' => 'Repositories',           'generate' => false],
 
             // 表单验证请求 —— 封装请求验证逻辑，按需创建
-            'request'        => ['path' => 'Http/Requests',          'generate' => false],
+            'request' => ['path' => 'Http/Requests',          'generate' => false],
 
             // API 资源转换器 —— JSON 数据格式转换，默认生成
-            'resource'       => ['path' => 'Http/Resources',         'generate' => true],
+            'resource' => ['path' => 'Http/Resources',         'generate' => true],
 
             // HTTP 中间件 —— 请求过滤/处理，按需创建
-            'middleware'     => ['path' => 'Http/Middleware',        'generate' => false],
+            'middleware' => ['path' => 'Http/Middleware',        'generate' => false],
 
             // Artisan 控制台命令 —— 自定义命令行工具，按需创建
-            'command'        => ['path' => 'Console/Commands',       'generate' => false],
+            'command' => ['path' => 'Console/Commands',       'generate' => false],
 
             // 事件类 —— 事件广播/监听，按需创建
-            'event'          => ['path' => 'Events',                 'generate' => false],
+            'event' => ['path' => 'Events',                 'generate' => false],
 
             // 事件监听器 —— 处理事件，按需创建
-            'listener'       => ['path' => 'Listeners',              'generate' => false],
+            'listener' => ['path' => 'Listeners',              'generate' => false],
 
             // 数据库迁移 —— 示例迁移文件，按需创建
-            'migration'      => ['path' => 'Database/Migrations',    'generate' => false],
+            'migration' => ['path' => 'Database/Migrations',    'generate' => false],
 
             // 数据填充器 —— 测试/演示数据，默认生成
-            'seeder'         => ['path' => 'Database/Seeders',       'generate' => true],
+            'seeder' => ['path' => 'Database/Seeders',       'generate' => true],
 
             // 模型工厂 —— 批量测试数据定义，按需创建
-            'factory'        => ['path' => 'Database/Factories',     'generate' => false],
+            'factory' => ['path' => 'Database/Factories',     'generate' => false],
 
             // Blade 视图模板 —— 前端页面，默认生成
-            'views'          => ['path' => 'Resources/views',        'generate' => true],
+            'views' => ['path' => 'Resources/views',        'generate' => true],
 
             // 语言/翻译文件 —— 多语言支持，按需创建
-            'lang'           => ['path' => 'Resources/lang',         'generate' => false],
+            'lang' => ['path' => 'Resources/lang',         'generate' => false],
 
             // 测试文件 —— 单元/功能测试，按需创建
-            'test'           => ['path' => 'Tests',                  'generate' => false],
+            'test' => ['path' => 'Tests',                  'generate' => false],
 
             // 静态资源 —— CSS/JS/图片等，按需创建
-            'assets'         => ['path' => 'Resources/assets',       'generate' => false],
+            'assets' => ['path' => 'Resources/assets',       'generate' => false],
         ],
     ],
 
@@ -308,8 +305,8 @@ return [
     |
     */
     'middleware_groups' => [
-        'web'   => ['web'],       // Web 路由：应用 web 中间件组（Session、CSRF 等，Laravel 13 中对应 PreventRequestForgery）
-        'api'   => ['api'],       // API 路由：应用 api 中间件组（速率限制等）
+        'web' => ['web'],       // Web 路由：应用 web 中间件组（Session、CSRF 等，Laravel 13 中对应 PreventRequestForgery）
+        'api' => ['api'],       // API 路由：应用 api 中间件组（速率限制等）
         'admin' => ['web'],       // Admin 路由：应用 web 中间件组（可按需添加 auth 等）
     ],
 
@@ -338,8 +335,8 @@ return [
     |
     */
     'routes' => [
-        'prefix'        => true,
-        'name_prefix'   => true,
+        'prefix' => true,
+        'name_prefix' => true,
         'default_files' => ['web', 'api'],
     ],
 
@@ -373,7 +370,7 @@ return [
     |
     */
     'views' => [
-        'enabled'          => true,
+        'enabled' => true,
         'namespace_format' => 'lower', // lower | studly | camel
     ],
 
@@ -408,7 +405,7 @@ return [
     */
     'translations' => [
         'enabled' => true,
-        'path'    => 'Resources/lang',
+        'path' => 'Resources/lang',
     ],
 
     /*
@@ -444,18 +441,18 @@ return [
     |
     */
     'discovery' => [
-        'routes'        => true,  // 路由自动加载
-        'providers'     => true,  // 服务提供者自动发现
-        'commands'      => true,  // Artisan 命令自动发现
-        'views'         => true,  // 视图命名空间自动注册
-        'config'        => true,  // 配置文件自动加载
-        'translations'  => true,  // 翻译文件自动注册
-        'migrations'    => true,  // 迁移文件自动发现
-        'events'        => true,  // 事件自动发现
-        'observers'     => true,  // 模型观察者自动发现
-        'policies'      => true,  // 授权策略自动发现
-        'repositories'  => true,  // 数据仓库自动发现
-        'middlewares'   => true,  // 中间件自动发现
+        'routes' => true,  // 路由自动加载
+        'providers' => true,  // 服务提供者自动发现
+        'commands' => true,  // Artisan 命令自动发现
+        'views' => true,  // 视图命名空间自动注册
+        'config' => true,  // 配置文件自动加载
+        'translations' => true,  // 翻译文件自动注册
+        'migrations' => true,  // 迁移文件自动发现
+        'events' => true,  // 事件自动发现
+        'observers' => true,  // 模型观察者自动发现
+        'policies' => true,  // 授权策略自动发现
+        'repositories' => true,  // 数据仓库自动发现
+        'middlewares' => true,  // 中间件自动发现
     ],
 
     /*
@@ -492,9 +489,9 @@ return [
     */
     'cache' => [
         'enabled' => env('MODULES_CACHE_ENABLED', false),
-        'key'     => 'modules',
-        'ttl'     => 3600,
-        'path'    => storage_path('framework/cache/modules'),
+        'key' => 'modules',
+        'ttl' => 3600,
+        'path' => storage_path('framework/cache/modules'),
     ],
 
     /*
@@ -535,9 +532,9 @@ return [
     |
     */
     'stubs' => [
-        'override'  => true,                                // 启用自定义 stub 覆盖
-        'path'      => resource_path('stubs/modules'),      // 自定义 stub 路径
-        'strict'    => true,                                // 严格模式（变量未定义时报错）
+        'override' => true,                                // 启用自定义 stub 覆盖
+        'path' => resource_path('stubs/modules'),      // 自定义 stub 路径
+        'strict' => true,                                // 严格模式（变量未定义时报错）
     ],
 
     /*
@@ -567,7 +564,7 @@ return [
     |
     */
     'register' => [
-        'providers'        => true,
+        'providers' => true,
         'provider_pattern' => '{Module}ServiceProvider',
     ],
 
@@ -592,7 +589,7 @@ return [
     */
     'commands' => [
         'enabled' => true,
-        'path'    => 'Console/Commands',
+        'path' => 'Console/Commands',
     ],
 
     /*

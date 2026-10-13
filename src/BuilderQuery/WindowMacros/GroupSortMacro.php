@@ -4,29 +4,31 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 分组排序宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
- *
  * 基于标准 SQL 窗口函数 ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...) 实现「每个分组内的前 N 名」
  * 查询，同时支持倒数排名（负数名次）。同一套宏在 MySQL 8.0+ 与 PostgreSQL 15+ 上均可直接使用。
- *
  * 安全性：分组/排序列名经白名单校验并由 grammar wrap；排名条件通过参数化子查询（MAX + 关联）实现，
  * 不裸拼用户输入。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires MySQL 8.0+ / PostgreSQL 15+
+ *
+ * @scenario 分组排序宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class GroupSortMacro extends BaseMacro
 {
-
     /**
      * 注册 groupSort 宏函数
      *
      * @return void
+     *
+     * @scenario 注册 groupSort 宏函数
      */
     public static function register()
     {
@@ -41,9 +43,15 @@ class GroupSortMacro extends BaseMacro
          * @param  int|array  $ranks  排名，名次(数字表示第n名，带2个数字的数组[n,m]表示查询第n到m名)，倒数第n名使用负数，eg: 1, [2, 4], -1
          * @param  string  $orderBy  排序字段名 eg: read
          * @param  string  $direction  排序方向，eg: desc, asc
+         *
+         * @scenario 适用：配合其它查询条件使用本宏完成相应 SQL 能力。
          */
         static::define('groupSort', function (string $groupBy, int|array $ranks, string $orderBy = 'read', string $direction = 'desc') {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $model = BaseMacro::modelOf($this);
             $table = $model->getTable();
             $primaryKey = $model->getKeyName();

@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\File;
 
 /**
  * 发布多模块资源命令
- *
  * 发布模块系统的相关资源，包括：
  * - 多模块用户指南
  * - 配置文件
@@ -36,8 +35,6 @@ class ModulePublishCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -90,20 +87,20 @@ class ModulePublishCommand extends Command
     /**
      * 发布多模块用户指南
      *
-     * @param bool $force 是否强制覆盖
-     * @return bool
+     * @param  bool  $force  是否强制覆盖
      */
     protected function publishUserGuide(bool $force): bool
     {
         $modulesPath = config('modules.path', base_path('Modules'));
-        $guidePath = $modulesPath . '/UserGuide.md';
+        $guidePath = $modulesPath.'/UserGuide.md';
 
         $this->line('<comment>📖 发布用户指南...</comment>');
 
         // 检查是否已存在
         if (file_exists($guidePath) && ! $force) {
             // $this->warn("用户指南已存在: {$guidePath}");
-            $this->line("提示：使用 --force 选项覆盖已存在的文件");
+            $this->line('提示：使用 --force 选项覆盖已存在的文件');
+
             return false;
         }
 
@@ -114,9 +111,10 @@ class ModulePublishCommand extends Command
         }
 
         // 读取 stub 文件
-        $stubPath = __DIR__ . '/stubs/modules-user-guide.stub';
+        $stubPath = __DIR__.'/stubs/modules-user-guide.stub';
         if (! file_exists($stubPath)) {
             $this->error("用户指南模板文件不存在: {$stubPath}");
+
             return false;
         }
 
@@ -126,18 +124,19 @@ class ModulePublishCommand extends Command
 
         if ($result) {
             $this->line("文件位置: {$guidePath}");
+
             return true;
         }
 
-        $this->error("写入文件失败");
+        $this->error('写入文件失败');
+
         return false;
     }
 
     /**
      * 发布配置文件
      *
-     * @param bool $force 是否强制覆盖
-     * @return bool
+     * @param  bool  $force  是否强制覆盖
      */
     protected function publishConfigFile(bool $force): bool
     {
@@ -148,15 +147,17 @@ class ModulePublishCommand extends Command
         // 检查是否已存在
         if (file_exists($configPath) && ! $force) {
             $this->warn("配置文件已存在: {$configPath}");
-            $this->line("提示：使用 --force 选项覆盖已存在的文件");
+            $this->line('提示：使用 --force 选项覆盖已存在的文件');
+
             return false;
         }
 
         // 读取包中的配置文件
-        $packageConfigPath = dirname(dirname(__DIR__)) . '/config/modules.php';
+        $packageConfigPath = dirname(dirname(__DIR__)).'/config/modules.php';
 
         if (! file_exists($packageConfigPath)) {
             $this->error("包配置文件不存在: {$packageConfigPath}");
+
             return false;
         }
 
@@ -165,10 +166,12 @@ class ModulePublishCommand extends Command
 
         if ($result) {
             $this->line("文件位置: {$configPath}");
+
             return true;
         }
 
-        $this->error("复制配置文件失败");
+        $this->error('复制配置文件失败');
+
         return false;
     }
 }

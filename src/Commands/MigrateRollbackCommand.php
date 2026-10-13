@@ -10,24 +10,18 @@ use zxf\Modules\Support\MigrationPathHelper;
 
 /**
  * 模块迁移回滚命令
- *
  * 回滚指定模块或全部模块的最近一次迁移。
- *
  * 参照 nWidart/laravel-modules 的 MigrateRollbackCommand 设计：
  * - 通过路径过滤回滚模块迁移（--path 选项）
  * - 支持 --step 选项控制回滚步数
  * - 生产环境确认
- *
  * 与 MigrateResetCommand 的区别：
  * - migrate:rollback 只回滚最近一次迁移批次
  * - migrate:reset   回滚所有迁移
- *
  * 使用示例：
  *   php artisan module:migrate-rollback Blog          # 回滚 Blog 模块最近一次迁移
  *   php artisan module:migrate-rollback Blog --step=2 # 回滚最近 2 次迁移
  *   php artisan module:migrate-rollback               # 回滚所有模块的最近一次迁移
- *
- * @package zxf\Modules\Commands
  */
 class MigrateRollbackCommand extends Command
 {
@@ -54,8 +48,6 @@ class MigrateRollbackCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -88,13 +80,6 @@ class MigrateRollbackCommand extends Command
 
     /**
      * 回滚指定模块的迁移
-     *
-     * @param string $moduleName
-     * @param string|null $database
-     * @param bool $force
-     * @param string|null $step
-     * @param string|null $customPath
-     * @return int
      */
     protected function rollbackModule(
         string $moduleName,
@@ -147,12 +132,6 @@ class MigrateRollbackCommand extends Command
 
     /**
      * 回滚所有模块的迁移
-     *
-     * @param string|null $database
-     * @param bool $force
-     * @param string|null $step
-     * @param string|null $customPath
-     * @return int
      */
     protected function rollbackAllModules(
         ?string $database,

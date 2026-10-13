@@ -4,45 +4,69 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
+use Illuminate\Contracts\Pagination\CursorPaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
- * 超大表快速分页查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
+ * 带可声明 bookmarks 属性的分页器。
+ * 用于规避 PHP 8.2+ 在「非 stdClass 类上设置未声明动态属性」的弃用告警（PHP 9.0 将变为致命错误）。
+ * 对外访问 $paginator->bookmarks 与 instanceof LengthAwarePaginator 行为完全兼容。
  *
+ * @scenario 带可声明 bookmarks 属性的分页器。
+ */
+class FastLengthAwarePaginator extends LengthAwarePaginator
+{
+    /**
+     * @var array<string, mixed>|null 寻址分页书签
+     *
+     * @scenario 本类/成员说明。
+     */
+    public ?array $bookmarks = null;
+}
+
+/**
+ * 超大表快速分页查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  * 基于标准 SQL（OFFSET/LIMIT、ROW_NUMBER() 窗口函数、WITH 公共表表达式）实现大表分页优化，
  * 因此同一套宏在 MySQL 8.0+ 与 PostgreSQL 15+ 上均可直接使用：
  * 1. 延迟关联法：先查询ID，再关联详情（避免全表扫描）
  * 2. 窗口函数法：使用 ROW_NUMBER() 高效定位行范围
  * 3. 智能自适应：根据表大小和页码自动选择最优策略
  * 4. 游标 / 寻址分页：基于排序书签的键集分页，O(1) 复杂度
- *
  * 不使用缓存机制，完全基于 SQL 优化。
  * 安全性：排序列名 / 主键 / 表名 / CTE 别名经白名单校验并由 grammar wrap；分页偏移量为整数。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.0.0
+ *
  * @requires MySQL 8.0+ / PostgreSQL 15+
+ *
+ * @scenario 超大表快速分页查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class FastPaginationMacro extends BaseMacro
 {
-
     /**
      * 大表阈值（行数超过此值视为大表）
+     *
+     * @scenario 大表阈值（行数超过此值视为大表）
      */
     public const LARGE_TABLE_THRESHOLD = 100000;
 
     /**
      * 深度分页阈值（页码超过此值视为深度分页）
+     *
+     * @scenario 深度分页阈值（页码超过此值视为深度分页）
      */
     public const DEEP_PAGE_THRESHOLD = 100;
 
     /**
      * 注册所有快速分页宏
      *
-     * @return void
+     * @scenario 注册所有快速分页宏
      */
     public static function register(): void
     {
@@ -55,48 +79,47 @@ class FastPaginationMacro extends BaseMacro
 
     /**
      * 注册智能快速分页（推荐）
-     *
      * 自动根据数据量和页码深度选择最优分页策略：
      * - 小表/浅分页：使用传统 OFFSET LIMIT
      * - 大表/深分页：使用延迟关联或窗口函数
+     *
+     * @scenario 注册智能快速分页（推荐）
      */
-public static function registerFastPaginate(): void
+    public static function registerFastPaginate(): void
     {
         /**
          * 智能快速分页 - 自动选择最优策略
-         *
          * 核心优势：
          * 1. 无需传入游标ID，自动处理
          * 2. 根据表大小和页码智能选择策略
          * 3. 保持 LengthAwarePaginator 兼容性
          * 4. 不使用缓存，纯 SQL 优化
-         *
          * 适用场景：
          * - 数据量从几千到几亿行的表
          * - 需要总页数和完整分页信息的场景
          * - 需要跳转到任意页码的场景
          *
-         * @param int $perPage 每页数量，默认15
-         * @param int|null $page 当前页码，默认从请求获取
-         * @param string $primaryKey 主键字段，默认自动获取
-         * @param array $options 额外选项：
-         *   - strategy: 强制指定策略 'auto'|'deferred'|'window'|'offset'
-         *   - countStrategy: 计数策略 'exact'|'approximate'|'skip'
-         *   - columns: 查询列，默认['*']
+         * @param  int  $perPage  每页数量，默认15
+         * @param  int|null  $page  当前页码，默认从请求获取
+         * @param  string  $primaryKey  主键字段，默认自动获取
+         * @param  array  $options  额外选项：
+         *                          - strategy: 强制指定策略 'auto'|'deferred'|'window'|'offset'
+         *                          - countStrategy: 计数策略 'exact'|'approximate'|'skip'
+         *                          - columns: 查询列，默认['*']
          * @return LengthAwarePaginator
          *
          * @example
          * // 基础用法（自动优化）
          * $users = User::query()->fastPaginate(20);
-         *
          * // 指定策略
          * $logs = Log::query()->fastPaginate(50, null, 'id', [
          *     'strategy' => 'window',
          *     'countStrategy' => 'approximate'
          * ]);
-         *
          * // 深度分页场景
          * $records = BigTable::query()->fastPaginate(30, 5000);
+         *
+         * @scenario 智能快速分页 - 自动选择最优策略
          */
         static::define('fastPaginate', function (
             int $perPage = 15,
@@ -104,7 +127,11 @@ public static function registerFastPaginate(): void
             ?string $primaryKey = null,
             array $options = []
         ): LengthAwarePaginator {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            /**
+             * @var Builder|QueryBuilder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
             $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
@@ -123,7 +150,7 @@ public static function registerFastPaginate(): void
 
             // 如果没有数据，返回空分页
             if ($total === 0) {
-                return new LengthAwarePaginator([], 0, $perPage, $page);
+                return new FastLengthAwarePaginator([], 0, $perPage, $page);
             }
 
             // 根据策略执行分页
@@ -142,7 +169,7 @@ public static function registerFastPaginate(): void
                 $results = $this->forPage($page, $perPage)->get($columns);
             }
 
-            return new LengthAwarePaginator(
+            return new FastLengthAwarePaginator(
                 $results,
                 $total,
                 $perPage,
@@ -154,36 +181,42 @@ public static function registerFastPaginate(): void
 
     /**
      * 注册简单快速分页
-     *
      * 不计算总数，只判断是否有下一页（性能更好）
+     *
+     * @scenario 注册简单快速分页
      */
-public static function registerFastSimplePaginate(): void
+    public static function registerFastSimplePaginate(): void
     {
         /**
          * 简单快速分页 - 不计算总数
-         *
          * 特点：
          * - 不执行 COUNT 查询，性能更好
          * - 通过查询 perPage+1 来判断是否有下一页
          * - 适合无限滚动、加载更多场景
          *
-         * @param int $perPage 每页数量
-         * @param int|null $page 当前页码
-         * @param string $primaryKey 主键字段
-         * @param array $options 额外选项
-         * @return \Illuminate\Pagination\Paginator
+         * @param  int  $perPage  每页数量
+         * @param  int|null  $page  当前页码
+         * @param  string  $primaryKey  主键字段
+         * @param  array  $options  额外选项
+         * @return Paginator
          *
          * @example
          * // 无限滚动加载
          * $posts = Post::query()->fastSimplePaginate(10);
+         *
+         * @scenario 简单快速分页 - 不计算总数
          */
         static::define('fastSimplePaginate', function (
             int $perPage = 15,
             ?int $page = null,
             ?string $primaryKey = null,
             array $options = []
-        ): \Illuminate\Pagination\Paginator {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Paginator {
+            /**
+             * @var Builder|QueryBuilder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
             $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
@@ -211,7 +244,7 @@ public static function registerFastSimplePaginate(): void
                 $results = $results->slice(0, $perPage);
             }
 
-            return new \Illuminate\Pagination\Paginator(
+            return new Paginator(
                 $results,
                 $perPage,
                 $page,
@@ -222,41 +255,40 @@ public static function registerFastSimplePaginate(): void
 
     /**
      * 注册游标分页（基于排序值的键集分页）
-     *
      * 性能最佳，但只能顺序访问
+     *
+     * @scenario 注册游标分页（基于排序值的键集分页）
      */
-public static function registerCursorBasedPaginate(): void
+    public static function registerCursorBasedPaginate(): void
     {
         /**
          * 游标分页 - 基于排序值的高效分页
-         *
          * 核心原理：
          * - 不使用 OFFSET，而是通过排序值定位
          * - WHERE sort_column > last_value LIMIT n
          * - 时间复杂度 O(1)，与页码无关
-         *
          * 限制：
          * - 只能顺序访问（下一页）
          * - 不能跳转到任意页
          * - 数据变更可能导致重复或遗漏
          *
-         * @param int $perPage 每页数量
-         * @param string|null $cursor 游标值（上一页最后一条数据的排序值）
-         * @param string $sortColumn 排序字段
-         * @param string $direction 排序方向: asc|desc
-         * @param string $primaryKey 主键字段（用于处理相同排序值）
-         * @param array $options 额外选项
-         * @return \Illuminate\Contracts\Pagination\CursorPaginator
+         * @param  int  $perPage  每页数量
+         * @param  string|null  $cursor  游标值（上一页最后一条数据的排序值）
+         * @param  string  $sortColumn  排序字段
+         * @param  string  $direction  排序方向: asc|desc
+         * @param  string  $primaryKey  主键字段（用于处理相同排序值）
+         * @param  array  $options  额外选项
+         * @return CursorPaginator
          *
          * @example
          * // 基础用法
          * $users = User::query()->cursorPaginate(20);
-         *
          * // 指定排序字段
          * $posts = Post::query()->cursorPaginate(10, null, 'published_at', 'desc');
-         *
          * // 使用上一页的游标
          * $nextPage = Post::query()->cursorPaginate(10, $cursor, 'published_at');
+         *
+         * @scenario 游标分页 - 基于排序值的高效分页
          */
         static::define('cursorPaginate', function (
             int $perPage = 15,
@@ -265,8 +297,12 @@ public static function registerCursorBasedPaginate(): void
             string $direction = 'asc',
             ?string $primaryKey = null,
             array $options = []
-        ): \Illuminate\Contracts\Pagination\CursorPaginator {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): CursorPaginator {
+            /**
+             * @var Builder|QueryBuilder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $direction = strtolower($direction);
             $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
             $sortColumn = $sortColumn ?: $primaryKey;
@@ -283,7 +319,7 @@ public static function registerCursorBasedPaginate(): void
 
             // 添加排序
             $query->orderBy($sortColumn, $direction)
-                  ->orderBy($primaryKey, $direction); // 二级排序确保稳定性
+                ->orderBy($primaryKey, $direction); // 二级排序确保稳定性
 
             // 查询数据（多查一条判断是否有下一页）
             $results = $query->limit($perPage + 1)->get($columns);
@@ -301,10 +337,14 @@ public static function registerCursorBasedPaginate(): void
                 $nextCursor = $lastItem->{$sortColumn};
             }
 
-            return new class($results, $perPage, $nextCursor, $hasMore) implements \Illuminate\Contracts\Pagination\CursorPaginator {
+            return new class($results, $perPage, $nextCursor, $hasMore) implements CursorPaginator
+            {
                 protected $items;
+
                 protected $perPage;
+
                 protected $nextCursor;
+
                 protected $hasMore;
 
                 public function __construct($items, $perPage, $nextCursor, $hasMore)
@@ -350,35 +390,36 @@ public static function registerCursorBasedPaginate(): void
 
     /**
      * 注册寻址分页（Seek Method）
-     *
      * 适合深分页场景，基于书签定位
+     *
+     * @scenario 注册寻址分页（Seek Method）
      */
-public static function registerSeekPaginate(): void
+    public static function registerSeekPaginate(): void
     {
         /**
          * 寻址分页 - 基于书签的深度分页方案
-         *
          * 原理：
          * - 记录每页的边界值作为书签
          * - 通过书签快速定位到指定范围
          * - 比 OFFSET 快，比游标灵活
          *
-         * @param int $perPage 每页数量
-         * @param array|null $bookmarks 书签数组 ['page' => ['min' => x, 'max' => y]]
-         * @param int $page 目标页码
-         * @param string $sortColumn 排序字段
-         * @param string $direction 排序方向
-         * @param string|null $primaryKey 主键字段
-         * @param array $options 额外选项
+         * @param  int  $perPage  每页数量
+         * @param  array|null  $bookmarks  书签数组 ['page' => ['min' => x, 'max' => y]]
+         * @param  int  $page  目标页码
+         * @param  string  $sortColumn  排序字段
+         * @param  string  $direction  排序方向
+         * @param  string|null  $primaryKey  主键字段
+         * @param  array  $options  额外选项
          * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
          *
          * @example
          * // 首次查询（无书签）
          * $result = BigTable::query()->seekPaginate(100);
          * $bookmarks = $result->bookmarks; // 保存书签供后续使用
-         *
          * // 使用书签快速跳转到第100页
          * $page100 = BigTable::query()->seekPaginate(100, $bookmarks, 100);
+         *
+         * @scenario 寻址分页 - 基于书签的深度分页方案
          */
         static::define('seekPaginate', function (
             int $perPage = 100,
@@ -389,7 +430,11 @@ public static function registerSeekPaginate(): void
             ?string $primaryKey = null,
             array $options = []
         ): \Illuminate\Contracts\Pagination\LengthAwarePaginator {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            /**
+             * @var Builder|QueryBuilder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $direction = strtolower($direction);
             $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
             $sortColumn = $sortColumn ?: $primaryKey;
@@ -424,7 +469,7 @@ public static function registerSeekPaginate(): void
             $total = $options['total'] ?? $this->count();
 
             // 构建返回结果
-            $paginator = new LengthAwarePaginator(
+            $paginator = new FastLengthAwarePaginator(
                 $results,
                 $total,
                 $perPage,
@@ -446,26 +491,28 @@ public static function registerSeekPaginate(): void
 
     /**
      * 注册分区表分页
-     *
      * 针对 MySQL 8.0+ 分区表的优化分页
+     *
+     * @scenario 注册分区表分页
      */
-public static function registerPartitionPaginate(): void
+    public static function registerPartitionPaginate(): void
     {
         /**
          * 分区表分页 - 针对分区表的并行扫描优化
-         *
          * MySQL 8.0+ 支持分区表的并行查询优化
          * 此宏利用分区剪枝和并行扫描提升性能
          *
-         * @param int $perPage 每页数量
-         * @param int|null $page 当前页码
-         * @param string|null $partitionKey 分区键字段
-         * @param array $options 额外选项
+         * @param  int  $perPage  每页数量
+         * @param  int|null  $page  当前页码
+         * @param  string|null  $partitionKey  分区键字段
+         * @param  array  $options  额外选项
          * @return LengthAwarePaginator
          *
          * @example
          * // 按日期分区的大表
          * $logs = Log::query()->partitionPaginate(100, 1, 'created_date');
+         *
+         * @scenario 分区表分页 - 针对分区表的并行扫描优化
          */
         static::define('partitionPaginate', function (
             int $perPage = 15,
@@ -473,7 +520,11 @@ public static function registerPartitionPaginate(): void
             ?string $partitionKey = null,
             array $options = []
         ): LengthAwarePaginator {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+            /**
+             * @var Builder|QueryBuilder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $page = $page ?: request()->input('page', 1);
             $page = max(1, (int) $page);
             $columns = $options['columns'] ?? ['*'];
@@ -494,14 +545,16 @@ public static function registerPartitionPaginate(): void
     /**
      * 判断是否需要进行分页优化
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @param int $page 当前页码
-     * @param int $perPage 每页数量
-     * @param string $strategy 策略
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     * @param  int  $page  当前页码
+     * @param  int  $perPage  每页数量
+     * @param  string  $strategy  策略
      * @return string|false 优化策略或false
+     *
+     * @scenario 判断是否需要进行分页优化
      */
     public static function shouldOptimize(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|QueryBuilder $query,
         int $page,
         int $perPage,
         string $strategy
@@ -535,11 +588,12 @@ public static function registerPartitionPaginate(): void
     /**
      * 获取总记录数
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @param string $strategy 计数策略
-     * @return int
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     * @param  string  $strategy  计数策略
+     *
+     * @scenario 获取总记录数
      */
-    public static function getTotalCount(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query, string $strategy): int
+    public static function getTotalCount(Builder|QueryBuilder $query, string $strategy): int
     {
         // 跳过计数（返回估算值）
         if ($strategy === 'skip') {
@@ -558,17 +612,18 @@ public static function registerPartitionPaginate(): void
     /**
      * 获取近似记录数
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @return int
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     *
+     * @scenario 获取近似记录数
      */
-    public static function getApproximateCount(\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query): int
+    public static function getApproximateCount(Builder|QueryBuilder $query): int
     {
         $table = BaseMacro::resolveTable($query);
         $wrappedTable = BaseMacro::wrapIdentifier($query, $table);
 
         if (BaseMacro::isPostgres($query)) {
             // PostgreSQL：从统计信息 pg_class.reltuples 读取近似行数（非精确，但与 EXPLAIN 近似语义一致）
-            $result = DB::select('SELECT reltuples::bigint AS rows FROM pg_class WHERE oid = ' . $wrappedTable . '::regclass');
+            $result = DB::select('SELECT reltuples::bigint AS rows FROM pg_class WHERE oid = '.$wrappedTable.'::regclass');
         } else {
             // MySQL：EXPLAIN 返回估算行数
             $result = DB::select("EXPLAIN SELECT * FROM {$wrappedTable}");
@@ -585,24 +640,25 @@ public static function registerPartitionPaginate(): void
     /**
      * 执行优化分页
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @param string $table 表名
-     * @param string $primaryKey 主键
-     * @param int $page 页码
-     * @param int $perPage 每页数量
-     * @param string $strategy 策略
-     * @param array $columns 查询列
-     * @return \Illuminate\Support\Collection
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     * @param  string  $table  表名
+     * @param  string  $primaryKey  主键
+     * @param  int  $page  页码
+     * @param  int  $perPage  每页数量
+     * @param  string  $strategy  策略
+     * @param  array  $columns  查询列
+     *
+     * @scenario 执行优化分页
      */
     public static function executeOptimizedPaginate(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|QueryBuilder $query,
         string $table,
         string $primaryKey,
         int $page,
         int $perPage,
         string $strategy,
         array $columns
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         if ($strategy === 'window') {
             return FastPaginationMacro::executeWindowPaginate(
                 $query,
@@ -628,25 +684,25 @@ public static function registerPartitionPaginate(): void
 
     /**
      * 执行延迟关联分页
-     *
      * 策略：先查ID，再关联详情
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @param string $table 表名
-     * @param string $primaryKey 主键
-     * @param int $page 页码
-     * @param int $perPage 每页数量
-     * @param array $columns 查询列
-     * @return \Illuminate\Support\Collection
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     * @param  string  $table  表名
+     * @param  string  $primaryKey  主键
+     * @param  int  $page  页码
+     * @param  int  $perPage  每页数量
+     * @param  array  $columns  查询列
+     *
+     * @scenario 执行延迟关联分页
      */
     public static function executeDeferredPaginate(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|QueryBuilder $query,
         string $table,
         string $primaryKey,
         int $page,
         int $perPage,
         array $columns
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         $offset = ($page - 1) * $perPage;
 
         // 构建子查询：只查询ID
@@ -669,21 +725,21 @@ public static function registerPartitionPaginate(): void
 
     /**
      * 执行窗口函数分页
-     *
      * 使用 ROW_NUMBER() 高效定位行范围
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @param string $table 表名
-     * @param string $primaryKey 主键
-     * @param string $sortColumn 排序字段
-     * @param int $page 页码
-     * @param int $perPage 每页数量
-     * @param string $direction 排序方向
-     * @param array $columns 查询列
-     * @return \Illuminate\Support\Collection
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     * @param  string  $table  表名
+     * @param  string  $primaryKey  主键
+     * @param  string  $sortColumn  排序字段
+     * @param  int  $page  页码
+     * @param  int  $perPage  每页数量
+     * @param  string  $direction  排序方向
+     * @param  array  $columns  查询列
+     *
+     * @scenario 执行窗口函数分页
      */
     public static function executeWindowPaginate(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|QueryBuilder $query,
         string $table,
         string $primaryKey,
         string $sortColumn,
@@ -691,7 +747,7 @@ public static function registerPartitionPaginate(): void
         int $perPage,
         string $direction,
         array $columns
-    ): \Illuminate\Support\Collection {
+    ): Collection {
         $offset = ($page - 1) * $perPage;
         $sortColumn = $sortColumn ?: $primaryKey;
         $direction = BaseMacro::assertDirection($direction);
@@ -720,7 +776,7 @@ public static function registerPartitionPaginate(): void
         $bindings = $baseQuery->getBindings();
 
         // 构建窗口函数分页查询
-        $withTable = 'paginated_' . uniqid();
+        $withTable = 'paginated_'.uniqid();
         $wrappedWith = BaseMacro::wrapIdentifier($query, $withTable);
 
         $sql = "
@@ -733,26 +789,33 @@ public static function registerPartitionPaginate(): void
                 )
             )
             SELECT * FROM {$wrappedWith}
-            WHERE __row_num > {$offset} AND __row_num <= " . ($offset + $perPage) . '
+            WHERE __row_num > {$offset} AND __row_num <= ".($offset + $perPage).'
             ORDER BY __row_num
         ';
 
         $results = DB::select($sql, $bindings);
 
-        return BaseMacro::modelOf($query)->hydrate($results);
+        // DB::table() 等 Query\Builder 没有关联模型，modelOf 返回 null，需返回纯集合而非调用 hydrate（否则 null->hydrate() 致命错误）。
+        $model = BaseMacro::modelOf($query);
+        if ($model !== null) {
+            return $model->hydrate($results);
+        }
+
+        return new Collection($results);
     }
 
     /**
      * 生成分页书签
      *
-     * @param \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query 查询构建器
-     * @param string $sortColumn 排序字段
-     * @param int $perPage 每页数量
-     * @param string $direction 排序方向
-     * @return array
+     * @param  Builder|QueryBuilder  $query  查询构建器
+     * @param  string  $sortColumn  排序字段
+     * @param  int  $perPage  每页数量
+     * @param  string  $direction  排序方向
+     *
+     * @scenario 生成分页书签
      */
     public static function generateBookmarks(
-        \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $query,
+        Builder|QueryBuilder $query,
         string $sortColumn,
         int $perPage,
         string $direction

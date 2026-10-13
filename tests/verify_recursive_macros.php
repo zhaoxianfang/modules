@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 /**
  * 递归 CTE 宏 / JSON 宏 运行时验证脚本
- *
  * 覆盖本轮修复的三类 P0 缺陷：
  *  1. WithRecursiveMacro：newQuery() 丢弃调用方条件 + 手动追加不存在的 where 绑定
  *     → 断言：占位符数量 == 绑定数量，且调用方的 where 条件被保留。
@@ -13,7 +12,6 @@ declare(strict_types=1);
  *  3. AdvancedJsonMacro：update()->addBinding(..., 'update') 双重致命
  *     （update 返回 int，且 'update' 非合法绑定键）
  *     → 断言：UPDATE 编译后 SET 段占位符先于 WHERE 段，且绑定顺序与之匹配。
- *
  * 运行：php tests/verify_recursive_macros.php
  * 退出码：0=全 PASS，1=有 FAIL。
  */
@@ -22,8 +20,16 @@ use Illuminate\Container\Container;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Expression;
+use Illuminate\Database\Query\Grammars\MySqlGrammar;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Facade;
+use zxf\Modules\BuilderQuery\WindowMacros\AdvancedJsonMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\RegexMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
 
 // ---- 关键：优先加载本包源码 ----
 // wsf/vendor/zxf/modules 是本包的旧副本，且其 helper.php / trace bootstrap 会在
@@ -52,14 +58,15 @@ $loader->setPsr4('zxf\\Modules\\', '/Users/aha/www/modules/src/');
 // composer 以 prepend 注册，会挤掉上面的加载器，故再注册一次
 $registerPackageAutoloader();
 
-$container = new Container();
-\Illuminate\Support\Facades\Facade::setFacadeApplication($container);
+$container = new Container;
+Facade::setFacadeApplication($container);
 
 // Laravel 13 的 getDefaultQueryGrammar() 固定返回通用 Grammar，需手动注入 MySQL grammar
-$connection = new Connection(new \PDO('sqlite::memory:'), 'default', '', ['driver' => 'mysql']);
-$connection->setQueryGrammar(new \Illuminate\Database\Query\Grammars\MySqlGrammar($connection));
+$connection = new Connection(new PDO('sqlite::memory:'), 'default', '', ['driver' => 'mysql']);
+$connection->setQueryGrammar(new MySqlGrammar($connection));
 
-$resolver = new class ($connection) implements ConnectionResolverInterface {
+$resolver = new class($connection) implements ConnectionResolverInterface
+{
     private Connection $conn;
 
     public function __construct(Connection $conn)
@@ -77,27 +84,26 @@ $resolver = new class ($connection) implements ConnectionResolverInterface {
         return 'default';
     }
 
-    public function setDefaultConnection($name)
-    {
-    }
+    public function setDefaultConnection($name) {}
 };
 Model::setConnectionResolver($resolver);
-Model::setEventDispatcher(new \Illuminate\Events\Dispatcher($container));
+Model::setEventDispatcher(new Dispatcher($container));
 
 // 本测试使用最小容器，未注册 DatabaseManager；宏内部与断言中用到的 DB::raw()
 // 仅需返回 Expression 对象，故绑定一个轻量桩件即可。
-$container->instance('db', new class {
+$container->instance('db', new class
+{
     public function raw($value)
     {
-        return new \Illuminate\Database\Query\Expression($value);
+        return new Expression($value);
     }
 });
 
 // 注册宏（先确认参与验证的类确实来自本包源码，否则验证的是旧副本）
 foreach ([
-    \zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro::class,
-    \zxf\Modules\BuilderQuery\WindowMacros\AdvancedJsonMacro::class,
-    \zxf\Modules\BuilderQuery\WindowMacros\RegexMacro::class,
+    WithRecursiveMacro::class,
+    AdvancedJsonMacro::class,
+    RegexMacro::class,
     StringFunctionsMacro::class,
 ] as $verifiedClass) {
     $file = (new ReflectionClass($verifiedClass))->getFileName();
@@ -108,9 +114,9 @@ foreach ([
 }
 
 StringFunctionsMacro::register();
-\zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro::register();
-\zxf\Modules\BuilderQuery\WindowMacros\AdvancedJsonMacro::register();
-\zxf\Modules\BuilderQuery\WindowMacros\RegexMacro::register();
+WithRecursiveMacro::register();
+AdvancedJsonMacro::register();
+RegexMacro::register();
 
 class RecursiveVerifyModel extends Model
 {
@@ -232,7 +238,7 @@ assertContains('withDescendantsCount 输出聚合列', $q->toSql(), 'COUNT(*) - 
 
 // 12. recursiveQuery（高级自定义）
 $q = $M::query()->where('status', 1)->recursiveQuery(
-    fn ($q, $withTable) => "SELECT `id`, `pid`, 0 AS `depth` FROM `categories` WHERE `pid` IS NULL",
+    fn ($q, $withTable) => 'SELECT `id`, `pid`, 0 AS `depth` FROM `categories` WHERE `pid` IS NULL',
     fn ($q, $withTable) => "SELECT t.`id`, t.`pid`, r.`depth` FROM `categories` t JOIN `{$withTable}` r ON t.`pid` = r.`id`",
     ['*'],
     5
@@ -269,7 +275,7 @@ echo "\n=== 三、JSON 更新宏：UPDATE 绑定顺序 ===\n";
  */
 function assertUpdateOrder(string $name, array $setBindings, string $expr): void
 {
-    $base = (new \Illuminate\Database\Query\Builder($GLOBALS['connection']))
+    $base = (new Builder($GLOBALS['connection']))
         ->from('articles')
         ->where('id', 1);
 
@@ -283,7 +289,7 @@ function assertUpdateOrder(string $name, array $setBindings, string $expr): void
     // 经 cleanBindings() 过滤掉 Expression（RAW 表达式不占占位符）。
     $bindings = array_values(array_filter(
         $base->getGrammar()->prepareBindingsForUpdate($base->getRawBindings(), $values),
-        static fn ($binding): bool => ! $binding instanceof \Illuminate\Database\Query\Expression
+        static fn ($binding): bool => ! $binding instanceof Expression
     ));
 
     $setPos = strpos($sql, 'set');

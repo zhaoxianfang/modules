@@ -10,15 +10,12 @@ use zxf\Modules\Contracts\RepositoryInterface;
 
 /**
  * 模块加载器
- *
  * 负责模块生命周期管理和自动发现调度。
- *
  * 工作流程：
  * 1. Repository::scan() - 扫描并注册所有模块
  * 2. 按优先级遍历已启用模块
  * 3. ModuleAutoDiscovery::discoverAll() - 自动发现并加载模块组件
  *
- * @package zxf\Modules
  * @version 4.0.0
  */
 class ModuleLoader
@@ -51,7 +48,6 @@ class ModuleLoader
 
     /**
      * 加载所有模块
-     *
      * 执行顺序：
      * 1. 扫描所有模块路径
      * 2. 按优先级排序已启用模块
@@ -85,7 +81,6 @@ class ModuleLoader
 
     /**
      * 加载单个模块
-     *
      * 使用智能自动发现机制加载模块的所有组件
      */
     public function loadModule(ModuleInterface $module): void
@@ -211,7 +206,7 @@ class ModuleLoader
         // 可扩展：在模块加载前执行自定义逻辑
         // 例如：触发的自定义事件、数据库预热、权限初始化等
         if (config('modules.debug', false) && function_exists('logger')) {
-            logger()->debug('Loading ' . count($modules) . ' enabled modules');
+            logger()->debug('Loading '.count($modules).' enabled modules');
         }
     }
 
@@ -223,7 +218,7 @@ class ModuleLoader
         // 可扩展：在模块加载后执行自定义逻辑
         // 例如：后加载校验、缓存预热、统计上报等
         if (config('modules.debug', false) && function_exists('logger')) {
-            logger()->debug('Loaded ' . count($modules) . ' modules successfully');
+            logger()->debug('Loaded '.count($modules).' modules successfully');
         }
     }
 }

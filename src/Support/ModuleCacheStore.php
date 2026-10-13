@@ -6,10 +6,8 @@ namespace zxf\Modules\Support;
 
 /**
  * 模块缓存存储
- *
  * 统一以 JSON 格式持久化模块元数据与自动发现清单，替代早期的
  * 「var_export + require」PHP 文件缓存方案。
- *
  * 为什么要改用 JSON：
  * 1. **OPcache 陷阱**：`require` 的 PHP 缓存文件会被 OPcache 编译缓存。生产环境
  *    若设置 `opcache.validate_timestamps=0`，执行 module:cache 重新生成文件后，
@@ -18,18 +16,15 @@ namespace zxf\Modules\Support;
  *    JSON 文件只会被当作数据解析，天然免疫。
  * 3. **原子性**：`file_put_contents` 是「先截断为 0 再写」，并发请求可能读到
  *    半截文件。本类采用「临时文件 + rename」的原子写入，读取方只会看到完整内容。
- *
- * @package zxf\Modules
  */
 final class ModuleCacheStore
 {
     /**
      * 读取 JSON 缓存
-     *
      * 任何异常（文件不存在、内容损坏、JSON 解析失败）都返回 null，
      * 调用方据此回退到实时扫描，绝不阻断启动。
      *
-     * @param string $file 缓存文件路径
+     * @param  string  $file  缓存文件路径
      * @return array|null 解析成功返回数组，否则 null
      */
     public static function read(string $file): ?array
@@ -56,8 +51,8 @@ final class ModuleCacheStore
     /**
      * 原子写入 JSON 缓存
      *
-     * @param string $file 缓存文件路径
-     * @param array  $data 待写入数据（必须可 JSON 序列化）
+     * @param  string  $file  缓存文件路径
+     * @param  array  $data  待写入数据（必须可 JSON 序列化）
      * @return bool 写入成功返回 true
      */
     public static function write(string $file, array $data): bool
@@ -111,8 +106,7 @@ final class ModuleCacheStore
     /**
      * 删除缓存文件（含写入残留的临时文件）
      *
-     * @param string $file 缓存文件路径
-     * @return void
+     * @param  string  $file  缓存文件路径
      */
     public static function delete(string $file): void
     {
@@ -136,12 +130,10 @@ final class ModuleCacheStore
 
     /**
      * 删除旧版 PHP 缓存文件（modules.php / discovery.php）
-     *
      * 缓存格式由 PHP 迁移为 JSON 后，旧文件已成为垃圾；若残留，
      * 部分运维脚本（如手动清理缓存的部署脚本）可能误删或误读。
      *
-     * @param string $file 当前 JSON 缓存文件路径
-     * @return void
+     * @param  string  $file  当前 JSON 缓存文件路径
      */
     protected static function deleteLegacyPhpCache(string $file): void
     {

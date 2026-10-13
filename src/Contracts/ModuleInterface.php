@@ -6,10 +6,8 @@ namespace zxf\Modules\Contracts;
 
 /**
  * 模块接口
- *
  * 定义模块实体的核心契约，所有模块实现类必须遵循此接口。
  *
- * @package zxf\Modules
  * @version 4.0.0
  */
 interface ModuleInterface
@@ -60,7 +58,7 @@ interface ModuleInterface
     /**
      * 获取模块路径
      *
-     * @param string|null $path 子路径（可选）
+     * @param  string|null  $path  子路径（可选）
      */
     public function getPath(?string $path = null): string;
 
@@ -186,8 +184,8 @@ interface ModuleInterface
     /**
      * 获取模块配置值
      *
-     * @param string $key     配置键
-     * @param mixed  $default 默认值
+     * @param  string  $key  配置键
+     * @param  mixed  $default  默认值
      */
     public function config(string $key, mixed $default = null): mixed;
 
@@ -205,7 +203,6 @@ interface ModuleInterface
 
     /**
      * 获取模块 Laravel 服务提供者类列表
-     *
      * 供 ModuleAutoDiscovery / ModuleInfo 注册到 Laravel 容器，
      * 任何自定义 ModuleInterface 实现类都必须提供此方法。
      *
@@ -215,7 +212,6 @@ interface ModuleInterface
 
     /**
      * 获取模块 Laravel 类别名映射
-     *
      * 键为别名、值为完整类名，供 ModuleAutoDiscovery 注册到容器。
      *
      * @return array<string, string>
@@ -224,7 +220,6 @@ interface ModuleInterface
 
     /**
      * 模块初始化钩子
-     *
      * 在模块被加载（loadModule）时调用一次，用于执行模块级引导逻辑。
      * 自定义 ModuleInterface 实现类可在此做自己的初始化，不实现则跳过。
      */

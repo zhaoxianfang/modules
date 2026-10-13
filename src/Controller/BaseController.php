@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Controller;
 
+use Illuminate\Auth\Access\Gate as AuthGate;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Auth\Access\Gate as AuthGate;
 use zxf\Modules\Controller\Trait\ControllerTrait;
 
 /**

@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 /**
  * StringFunctionsMacro 运行时验证脚本
- *
  * 在 wsf（Laravel 13.21.1）环境验证 29 个字符串函数宏：
  *  - SQL 生成正确性（MySQL grammar wrap 反引号）
  *  - 字面值参数绑定（无注入点）
  *  - 非法列名 / 方向 / 运算符 / 模式 / 填充位置拒绝
  *  - assertMysql 驱动守卫（SQLite 上抛异常）
- *
  * 运行方式：php tests/verify_string_macros.php（依赖宿主 Laravel 项目的
  * vendor/autoload.php，本脚本默认指向 /Users/aha/www/wsf，可按环境调整）。
  * 退出码：0=全 PASS，1=有 FAIL，2=FATAL（类未从本包源码加载）。
@@ -20,6 +18,10 @@ use Illuminate\Container\Container;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Grammars\MySqlGrammar;
+use Illuminate\Events\Dispatcher;
+use Illuminate\Support\Facades\Facade;
 use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
 
 // ---------- 引导：wsf autoload + 本包源码 ----------
@@ -29,14 +31,15 @@ use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
 $loader = require '/Users/aha/www/wsf/vendor/autoload.php';
 $loader->setPsr4('zxf\\Modules\\', '/Users/aha/www/modules/src/');
 
-$container = new Container();
-\Illuminate\Support\Facades\Facade::setFacadeApplication($container);
+$container = new Container;
+Facade::setFacadeApplication($container);
 
 // Laravel 13 的 getDefaultQueryGrammar() 固定返回通用 Grammar（由连接器工厂注入），
 // 独立脚本必须手动注入 MySqlGrammar 以获得反引号 wrap 行为。
-$connection = new Connection(new \PDO('sqlite::memory:'), 'default', '', ['driver' => 'mysql']);
-$connection->setQueryGrammar(new \Illuminate\Database\Query\Grammars\MySqlGrammar($connection));
-$resolver = new class ($connection) implements ConnectionResolverInterface {
+$connection = new Connection(new PDO('sqlite::memory:'), 'default', '', ['driver' => 'mysql']);
+$connection->setQueryGrammar(new MySqlGrammar($connection));
+$resolver = new class($connection) implements ConnectionResolverInterface
+{
     private Connection $conn;
 
     public function __construct(Connection $conn)
@@ -54,12 +57,10 @@ $resolver = new class ($connection) implements ConnectionResolverInterface {
         return 'default';
     }
 
-    public function setDefaultConnection($name)
-    {
-    }
+    public function setDefaultConnection($name) {}
 };
 Model::setConnectionResolver($resolver);
-Model::setEventDispatcher(new \Illuminate\Events\Dispatcher($container));
+Model::setEventDispatcher(new Dispatcher($container));
 
 // ---------- 注册字符串函数宏（验证源文件来自本包） ----------
 $sfFile = (new ReflectionClass(StringFunctionsMacro::class))->getFileName();
@@ -233,8 +234,8 @@ checkThrows('非法别名', fn () => StringMacroVerifyModel::query()->substringI
 checkThrows('非法多列拼接字段', fn () => StringMacroVerifyModel::query()->whereConcatLike(['name; DROP'], 'x'), '非法的 SQL column标识符');
 
 // ---------- 9. assertMysql 驱动守卫 ----------
-$sqliteConnection = new Connection(new \PDO('sqlite::memory:'), 'sqlite', '', ['driver' => 'sqlite']);
-$sqliteQuery = new \Illuminate\Database\Query\Builder($sqliteConnection);
+$sqliteConnection = new Connection(new PDO('sqlite::memory:'), 'sqlite', '', ['driver' => 'sqlite']);
+$sqliteQuery = new Builder($sqliteConnection);
 checkThrows('SQLite 上调用 whereLocate 被拒绝', fn () => StringFunctionsMacro::whereLocate($sqliteQuery, 'title', 'x'), '仅支持 MySQL 8.0+');
 checkThrows('SQLite 上调用 whereFullText 被拒绝', fn () => StringFunctionsMacro::whereFullText($sqliteQuery, 'title', 'x'), '仅支持 MySQL 8.0+');
 

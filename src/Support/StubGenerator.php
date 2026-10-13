@@ -9,10 +9,8 @@ use Illuminate\Support\Str;
 
 /**
  * Stub 生成器
- *
  * 提供模板文件处理和变量替换功能
  * 支持完善的变量定义、替换验证和错误检测机制
- *
  * 主要功能：
  * - 从 stub 模板文件生成目标文件
  * - 支持变量替换（如 {{NAME}}, {{NAMESPACE}}, {{LOWER_NAME}} 等）
@@ -24,43 +22,30 @@ class StubGenerator
 {
     /**
      * 模块名称
-     *
      * 格式：StudlyCase（如 Blog）
-     *
-     * @var string
      */
     protected string $moduleName;
 
     /**
      * 模块路径
-     *
      * 模块的根目录路径
-     *
-     * @var string
      */
     protected string $modulePath;
 
     /**
      * 模块命名空间
-     *
      * 格式：Modules（即根命名空间）
-     *
-     * @var string
      */
     protected string $namespace;
 
     /**
      * Stub 路径
-     *
      * 模板文件存储目录
-     *
-     * @var string
      */
     protected string $stubPath;
 
     /**
      * 替换变量
-     *
      * 存储所有变量名和对应的替换值
      * 格式：['{{NAME}}' => 'Blog', '{{LOWER_NAME}}' => 'blog']
      *
@@ -70,7 +55,6 @@ class StubGenerator
 
     /**
      * 变量替换统计
-     *
      * 用于检测未替换的变量
      * 格式：['{{NAME}}' => ['found' => 5, 'replaced' => 5]]
      *
@@ -80,7 +64,6 @@ class StubGenerator
 
     /**
      * 已定义的变量白名单
-     *
      * 用于验证 stub 中的变量是否有效
      * 严格模式下，stub 中出现的变量必须在白名单中
      *
@@ -90,20 +73,17 @@ class StubGenerator
 
     /**
      * 严格模式
-     *
      * 开启后，stub 中未定义的变量会报错
      * 默认开启以确保代码质量
-     *
-     * @var bool
      */
     protected bool $strictMode = true;
 
     /**
      * 创建新实例
      *
-     * @param string      $moduleName 模块名称或 ModuleInterface 实例
-     * @param string|null $modulePath 模块路径（可选，默认从配置读取）
-     * @param string|null $namespace  模块命名空间（可选，默认从配置读取）
+     * @param  string  $moduleName  模块名称或 ModuleInterface 实例
+     * @param  string|null  $modulePath  模块路径（可选，默认从配置读取）
+     * @param  string|null  $namespace  模块命名空间（可选，默认从配置读取）
      */
     public function __construct(
         string $moduleName,
@@ -111,12 +91,12 @@ class StubGenerator
         ?string $namespace = null
     ) {
         $this->moduleName = Str::studly($moduleName);
-        $this->modulePath = $modulePath ?? config('modules.path', base_path('Modules')) . '/' . $this->moduleName;
+        $this->modulePath = $modulePath ?? config('modules.path', base_path('Modules')).'/'.$this->moduleName;
         $this->namespace = $namespace ?? config('modules.namespace', 'Modules');
 
         // 支持自定义 stub 路径
         $customStubPath = config('modules.stubs.path', resource_path('stubs/modules'));
-        $defaultStubPath = __DIR__ . '/../Commands/stubs';
+        $defaultStubPath = __DIR__.'/../Commands/stubs';
 
         $this->stubPath = is_dir($customStubPath) ? $customStubPath : $defaultStubPath;
 
@@ -127,21 +107,18 @@ class StubGenerator
     /**
      * 获取 Stub 路径
      *
-     * @param string $stub stub文件名
+     * @param  string  $stub  stub文件名
      * @return string 完整的 stub 文件路径
      */
     public function getStubPath(string $stub): string
     {
-        return $this->stubPath . '/' . $stub;
+        return $this->stubPath.'/'.$stub;
     }
 
     /**
      * 设置默认替换变量
-     *
      * 自动定义所有常用的stub变量
      * 包括：模块名称的各种变体、命名空间、日期时间等
-     *
-     * @return void
      */
     protected function setReplacements(): void
     {
@@ -158,8 +135,8 @@ class StubGenerator
 
             // === 命名空间相关变量 ===
             '{{NAMESPACE}}' => $this->namespace,                              // 根命名空间: Modules
-            '{{MODULE_NAMESPACE}}' => $this->namespace . '\\' . $this->moduleName, // 模块命名空间: Modules\Blog
-            '{{EVENT_NAMESPACE}}' => $this->namespace . '\\' . $this->moduleName . '\\Events', // 事件命名空间: Modules\Blog\Events
+            '{{MODULE_NAMESPACE}}' => $this->namespace.'\\'.$this->moduleName, // 模块命名空间: Modules\Blog
+            '{{EVENT_NAMESPACE}}' => $this->namespace.'\\'.$this->moduleName.'\\Events', // 事件命名空间: Modules\Blog\Events
 
             // === 路径相关变量 ===
             '{{MODULE_PATH}}' => $this->modulePath,                           // 模块绝对路径
@@ -202,8 +179,8 @@ class StubGenerator
     /**
      * 添加替换变量
      *
-     * @param string $key 变量键名（格式：{{VAR_NAME}}）
-     * @param mixed $value 变量值
+     * @param  string  $key  变量键名（格式：{{VAR_NAME}}）
+     * @param  mixed  $value  变量值
      * @return self 支持链式调用
      */
     public function addReplacement(string $key, mixed $value): self
@@ -211,7 +188,7 @@ class StubGenerator
         // 验证变量名格式
         if (! str_starts_with($key, '{{') || ! str_ends_with($key, '}}')) {
             // 自动添加大括号
-            $key = '{{' . trim($key, '{}') . '}}';
+            $key = '{{'.trim($key, '{}').'}}';
         }
 
         $this->replacements[$key] = $value;
@@ -223,7 +200,7 @@ class StubGenerator
     /**
      * 批量添加替换变量
      *
-     * @param array<string, mixed> $replacements 变量数组
+     * @param  array<string, mixed>  $replacements  变量数组
      * @return self 支持链式调用
      */
     public function addReplacements(array $replacements): self
@@ -248,8 +225,8 @@ class StubGenerator
     /**
      * 获取单个替换变量的值
      *
-     * @param string $key 变量键名
-     * @param mixed $default 默认值（当变量不存在时）
+     * @param  string  $key  变量键名
+     * @param  mixed  $default  默认值（当变量不存在时）
      * @return mixed 变量值或默认值
      */
     public function getReplacement(string $key, mixed $default = null): mixed
@@ -260,7 +237,7 @@ class StubGenerator
     /**
      * 检查变量是否已定义
      *
-     * @param string $key 变量键名
+     * @param  string  $key  变量键名
      * @return bool 是否已定义
      */
     public function hasReplacement(string $key): bool
@@ -271,7 +248,7 @@ class StubGenerator
     /**
      * 设置严格模式
      *
-     * @param bool $strict 是否开启严格模式
+     * @param  bool  $strict  是否开启严格模式
      * @return self 支持链式调用
      */
     public function setStrictMode(bool $strict): self
@@ -293,13 +270,12 @@ class StubGenerator
 
     /**
      * 生成文件
-     *
      * 从 stub 模板生成目标文件
      * 自动执行变量替换、目录创建等操作
      *
-     * @param string $stub stub 文件名（相对于 stubs 目录）
-     * @param string $destination 目标文件路径（相对于模块根目录）
-     * @param bool $overwrite 是否覆盖已存在的文件
+     * @param  string  $stub  stub 文件名（相对于 stubs 目录）
+     * @param  string  $destination  目标文件路径（相对于模块根目录）
+     * @param  bool  $overwrite  是否覆盖已存在的文件
      * @return bool 是否成功生成文件
      */
     public function generate(string $stub, string $destination, bool $overwrite = false): bool
@@ -342,15 +318,13 @@ class StubGenerator
                     'line' => $e->getLine(),
                 ]);
             }
+
             return false;
         }
     }
 
     /**
      * 检查文件是否存在
-     *
-     * @param string $destination
-     * @return bool
      */
     public function fileExists(string $destination): bool
     {
@@ -359,9 +333,6 @@ class StubGenerator
 
     /**
      * 删除文件
-     *
-     * @param string $destination
-     * @return bool
      */
     public function deleteFile(string $destination): bool
     {
@@ -376,9 +347,6 @@ class StubGenerator
 
     /**
      * 检查目录是否存在
-     *
-     * @param string $destination
-     * @return bool
      */
     public function directoryExists(string $destination): bool
     {
@@ -388,7 +356,7 @@ class StubGenerator
     /**
      * 获取完整路径
      *
-     * @param string $path 相对路径
+     * @param  string  $path  相对路径
      * @return string 完整路径
      */
     public function getFullPath(string $path): string
@@ -398,16 +366,15 @@ class StubGenerator
             return $path;
         }
 
-        return $this->modulePath . '/' . $path;
+        return $this->modulePath.'/'.$path;
     }
 
     /**
      * 获取 Stub 内容并替换变量
-     *
      * 执行变量替换，并记录替换统计信息
      * 在严格模式下，会检测未替换的变量
      *
-     * @param string $stubPath stub文件路径
+     * @param  string  $stubPath  stub文件路径
      * @return string 替换后的内容
      */
     protected function getStubContent(string $stubPath): string
@@ -430,7 +397,7 @@ class StubGenerator
         // 例如：{{MODULE_NAMESPACE}} 必须在 {{NAMESPACE}} 之前替换，
         // 否则 {{NAMESPACE}} 会先替换 {{MODULE_NAMESPACE}} 中的部分内容
         $replacements = $this->replacements;
-        uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
+        uksort($replacements, fn (string $a, string $b): int => strlen($b) - strlen($a));
 
         foreach ($replacements as $search => $replace) {
             $count = 0;
@@ -452,14 +419,12 @@ class StubGenerator
 
     /**
      * 验证变量替换结果
-     *
      * 在严格模式下，检测以下情况：
      * 1. stub中使用了未定义的变量
      * 2. 定义的变量在stub中未被使用
      * 3. 变量值为null或空字符串
      *
-     * @param string $stubPath stub文件路径
-     * @return void
+     * @param  string  $stubPath  stub文件路径
      */
     protected function validateReplacements(string $stubPath): void
     {
@@ -490,7 +455,7 @@ class StubGenerator
         // 如果有错误，记录日志（或者可以抛出异常）
         if (! empty($errors)) {
             $stubName = basename($stubPath);
-            $message = "Stub [{$stubName}] 变量替换验证失败:\n" . implode("\n", $errors);
+            $message = "Stub [{$stubName}] 变量替换验证失败:\n".implode("\n", $errors);
 
             // 始终记录错误日志
             logger()->error($message, [
@@ -533,12 +498,6 @@ class StubGenerator
 
     /**
      * 从自定义路径生成文件
-     *
-     * @param string $stubPath
-     * @param string $destination
-     * @param array|null $replacements
-     * @param bool $overwrite
-     * @return bool
      */
     public static function generateFromPath(
         string $stubPath,
@@ -554,7 +513,7 @@ class StubGenerator
 
         if ($replacements) {
             // 按变量名长度降序排序，防止短变量名干扰长变量名替换
-            uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
+            uksort($replacements, fn (string $a, string $b): int => strlen($b) - strlen($a));
             foreach ($replacements as $search => $replace) {
                 $content = str_replace($search, $replace, $content);
             }
@@ -574,14 +533,11 @@ class StubGenerator
 
     /**
      * 生成目录结构
-     *
-     * @param array $directories
-     * @return void
      */
     public function generateDirectories(array $directories): void
     {
         foreach ($directories as $directory) {
-            $path = $this->modulePath . '/' . $directory;
+            $path = $this->modulePath.'/'.$directory;
 
             if (! is_dir($path)) {
                 File::makeDirectory($path, 0755, true);
@@ -592,8 +548,6 @@ class StubGenerator
     /**
      * 批量生成文件
      *
-     * @param array $files
-     * @param bool $overwrite
      * @return array 生成结果
      */
     public function generateFiles(array $files, bool $overwrite = false): array
@@ -601,7 +555,7 @@ class StubGenerator
         $results = [];
 
         foreach ($files as $stub => $destination) {
-            $fullPath = $this->modulePath . '/' . $destination;
+            $fullPath = $this->modulePath.'/'.$destination;
             $results[$destination] = $this->generate($stub, $fullPath, $overwrite);
         }
 
@@ -610,8 +564,6 @@ class StubGenerator
 
     /**
      * 获取模块路径
-     *
-     * @return string
      */
     public function getModulePath(): string
     {
@@ -655,7 +607,7 @@ class StubGenerator
      */
     public function getModuleNamespace(): string
     {
-        return $this->namespace . '\\' . $this->moduleName;
+        return $this->namespace.'\\'.$this->moduleName;
     }
 
     /**

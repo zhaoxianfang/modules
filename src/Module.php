@@ -9,9 +9,7 @@ use zxf\Modules\Support\ModuleContext;
 
 /**
  * 模块实体类
- *
  * 代表一个具体的模块实例，封装模块的所有元数据和操作。
- *
  * 特性:
  * - 模块配置文件驱动（Config/{lower}.php 或 Config/config.php）
  * - 多级缓存（静态缓存 + 属性缓存）
@@ -19,7 +17,6 @@ use zxf\Modules\Support\ModuleContext;
  * - 目录结构灵活配置
  * - 严格的类型安全和空值检查
  *
- * @package zxf\Modules
  * @version 5.0.0
  */
 class Module implements ModuleInterface
@@ -87,10 +84,10 @@ class Module implements ModuleInterface
     /**
      * 创建新模块实例
      *
-     * @param string $name      模块名称 (StudlyCase)
-     * @param string $path      模块根路径
-     * @param string $namespace 根命名空间
-     * @param array  $options   额外选项 [priority, description, aliases, author, version, enabled]
+     * @param  string  $name  模块名称 (StudlyCase)
+     * @param  string  $path  模块根路径
+     * @param  string  $namespace  根命名空间
+     * @param  array  $options  额外选项 [priority, description, aliases, author, version, enabled]
      */
     public function __construct(
         string $name,
@@ -117,11 +114,9 @@ class Module implements ModuleInterface
 
     /**
      * 初始化模块：加载模块配置文件并合并元数据
-     *
      * 配置文件优先级：
      * 1. Config/{lower_name}.php
      * 2. Config/config.php
-     *
      * 配置文件中可定义的模块元数据键：
      * - enabled: bool 是否启用
      * - priority: int 加载优先级
@@ -144,7 +139,6 @@ class Module implements ModuleInterface
 
     /**
      * 加载模块的配置文件并提取元数据
-     *
      * 这是 composer.json 的替代方案，所有模块元数据从 Config/ 目录下的
      * PHP 配置文件读取，无需额外维护 composer.json。
      */
@@ -154,6 +148,7 @@ class Module implements ModuleInterface
 
         if (empty($config) || ! is_array($config)) {
             $this->moduleConfigData = [];
+
             return;
         }
 
@@ -186,11 +181,11 @@ class Module implements ModuleInterface
         }
 
         // 优先读取 {lower_name}.php
-        $configFile = $configPath . DIRECTORY_SEPARATOR . $this->getLowerName() . '.php';
+        $configFile = $configPath.DIRECTORY_SEPARATOR.$this->getLowerName().'.php';
 
         if (! file_exists($configFile)) {
             // 回退到 config.php
-            $configFile = $configPath . DIRECTORY_SEPARATOR . 'config.php';
+            $configFile = $configPath.DIRECTORY_SEPARATOR.'config.php';
         }
 
         if (! file_exists($configFile)) {
@@ -199,6 +194,7 @@ class Module implements ModuleInterface
 
         try {
             $config = require $configFile;
+
             return is_array($config) ? $config : [];
         } catch (\Throwable) {
             return [];
@@ -250,11 +246,10 @@ class Module implements ModuleInterface
 
     /**
      * 按模块名查找模块（便捷静态工厂，委托给仓库）
-     *
      * 兼容命令行中常见的 `Module::find($name)` 调用约定，避免各处重复
      * 写 `ModuleContext::getRepository()->find(...)`。
      *
-     * @param string $name 模块名（任意大小写/命名风格均可，内部会归一化）
+     * @param  string  $name  模块名（任意大小写/命名风格均可，内部会归一化）
      */
     public static function find(string $name): ?ModuleInterface
     {
@@ -309,7 +304,6 @@ class Module implements ModuleInterface
 
     /**
      * 清除全局模块发现缓存（便捷静态委托）
-     *
      * 与实例方法 clearCache()（清除单个模块的内部缓存）区分：
      * 本方法清除仓库层面的模块注册清单缓存，供命令行在重建/删除模块后调用。
      */
@@ -324,7 +318,7 @@ class Module implements ModuleInterface
             return $this->path;
         }
 
-        return $this->path . DIRECTORY_SEPARATOR . ltrim($path, '/\\');
+        return $this->path.DIRECTORY_SEPARATOR.ltrim($path, '/\\');
     }
 
     public function getNamespace(): string
@@ -334,7 +328,7 @@ class Module implements ModuleInterface
 
     public function getClassNamespace(): string
     {
-        return $this->namespace . '\\' . $this->name;
+        return $this->namespace.'\\'.$this->name;
     }
 
     // ========================================================================
@@ -357,11 +351,13 @@ class Module implements ModuleInterface
         // 配置文件显式禁用
         if (array_key_exists('enabled', $config) && $config['enabled'] === false) {
             $this->enabled = false;
+
             return false;
         }
 
         // 默认启用
         $this->enabled = true;
+
         return true;
     }
 
@@ -505,7 +501,7 @@ class Module implements ModuleInterface
      */
     public function hasRoute(string $route): bool
     {
-        return file_exists($this->getRoutesPath() . DIRECTORY_SEPARATOR . $route . '.php');
+        return file_exists($this->getRoutesPath().DIRECTORY_SEPARATOR.$route.'.php');
     }
 
     /**
@@ -537,13 +533,13 @@ class Module implements ModuleInterface
             return [];
         }
 
-        $files = glob($routesPath . DIRECTORY_SEPARATOR . '*.php');
+        $files = glob($routesPath.DIRECTORY_SEPARATOR.'*.php');
 
         if ($files === false) {
             return [];
         }
 
-        return array_map(fn(string $file): string => pathinfo($file, PATHINFO_FILENAME), $files);
+        return array_map(fn (string $file): string => pathinfo($file, PATHINFO_FILENAME), $files);
     }
 
     // ========================================================================
@@ -563,7 +559,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块主配置文件完整数组
-     *
      * 与初始化时加载的 moduleConfigData 保持一致，
      * 避免重复加载同一文件。
      *
@@ -577,20 +572,21 @@ class Module implements ModuleInterface
 
         // 未初始化时触发加载
         $this->loadModuleConfigData();
+
         return $this->moduleConfigData ?? [];
     }
 
     public function getServiceProviderClass(): ?string
     {
         // 优先尝试 {Module}ServiceProvider
-        $className = $this->namespace . '\\' . $this->name . '\\Providers\\' . $this->name . 'ServiceProvider';
+        $className = $this->namespace.'\\'.$this->name.'\\Providers\\'.$this->name.'ServiceProvider';
 
         if (class_exists($className)) {
             return $className;
         }
 
         // 回退到 ModuleServiceProvider
-        $className = $this->namespace . '\\' . $this->name . '\\Providers\\ModuleServiceProvider';
+        $className = $this->namespace.'\\'.$this->name.'\\Providers\\ModuleServiceProvider';
 
         if (class_exists($className)) {
             return $className;
@@ -602,8 +598,8 @@ class Module implements ModuleInterface
         $providersPath = $this->getProvidersPath();
 
         if (is_dir($providersPath)) {
-            $files = glob($providersPath . '/*ServiceProvider.php') ?: [];
-            $preferred = $this->name . 'ServiceProvider';
+            $files = glob($providersPath.'/*ServiceProvider.php') ?: [];
+            $preferred = $this->name.'ServiceProvider';
             $matched = null;
 
             foreach ($files as $file) {
@@ -616,7 +612,7 @@ class Module implements ModuleInterface
             }
 
             if ($matched !== null) {
-                $className = $this->namespace . '\\' . $this->name . '\\Providers\\' . $matched;
+                $className = $this->namespace.'\\'.$this->name.'\\Providers\\'.$matched;
                 if (class_exists($className)) {
                     return $className;
                 }
@@ -628,7 +624,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块的额外 Laravel 服务提供者
-     *
      * 从配置文件的 providers 键读取
      *
      * @return array<int, string>
@@ -640,7 +635,6 @@ class Module implements ModuleInterface
 
     /**
      * 获取模块的额外 Laravel 门面别名
-     *
      * 从配置文件的 laravel_aliases 键读取
      *
      * @return array<string, string>

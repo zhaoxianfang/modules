@@ -6,18 +6,19 @@ declare(strict_types=1);
  * ============================================================================
  * 模块系统 - 核心助手函数集
  * ============================================================================
- *
  * 本文件提供完整的模块系统操作API，设计原则：
  * - 最小化框架依赖：通过 ModuleContext 解析器抽象框架依赖
  * - 静态缓存：高频调用结果缓存，提升性能
  * - 防御性编程：所有函数包含异常捕获
  * - 类型安全：严格类型声明和返回类型
  *
- * @package   zxf\Modules
  * @version   4.0.0
+ *
  * @requires  PHP 8.3+
  */
 
+use Illuminate\Contracts\View\View;
+use Illuminate\Support\Facades\Route;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Support\ModuleContext;
@@ -30,11 +31,10 @@ use zxf\Modules\Support\StubGenerator;
 if (! function_exists('module_name')) {
     /**
      * 获取当前模块名称
-     *
      * 自动检测当前请求或代码所在的模块上下文。
      *
-     * @param bool $toLower        是否返回小写蛇形命名
-     * @param bool $requestModule  路由检测模式（true: 路由检测, false: 文件检测）
+     * @param  bool  $toLower  是否返回小写蛇形命名
+     * @param  bool  $requestModule  路由检测模式（true: 路由检测, false: 文件检测）
      * @return string 模块名称，或 'App'/'Command'
      */
     function module_name(bool $toLower = false, bool $requestModule = true): string
@@ -47,8 +47,7 @@ if (! function_exists('module')) {
     /**
      * 获取模块实例或模块仓库
      *
-     * @param string|null $module 模块名称（不传返回仓库，传模块名可能返回 null 表示模块不存在）
-     * @return ModuleInterface|RepositoryInterface|null
+     * @param  string|null  $module  模块名称（不传返回仓库，传模块名可能返回 null 表示模块不存在）
      */
     function module(?string $module = null): ModuleInterface|RepositoryInterface|null
     {
@@ -73,6 +72,7 @@ if (! function_exists('modules')) {
     function modules(): array
     {
         static $cache = null;
+
         return $cache ??= ModuleContext::getModules();
     }
 }
@@ -81,11 +81,12 @@ if (! function_exists('module_exists')) {
     /**
      * 检查模块是否存在
      *
-     * @param string $module 模块名称
+     * @param  string  $module  模块名称
      */
     function module_exists(string $module): bool
     {
         static $cache = [];
+
         return $cache[$module] ??= ModuleContext::getRepository()->has($module);
     }
 }
@@ -94,7 +95,7 @@ if (! function_exists('module_enabled')) {
     /**
      * 检查模块是否启用
      *
-     * @param string|null $module 模块名称（不传则检测当前模块）
+     * @param  string|null  $module  模块名称（不传则检测当前模块）
      */
     function module_enabled(?string $module = null): bool
     {
@@ -108,7 +109,7 @@ if (! function_exists('module_enabled')) {
         return $cache[$module] ??= (function () use ($module): bool {
             try {
                 return ModuleContext::getRepository()->find($module)?->isEnabled() ?? false;
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 return false;
             }
         })();
@@ -123,9 +124,9 @@ if (! function_exists('module_path')) {
     /**
      * 获取模块目录的完整路径
      *
-     * @param string      $path   子路径
-     * @param string|null $module 模块名称
-     * @return string
+     * @param  string  $path  子路径
+     * @param  string|null  $module  模块名称
+     *
      * @throws RuntimeException
      */
     function module_path(string $path = '', ?string $module = null): string
@@ -152,7 +153,7 @@ if (! function_exists('module_config_path')) {
             throw new RuntimeException('Cannot determine module name.');
         }
 
-        return module_path('Config/' . $configFile, $module);
+        return module_path('Config/'.$configFile, $module);
     }
 }
 
@@ -168,7 +169,7 @@ if (! function_exists('module_routes_path')) {
             throw new RuntimeException('Cannot determine module name.');
         }
 
-        return module_path('Routes/' . $route . '.php', $module);
+        return module_path('Routes/'.$route.'.php', $module);
     }
 }
 
@@ -208,8 +209,8 @@ if (! function_exists('module_controllers_path')) {
     /**
      * 获取模块控制器目录路径
      *
-     * @param string      $controller 控制器类型（Web, Api, Admin 等）
-     * @param string|null $module     模块名称
+     * @param  string  $controller  控制器类型（Web, Api, Admin 等）
+     * @param  string|null  $module  模块名称
      */
     function module_controllers_path(string $controller = 'Web', ?string $module = null): string
     {
@@ -219,7 +220,7 @@ if (! function_exists('module_controllers_path')) {
             throw new RuntimeException('Cannot determine module name.');
         }
 
-        return module_path('Http/Controllers/' . ucfirst($controller), $module);
+        return module_path('Http/Controllers/'.ucfirst($controller), $module);
     }
 }
 
@@ -259,8 +260,8 @@ if (! function_exists('module_resources_path')) {
     /**
      * 获取模块资源目录路径（默认 Resources/assets）
      *
-     * @param string      $path   资源子路径（如 'js'、'css/app.css'）
-     * @param string|null $module 模块名称
+     * @param  string  $path  资源子路径（如 'js'、'css/app.css'）
+     * @param  string|null  $module  模块名称
      *
      * @example
      * module_resources_path();        // Modules/Blog/Resources/assets
@@ -288,10 +289,9 @@ if (! function_exists('module_config')) {
     /**
      * 获取模块配置值（支持多级缓存）
      *
-     * @param string      $key     配置键（如 'common' 或 'common.name'）
-     * @param mixed       $default 默认值
-     * @param string|null $module  模块名称
-     * @return mixed
+     * @param  string  $key  配置键（如 'common' 或 'common.name'）
+     * @param  mixed  $default  默认值
+     * @param  string|null  $module  模块名称
      */
     function module_config(string $key, mixed $default = null, ?string $module = null): mixed
     {
@@ -307,8 +307,8 @@ if (! function_exists('module_config')) {
         }
 
         // 缓存存于 ModuleContext，便于 module_set_config 等写入操作精确失效
-        $cacheKey = strtolower($useModule) . ':' . $key;
-        $fullKey = strtolower($useModule) . '.' . $key;
+        $cacheKey = strtolower($useModule).':'.$key;
+        $fullKey = strtolower($useModule).'.'.$key;
 
         return ModuleContext::getModuleConfigCached($cacheKey, fn () => ModuleContext::getConfig($fullKey, $default));
     }
@@ -318,9 +318,8 @@ if (! function_exists('module_get_config')) {
     /**
      * 获取模块配置文件完整数组
      *
-     * @param string      $configFile 配置文件名
-     * @param string|null $module     模块名称
-     * @return array
+     * @param  string  $configFile  配置文件名
+     * @param  string|null  $module  模块名称
      */
     function module_get_config(string $configFile = '', ?string $module = null): array
     {
@@ -330,7 +329,8 @@ if (! function_exists('module_get_config')) {
             return [];
         }
 
-        $data = ModuleContext::getConfig(strtolower($module) . '.' . $configFile, []);
+        $data = ModuleContext::getConfig(strtolower($module).'.'.$configFile, []);
+
         return is_array($data) ? $data : [];
     }
 }
@@ -339,10 +339,10 @@ if (! function_exists('module_set_config')) {
     /**
      * 运行时设置模块配置值（非持久化）
      *
-     * @param string      $configFile 配置文件名
-     * @param string      $key        配置键
-     * @param mixed       $value      配置值
-     * @param string|null $module     模块名称
+     * @param  string  $configFile  配置文件名
+     * @param  string  $key  配置键
+     * @param  mixed  $value  配置值
+     * @param  string|null  $module  模块名称
      */
     function module_set_config(string $configFile = '', string $key = '', mixed $value = null, ?string $module = null): void
     {
@@ -352,7 +352,7 @@ if (! function_exists('module_set_config')) {
             return;
         }
 
-        ModuleContext::setConfig(strtolower($module) . '.' . $configFile . '.' . $key, $value);
+        ModuleContext::setConfig(strtolower($module).'.'.$configFile.'.'.$key, $value);
 
         // 使 module_config 静态缓存失效，保证后续读取能拿到新值
         ModuleContext::clearModuleConfigCache($module);
@@ -363,9 +363,9 @@ if (! function_exists('module_has_config')) {
     /**
      * 检查模块配置项是否存在
      *
-     * @param string      $configFile 配置文件名
-     * @param string      $key        配置键（为空则检查整个文件）
-     * @param string|null $module     模块名称
+     * @param  string  $configFile  配置文件名
+     * @param  string  $key  配置键（为空则检查整个文件）
+     * @param  string|null  $module  模块名称
      */
     function module_has_config(string $configFile = '', string $key = '', ?string $module = null): bool
     {
@@ -376,14 +376,14 @@ if (! function_exists('module_has_config')) {
                 return false;
             }
 
-            $data = ModuleContext::getConfig(strtolower($module) . '.' . $configFile, []);
+            $data = ModuleContext::getConfig(strtolower($module).'.'.$configFile, []);
 
             if (empty($key)) {
                 return ! empty($data);
             }
 
             return is_array($data) && array_key_exists($key, $data);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
@@ -393,8 +393,7 @@ if (! function_exists('module_config_files')) {
     /**
      * 获取模块的所有配置文件列表
      *
-     * @param string|null $module 模块名称
-     * @return array
+     * @param  string|null  $module  模块名称
      */
     function module_config_files(?string $module = null): array
     {
@@ -411,9 +410,10 @@ if (! function_exists('module_config_files')) {
                 return [];
             }
 
-            $files = glob($configPath . '/*.php');
+            $files = glob($configPath.'/*.php');
+
             return $files === false ? [] : array_map('basename', $files);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return [];
         }
     }
@@ -427,7 +427,7 @@ if (! function_exists('module_namespace')) {
     /**
      * 获取模块 PHP 命名空间
      *
-     * @param string|null $module 模块名称
+     * @param  string|null  $module  模块名称
      */
     function module_namespace(?string $module = null): string
     {
@@ -440,9 +440,10 @@ if (! function_exists('module_namespace')) {
 
         try {
             $moduleInstance = ModuleContext::getRepository()->find($module);
-            return $moduleInstance?->getClassNamespace() ?? $defaultNs . '\\' . $module;
-        } catch (\Throwable) {
-            return $defaultNs . '\\' . $module;
+
+            return $moduleInstance?->getClassNamespace() ?? $defaultNs.'\\'.$module;
+        } catch (Throwable) {
+            return $defaultNs.'\\'.$module;
         }
     }
 }
@@ -451,12 +452,12 @@ if (! function_exists('module_class')) {
     /**
      * 构建模块内类的完整类名
      *
-     * @param string      $class  相对类名
-     * @param string|null $module 模块名称
+     * @param  string  $class  相对类名
+     * @param  string|null  $module  模块名称
      */
     function module_class(string $class = '', ?string $module = null): string
     {
-        return module_namespace($module) . '\\' . $class;
+        return module_namespace($module).'\\'.$class;
     }
 }
 
@@ -468,13 +469,14 @@ if (! function_exists('module_view_path')) {
     /**
      * 获取模块视图命名空间路径
      *
-     * @param string      $view   视图名称
-     * @param string|null $module 模块名称
+     * @param  string  $view  视图名称
+     * @param  string|null  $module  模块名称
      */
     function module_view_path(string $view = '', ?string $module = null): string
     {
         $module ??= module_name(false, false) ?: 'default';
-        return strtolower($module) . '::' . $view;
+
+        return strtolower($module).'::'.$view;
     }
 }
 
@@ -482,15 +484,15 @@ if (! function_exists('module_view')) {
     /**
      * 返回模块视图实例
      *
-     * @param string      $view   视图名称
-     * @param array       $data   视图数据
-     * @param string|null $module 模块名称
-     * @return \Illuminate\Contracts\View\View
+     * @param  string  $view  视图名称
+     * @param  array  $data  视图数据
+     * @param  string|null  $module  模块名称
      */
-    function module_view(string $view = '', array $data = [], ?string $module = null): \Illuminate\Contracts\View\View
+    function module_view(string $view = '', array $data = [], ?string $module = null): View
     {
         $module ??= module_name(false, false) ?: 'default';
-        return view(strtolower($module) . '::' . $view, $data);
+
+        return view(strtolower($module).'::'.$view, $data);
     }
 }
 
@@ -498,14 +500,15 @@ if (! function_exists('module_route_path')) {
     /**
      * 获取模块路由名称前缀
      *
-     * @param string      $route  路由名称
-     * @param string|null $module 模块名称
+     * @param  string  $route  路由名称
+     * @param  string|null  $module  模块名称
      */
     function module_route_path(string $route = '', ?string $module = null): string
     {
         $module ??= module_name(false, false) ?: 'default';
-        $prefix = strtolower($module) . '.';
-        return $route !== '' ? $prefix . $route : $prefix;
+        $prefix = strtolower($module).'.';
+
+        return $route !== '' ? $prefix.$route : $prefix;
     }
 }
 
@@ -513,14 +516,15 @@ if (! function_exists('module_route')) {
     /**
      * 生成模块路由 URL
      *
-     * @param string      $route  路由名称
-     * @param array       $params 路由参数
-     * @param string|null $module 模块名称
+     * @param  string  $route  路由名称
+     * @param  array  $params  路由参数
+     * @param  string|null  $module  模块名称
      */
     function module_route(string $route = '', array $params = [], ?string $module = null): string
     {
         $module ??= module_name(false, false) ?: 'default';
-        return route(strtolower($module) . '.' . $route, $params);
+
+        return route(strtolower($module).'.'.$route, $params);
     }
 }
 
@@ -528,8 +532,8 @@ if (! function_exists('module_has_route')) {
     /**
      * 检查模块路由是否已注册
      *
-     * @param string      $route  路由名称（不含模块前缀）
-     * @param string|null $module 模块名称
+     * @param  string  $route  路由名称（不含模块前缀）
+     * @param  string|null  $module  模块名称
      *
      * @example
      * module_has_route('index', 'Blog');  // 检查 blog.index 是否存在
@@ -538,7 +542,7 @@ if (! function_exists('module_has_route')) {
     {
         $module ??= module_name(false, false) ?: 'default';
 
-        return \Illuminate\Support\Facades\Route::has(strtolower($module).'.'.$route);
+        return Route::has(strtolower($module).'.'.$route);
     }
 }
 
@@ -546,13 +550,14 @@ if (! function_exists('module_url')) {
     /**
      * 生成模块 URL
      *
-     * @param string      $path   路径
-     * @param string|null $module 模块名称
+     * @param  string  $path  路径
+     * @param  string|null  $module  模块名称
      */
     function module_url(string $path = '', ?string $module = null): string
     {
         $module ??= module_name(false, false) ?: 'default';
-        return url(strtolower($module) . '/' . ltrim($path, '/'));
+
+        return url(strtolower($module).'/'.ltrim($path, '/'));
     }
 }
 
@@ -560,13 +565,14 @@ if (! function_exists('module_asset')) {
     /**
      * 生成模块静态资源 URL
      *
-     * @param string      $asset  资源路径
-     * @param string|null $module 模块名称
+     * @param  string  $asset  资源路径
+     * @param  string|null  $module  模块名称
      */
     function module_asset(string $asset = '', ?string $module = null): string
     {
         $module ??= module_name(false, false) ?: 'default';
-        return asset('modules/' . strtolower($module) . '/' . ltrim($asset, '/'));
+
+        return asset('modules/'.strtolower($module).'/'.ltrim($asset, '/'));
     }
 }
 
@@ -574,16 +580,16 @@ if (! function_exists('module_lang')) {
     /**
      * 获取模块翻译文本
      *
-     * @param string      $key     翻译键
-     * @param array       $replace 占位符替换
-     * @param string|null $locale  语言环境
-     * @param string|null $module  模块名称
-     * @return string|array
+     * @param  string  $key  翻译键
+     * @param  array  $replace  占位符替换
+     * @param  string|null  $locale  语言环境
+     * @param  string|null  $module  模块名称
      */
     function module_lang(string $key = '', array $replace = [], ?string $locale = null, ?string $module = null): string|array
     {
         $module ??= module_name(false, false) ?: 'default';
-        return trans(strtolower($module) . '::' . $key, $replace, $locale);
+
+        return trans(strtolower($module).'::'.$key, $replace, $locale);
     }
 }
 
@@ -591,8 +597,8 @@ if (! function_exists('module_has_view')) {
     /**
      * 检查模块视图是否存在
      *
-     * @param string      $view   视图名称
-     * @param string|null $module 模块名称
+     * @param  string  $view  视图名称
+     * @param  string|null  $module  模块名称
      */
     function module_has_view(string $view = '', ?string $module = null): bool
     {
@@ -603,8 +609,8 @@ if (! function_exists('module_has_view')) {
                 return false;
             }
 
-            return view()->exists(strtolower($module) . '::' . $view);
-        } catch (\Throwable) {
+            return view()->exists(strtolower($module).'::'.$view);
+        } catch (Throwable) {
             return false;
         }
     }
@@ -623,6 +629,7 @@ if (! function_exists('module_enabled_modules')) {
     function module_enabled_modules(): array
     {
         static $cache = null;
+
         return $cache ??= ModuleContext::getRepository()->allEnabled();
     }
 }
@@ -636,6 +643,7 @@ if (! function_exists('module_disabled_modules')) {
     function module_disabled_modules(): array
     {
         static $cache = null;
+
         return $cache ??= ModuleContext::getRepository()->allDisabled();
     }
 }
@@ -644,8 +652,8 @@ if (! function_exists('module_has_migration')) {
     /**
      * 检查模块是否存在指定迁移文件
      *
-     * @param string      $migrationName 迁移文件名
-     * @param string|null $module        模块名称
+     * @param  string  $migrationName  迁移文件名
+     * @param  string|null  $module  模块名称
      */
     function module_has_migration(string $migrationName = '', ?string $module = null): bool
     {
@@ -656,10 +664,11 @@ if (! function_exists('module_has_migration')) {
                 return false;
             }
 
-            $pattern = module_migrations_path($module) . '/*_' . $migrationName . '.php';
+            $pattern = module_migrations_path($module).'/*_'.$migrationName.'.php';
             $files = glob($pattern);
+
             return $files !== false && ! empty($files);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return false;
         }
     }
@@ -669,8 +678,7 @@ if (! function_exists('module_all_migrations')) {
     /**
      * 获取模块所有迁移文件
      *
-     * @param string|null $module 模块名称
-     * @return array
+     * @param  string|null  $module  模块名称
      */
     function module_all_migrations(?string $module = null): array
     {
@@ -687,9 +695,10 @@ if (! function_exists('module_all_migrations')) {
                 return [];
             }
 
-            $files = glob($path . '/*.php');
+            $files = glob($path.'/*.php');
+
             return $files === false ? [] : array_map('basename', $files);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return [];
         }
     }
@@ -699,8 +708,7 @@ if (! function_exists('module_route_files')) {
     /**
      * 获取模块所有路由文件
      *
-     * @param string|null $module 模块名称
-     * @return array
+     * @param  string|null  $module  模块名称
      */
     function module_route_files(?string $module = null): array
     {
@@ -717,11 +725,12 @@ if (! function_exists('module_route_files')) {
                 return [];
             }
 
-            $files = glob($path . '/*.php');
+            $files = glob($path.'/*.php');
+
             return $files === false
                 ? []
-                : array_map(fn(string $f): string => pathinfo($f, PATHINFO_FILENAME), $files);
-        } catch (\Throwable) {
+                : array_map(fn (string $f): string => pathinfo($f, PATHINFO_FILENAME), $files);
+        } catch (Throwable) {
             return [];
         }
     }
@@ -735,7 +744,7 @@ if (! function_exists('module_stub')) {
     /**
      * 创建模块 Stub 生成器实例
      *
-     * @param string $module 模块名称
+     * @param  string  $module  模块名称
      */
     function module_stub(string $module): StubGenerator
     {
@@ -751,8 +760,7 @@ if (! function_exists('get_user_info')) {
     /**
      * 获取当前认证用户信息
      *
-     * @param string|null $field 用户字段名（null 返回完整数组）
-     * @return mixed
+     * @param  string|null  $field  用户字段名（null 返回完整数组）
      */
     function get_user_info(?string $field = null): mixed
     {
@@ -780,7 +788,7 @@ if (! function_exists('get_user_info')) {
             }
 
             return $user[$field] ?? null;
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }
@@ -790,20 +798,20 @@ if (! function_exists('view_share')) {
     /**
      * 向所有视图共享数据
      *
-     * @param string|array $key   变量名或关联数组
-     * @param mixed        $value 变量值
+     * @param  string|array  $key  变量名或关联数组
+     * @param  mixed  $value  变量值
      */
     function view_share(string|array $key, mixed $value = ''): void
     {
         try {
             if (is_array($key)) {
                 foreach ($key as $k => $v) {
-                    \Illuminate\Support\Facades\View::share($k, $v);
+                    Illuminate\Support\Facades\View::share($k, $v);
                 }
             } else {
-                \Illuminate\Support\Facades\View::share($key, $value);
+                Illuminate\Support\Facades\View::share($key, $value);
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // 静默失败
         }
     }
@@ -813,20 +821,19 @@ if (! function_exists('get_view_share')) {
     /**
      * 获取已共享的视图数据
      *
-     * @param string $key 变量名（为空返回全部）
-     * @return mixed
+     * @param  string  $key  变量名（为空返回全部）
      */
     function get_view_share(string $key = ''): mixed
     {
         try {
-            $data = \Illuminate\Support\Facades\View::getShared();
+            $data = Illuminate\Support\Facades\View::getShared();
 
             if ($key !== '') {
                 return $data[$key] ?? null;
             }
 
             return $data;
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return $key !== '' ? null : [];
         }
     }
@@ -839,8 +846,8 @@ if (! function_exists('view_exists')) {
     function view_exists(string $view): bool
     {
         try {
-            return \Illuminate\Support\Facades\View::exists($view);
-        } catch (\Throwable) {
+            return Illuminate\Support\Facades\View::exists($view);
+        } catch (Throwable) {
             return false;
         }
     }
@@ -850,8 +857,7 @@ if (! function_exists('source_local_website')) {
     /**
      * 判断请求来源地址是否来自本站
      *
-     * @param string $returnType 返回类型: status|url|uri|prefix|all
-     * @return bool|array|string|null
+     * @param  string  $returnType  返回类型: status|url|uri|prefix|all
      */
     function source_local_website(string $returnType = 'all'): bool|array|string|null
     {
@@ -869,7 +875,7 @@ if (! function_exists('source_local_website')) {
                 // 两个 host 都必须非空，否则 '.' . '' 会使 str_ends_with 恒为 true，
                 // 导致任意外部来源都被误判为本地请求。
                 $isLocal = $refererHost !== '' && $appHost !== ''
-                    && ($refererHost === $appHost || str_ends_with('.' . $refererHost, '.' . $appHost));
+                    && ($refererHost === $appHost || str_ends_with('.'.$refererHost, '.'.$appHost));
             }
 
             $uri = $uriPrefix = '';
@@ -890,7 +896,7 @@ if (! function_exists('source_local_website')) {
                     'prefix' => $isLocal ? $uriPrefix : '',
                 ],
             };
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return match ($returnType) {
                 'status' => false,
                 'all' => ['local' => false, 'url' => '', 'uri' => '', 'prefix' => ''],
@@ -904,9 +910,9 @@ if (! function_exists('after_class_calling')) {
     /**
      * 在类方法调用前执行初始化方法（支持依赖注入）
      *
-     * @param object $class  类实例
-     * @param string $method 方法名
-     * @param array  ...$args 参数
+     * @param  object  $class  类实例
+     * @param  string  $method  方法名
+     * @param  array  ...$args  参数
      */
     function after_class_calling(object $class, string $method = 'initialize', array ...$args): void
     {
@@ -915,11 +921,11 @@ if (! function_exists('after_class_calling')) {
                 return;
             }
 
-            $reflectionMethod = new \ReflectionMethod($class, $method);
+            $reflectionMethod = new ReflectionMethod($class, $method);
             $paramsArgs = ! empty($args) ? reset($args) : [];
             $index = -1;
 
-            $dependencies = array_map(function (\ReflectionParameter $parameter) use (&$index, $paramsArgs): mixed {
+            $dependencies = array_map(function (ReflectionParameter $parameter) use (&$index, $paramsArgs): mixed {
                 $index++;
                 $paramName = $parameter->getType()?->getName();
 
@@ -932,11 +938,11 @@ if (! function_exists('after_class_calling')) {
 
                 // 使用传入的值（必须用 array_key_exists 判断，否则 0/false/'' 等合法值会被忽略）
                 if (array_key_exists($index, $paramsArgs)) {
-                    if (empty($paramName) || (function_exists('is_' . $paramName)
-                        && call_user_func('is_' . $paramName, $paramsArgs[$index]))) {
+                    if (empty($paramName) || (function_exists('is_'.$paramName)
+                        && call_user_func('is_'.$paramName, $paramsArgs[$index]))) {
                         return $paramsArgs[$index];
                     }
-                    throw new \Exception("Parameter #{$argIndex} type mismatch: expected '{$paramName}'");
+                    throw new Exception("Parameter #{$argIndex} type mismatch: expected '{$paramName}'");
                 }
 
                 // 默认值
@@ -944,21 +950,22 @@ if (! function_exists('after_class_calling')) {
                     return $parameter->getDefaultValue();
                 }
 
-                throw new \Exception("Parameter #{$argIndex} '\${$parameter->getName()}' cannot be empty");
+                throw new Exception("Parameter #{$argIndex} '\${$parameter->getName()}' cannot be empty");
             }, $reflectionMethod->getParameters());
 
             // 解析依赖注入
             $resolved = array_map(function (mixed $param): mixed {
                 if (is_string($param) && class_exists($param)) {
-                    return function_exists('app') ? app($param) : new $param();
+                    return function_exists('app') ? app($param) : new $param;
                 }
+
                 return $param;
             }, $dependencies);
 
             $reflectionMethod->invokeArgs($class, $resolved);
-        } catch (\ReflectionException) {
+        } catch (ReflectionException) {
             // 静默失败
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // 静默失败
         }
     }

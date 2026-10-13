@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Logging\Middleware;
 
 use Closure;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Context;
 use zxf\Modules\Logging\Config\LoggingConfig;
@@ -13,7 +14,6 @@ use zxf\Modules\Logging\Support\Redactor;
 
 /**
  * 请求 / 响应上下文中间件。
- *
  * - 请求开始：采集丰富请求信息（方法 / URL / 路由 / 控制器 / IP / UA / 来源 /
  *   会话 / 认证用户 / 入参 / 请求头），写入 LogContext，并同步进 Laravel 13 的
  *   Context 门面（Context::add），供所有日志通道共享。
@@ -22,11 +22,8 @@ use zxf\Modules\Logging\Support\Redactor;
  *   并向 database 通道写入一条「请求 → 响应」汇总日志，保证 logs 数据表中天然带有
  *   完整响应信息。此处故意采用「同步」采集而非 app()->terminating() 回调，以避免在
  *   Octane / Swoole 等常驻进程下回调跨请求累积、并以过期响应重复执行。
- *
  * 脱敏统一交由 Redactor（全模块唯一事实来源），避免与落库侧口径不一致。
  * 仅 HTTP 模式生效；CLI 无请求上下文，数据库通道也不会落库（见 DatabaseLogHandler）。
- *
- * @package zxf\Modules\Logging
  */
 class LogContextMiddleware
 {
@@ -161,7 +158,6 @@ class LogContextMiddleware
 
     /**
      * 是否为爬虫 / 机器人请求。
-     *
      * 判定依据（保守、可解释、易扩展）：
      *   - 缺少 User-Agent，或 User-Agent 命中已知爬虫特征（googlebot / bingbot / baiduspider /
      *     yandex / duckduckbot / slurp / sogou / exabot / petalbot / bytespider / applebot /
@@ -169,7 +165,7 @@ class LogContextMiddleware
      *   - 命中常见 SEO / 监控 UA 关键词。
      * 返回布尔，供 logs.is_crawler 列直接落库；非爬虫返回 false。
      *
-     * @param Request $request 当前请求
+     * @param  Request  $request  当前请求
      */
     public static function detectCrawler(Request $request): bool
     {
@@ -304,20 +300,18 @@ class LogContextMiddleware
 
     /**
      * 解析「响应内容」语义字段（写入 logs.response_content）。
-     *
      * 规则（与需求一致）：
      *   - JSON 响应（content-type 含 application/json）：记录 JSON 数据（即响应体原文，已截断）。
      *     注意：经 captureResponse 修复，Laravel 的 JsonResponse（非 Illuminate\Http\Response 子类）现在也会
      *     被正确采集响应体，故此处可稳定收到 $body 参数；若 $body 为空（如空 JSON 响应）则返回 null。
      *   - 视图页面响应（原始内容为 Illuminate\Contracts\View\View）：记录视图页面地址（视图名，如 "users::index"）。
      *   - 其它（重定向 / 文件 / 纯文本 / 无原始内容）：返回 null，不冗余存储。
-     *
      * 声明为 public static：不依赖实例状态（仅基于入参推导），便于单元测试直接调用，
      * 也便于在需要时于其它上下文复用。
      *
-     * @param mixed       $response     响应对象
-     * @param string|null $contentType  响应 Content-Type
-     * @param string|null $body         已截断的响应体（JSON 场景复用）
+     * @param  mixed  $response  响应对象
+     * @param  string|null  $contentType  响应 Content-Type
+     * @param  string|null  $body  已截断的响应体（JSON 场景复用）
      */
     public static function resolveResponseContent($response, ?string $contentType, ?string $body): ?string
     {
@@ -329,7 +323,7 @@ class LogContextMiddleware
         // 2) 视图页面：记录视图名（页面地址）
         if (method_exists($response, 'getOriginalContent')) {
             $original = $response->getOriginalContent();
-            if ($original instanceof \Illuminate\Contracts\View\View) {
+            if ($original instanceof View) {
                 return $original->getName();
             }
         }

@@ -9,8 +9,6 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * 创建 logs 表（数据库日志通道落库表）。
- *
- *
  * 字段说明（与本期需求一一对应）：
  *   - module_name      模块名称（由宿主应用的 module_name() 助手获取，小写下划线形式），位于 id 之后；
  *   - level            日志等级（PSR 小写键：error / info / warning / critical …，与 Monolog 一致），
@@ -18,9 +16,6 @@ use Illuminate\Support\Facades\Schema;
  *   - is_crawler       是否为爬虫 / 机器人请求（bool），位于 extra 之后；
  *   - response_content 响应内容：视图页面响应记录「视图页面地址（视图名）」，JSON 响应记录「JSON 数据」，
  *                      位于 response_status 之后。
- *
- *
- * @package zxf\Modules\Logging
  */
 return new class extends Migration
 {

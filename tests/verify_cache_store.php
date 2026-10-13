@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 /** ModuleCacheStore 功能验证 */
-
 spl_autoload_register(static function (string $class): void {
     $prefix = 'zxf\\Modules\\';
     if (! str_starts_with($class, $prefix)) {

@@ -9,7 +9,6 @@ use zxf\Modules\Facades\Module;
 
 /**
  * 模块缓存清除命令
- *
  * 删除模块清单缓存文件，使下一次请求重新扫描模块。
  */
 class ModuleClearCommand extends Command
@@ -30,12 +29,9 @@ class ModuleClearCommand extends Command
 
     /**
      * 执行命令
-     *
      * 删除模块缓存文件并重置内存缓存，使后续命令以磁盘真实状态重新扫描。
      * 当模块被手动新增/删除（如部署、git 拉取）后缓存过期时，
      * 执行本命令可立即恢复 module:list / module:delete 等命令的正确性。
-     *
-     * @return int
      */
     public function handle(): int
     {

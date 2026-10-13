@@ -11,7 +11,6 @@ use zxf\Modules\Support\StubGenerator;
 
 /**
  * 创建迁移文件命令
- *
  * 在指定模块中创建迁移文件，支持智能命名解析
  * 按照 Laravel 标准只使用三个模板：create（创建表）、update（修改表）、migration（空白迁移）
  */
@@ -40,8 +39,6 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -66,8 +63,8 @@ class MigrationMakeCommand extends AbstractMakeCommand
         }
 
         $timestamp = date('Y_m_d_His');
-        $filename = $timestamp . '_' . $migrationName . '.php';
-        $migrationPath = $migrationDir . DIRECTORY_SEPARATOR . $filename;
+        $filename = $timestamp.'_'.$migrationName.'.php';
+        $migrationPath = $migrationDir.DIRECTORY_SEPARATOR.$filename;
 
         // 检查迁移文件是否已存在
         if (File::exists($migrationPath)) {
@@ -106,15 +103,14 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
     /**
      * 解析迁移名称并确定使用的模板类型
-     *
      * 按照 Laravel 标准提供三种模板类型：
      * 1. create - 创建新的数据表（使用 create.stub）
      * 2. update - 修改现有数据表（使用 update.stub）
      * 3. migration - 空白迁移，自定义逻辑（使用 migration.stub）
      *
-     * @param string $name 迁移名称
-     * @param string|null $createTable --create 选项指定的表名
-     * @param string|null $updateTable --update 选项指定的表名
+     * @param  string  $name  迁移名称
+     * @param  string|null  $createTable  --create 选项指定的表名
+     * @param  string|null  $updateTable  --update 选项指定的表名
      * @return array 迁移信息数组
      */
     protected function parseMigrationName(string $name, ?string $createTable = null, ?string $updateTable = null): array
@@ -125,17 +121,17 @@ class MigrationMakeCommand extends AbstractMakeCommand
         // 解析迁移文件名和表名
         $parseTypeAndTable = $this->parseTableAndTypeByMigrationName($name);
 
-        $table = !empty($parseTypeAndTable['table'])?$parseTypeAndTable['table']:null;
-        if(empty($createTable) && empty($updateTable)){
-            if($parseTypeAndTable['type'] == 'create'){
+        $table = ! empty($parseTypeAndTable['table']) ? $parseTypeAndTable['table'] : null;
+        if (empty($createTable) && empty($updateTable)) {
+            if ($parseTypeAndTable['type'] == 'create') {
                 $stub_type = 'create';
             }
-            if($parseTypeAndTable['type'] == 'update'){
+            if ($parseTypeAndTable['type'] == 'update') {
                 $stub_type = 'update';
             }
-        }else{
-            $table = !empty($createTable)?$createTable:$updateTable;
-            $stub_type = !empty($createTable)?'create':'update';
+        } else {
+            $table = ! empty($createTable) ? $createTable : $updateTable;
+            $stub_type = ! empty($createTable) ? 'create' : 'update';
         }
 
         // 迁移类型
@@ -156,70 +152,70 @@ class MigrationMakeCommand extends AbstractMakeCommand
         // 所有 Laravel 支持的迁移模式
         $patterns = [
             // 基础模式
-            '/^create_([\w]+)_table$/' => function($m) {
+            '/^create_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'create', 'table' => $m[1], 'description' => '创建表:'.$m[1]];
             },
-            '/^drop_([\w]+)_table$/' => function($m) {
-                return ['type' => 'drop', 'table' => $m[1], 'description' => '删除表:'. $m[1]];
+            '/^drop_([\w]+)_table$/' => function ($m) {
+                return ['type' => 'drop', 'table' => $m[1], 'description' => '删除表:'.$m[1]];
             },
-            '/^alter_([\w]+)_table$/' => function($m) {
+            '/^alter_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'alter', 'table' => $m[1], 'description' => '修改表:'.$m[1]];
             },
 
             // 字段操作
-            '/^add_([\w]+)_to_([\w]+)_table$/' => function($m) {
+            '/^add_([\w]+)_to_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'add_column', 'column' => $m[1], 'table' => $m[2], 'description' => '添加字段:'.$m[1]];
             },
-            '/^remove_([\w]+)_from_([\w]+)_table$/' => function($m) {
+            '/^remove_([\w]+)_from_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'remove_column', 'column' => $m[1], 'table' => $m[2], 'description' => '移除字段:'.$m[1]];
             },
-            '/^update_([\w]+)_in_([\w]+)_table$/' => function($m) {
+            '/^update_([\w]+)_in_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'update_column', 'column' => $m[1], 'table' => $m[2], 'description' => '更新字段:'.$m[1]];
             },
-            '/^change_([\w]+)_in_([\w]+)_table$/' => function($m) {
+            '/^change_([\w]+)_in_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'change_column', 'column' => $m[1], 'table' => $m[2], 'description' => '修复字段:'.$m[1]];
             },
-            '/^delete_([\w]+)_from_([\w]+)_table$/' => function($m) {
+            '/^delete_([\w]+)_from_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'delete_column', 'column' => $m[1], 'table' => $m[2], 'description' => '删除字段:'.$m[1]];
             },
 
             // 重命名
-            '/^rename_([\w]+)_to_([\w]+)_table$/' => function($m) {
+            '/^rename_([\w]+)_to_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'rename_table', 'from' => $m[1], 'to' => $m[2], 'table' => $m[1], 'description' => '重命名表:'.$m[1]];
             },
 
             // 索引操作
-            '/^add_([\w]+)_index_to_([\w]+)_table$/' => function($m) {
+            '/^add_([\w]+)_index_to_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'add_index', 'column' => $m[1], 'table' => $m[2], 'description' => '添加索引:'.$m[1].'到'.$m[2]];
             },
-            '/^drop_([\w]+)_index_from_([\w]+)_table$/' => function($m) {
+            '/^drop_([\w]+)_index_from_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'drop_index', 'column' => $m[1], 'table' => $m[2], 'description' => '删除索引:'.$m[1].'从'.$m[2]];
             },
 
             // 关联表
-            '/^create_([\w]+)_([\w]+)_table$/' => function($m) {
+            '/^create_([\w]+)_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'create_pivot', 'table1' => $m[1], 'table2' => $m[2], 'table' => $m[1], 'description' => '创建关联表:'.$m[1].' 关联 '.$m[2]];
             },
 
             // 外键操作
-            '/^add_foreign_(?:key_)?([\w]+)_to_([\w]+)_table$/' => function($m) {
+            '/^add_foreign_(?:key_)?([\w]+)_to_([\w]+)_table$/' => function ($m) {
                 return ['type' => 'add_foreign', 'key' => $m[1], 'table' => $m[2], 'description' => '添加外键:'.$m[1].' 到 '.$m[2]];
             },
-            '/^drop_foreign_(?:key_)?([\w]+)_from_([\w]+)_table$/' => function($m) {
-                return ['type' => 'drop_foreign', 'key' => $m[1], 'table' => $m[2], 'description' => '删除外键:'. $m[1].' 从 '.$m[2]];
+            '/^drop_foreign_(?:key_)?([\w]+)_from_([\w]+)_table$/' => function ($m) {
+                return ['type' => 'drop_foreign', 'key' => $m[1], 'table' => $m[2], 'description' => '删除外键:'.$m[1].' 从 '.$m[2]];
             },
 
             // 枚举字段 (Laravel 9+)
-            '/^add_([\w]+)_enum_to_([\w]+)_table$/' => function($m) {
-                return ['type' => 'add_enum', 'column' => $m[1], 'table' => $m[2], 'description' => '添加枚举字段:'. $m[1].' 到 '.$m[2]];
+            '/^add_([\w]+)_enum_to_([\w]+)_table$/' => function ($m) {
+                return ['type' => 'add_enum', 'column' => $m[1], 'table' => $m[2], 'description' => '添加枚举字段:'.$m[1].' 到 '.$m[2]];
             },
 
             // 视图操作
-            '/^create_([\w]+)_view$/' => function($m) {
-                return ['type' => 'create_view', 'view' => $m[1], 'table' => $m[1], 'description' => '创建视图:'. $m[1]];
+            '/^create_([\w]+)_view$/' => function ($m) {
+                return ['type' => 'create_view', 'view' => $m[1], 'table' => $m[1], 'description' => '创建视图:'.$m[1]];
             },
-            '/^drop_([\w]+)_view$/' => function($m) {
-                return ['type' => 'drop_view', 'view' => $m[1], 'table' => $m[1], 'description' => '删除视图:'. $m[1]];
+            '/^drop_([\w]+)_view$/' => function ($m) {
+                return ['type' => 'drop_view', 'view' => $m[1], 'table' => $m[1], 'description' => '删除视图:'.$m[1]];
             },
         ];
 
@@ -228,6 +224,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
             if (preg_match($pattern, $name, $matches)) {
                 $result = $handler($matches);
                 $result['name'] = $name;
+
                 return $result;
             }
         }
@@ -237,17 +234,16 @@ class MigrationMakeCommand extends AbstractMakeCommand
             'name' => $name,
             'type' => 'migration',
             'table' => preg_replace('/_(?:table|tables)$/i', '', $name),
-            'description' => '自定义迁移操作'
+            'description' => '自定义迁移操作',
         ];
     }
 
     /**
      * 生成迁移 stub 内容
-     *
      * 根据迁移信息选择合适的 stub 模板，替换占位符生成最终内容
      *
-     * @param StubGenerator $stubGenerator stub 生成器实例
-     * @param array $migrationInfo 迁移信息
+     * @param  StubGenerator  $stubGenerator  stub 生成器实例
+     * @param  array  $migrationInfo  迁移信息
      * @return string 生成的迁移文件内容
      */
     protected function generateMigrationStub(StubGenerator $stubGenerator, array $migrationInfo, string $moduleName): string
@@ -272,7 +268,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
         // 执行变量替换（按变量名长度降序排序，防止短变量名干扰长变量名替换）
         $replacements = $stubGenerator->getReplacements();
-        uksort($replacements, fn(string $a, string $b): int => strlen($b) - strlen($a));
+        uksort($replacements, fn (string $a, string $b): int => strlen($b) - strlen($a));
         foreach ($replacements as $search => $replace) {
             $stub = str_replace($search, $replace, $stub);
         }
@@ -297,18 +293,17 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
     /**
      * 获取 stub 模板文件的完整路径
-     *
      * 按照 Laravel 标准，只支持三个模板文件：
      * - create.stub: 用于创建新表
      * - update.stub: 用于修改现有表
      * - migration.stub: 空白模板，用于自定义迁移逻辑
      *
-     * @param string $stubType stub 类型
+     * @param  string  $stubType  stub 类型
      * @return string stub 模板文件的完整路径
      */
     protected function getStubPath(string $stubType): string
     {
-        $stubsPath = __DIR__ . '/stubs/migration';
+        $stubsPath = __DIR__.'/stubs/migration';
 
         $stubFiles = [
             'create' => 'create.stub',
@@ -318,15 +313,14 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
         $stubFile = $stubFiles[$stubType] ?? 'migration.stub';
 
-        return $stubsPath . DIRECTORY_SEPARATOR . $stubFile;
+        return $stubsPath.DIRECTORY_SEPARATOR.$stubFile;
     }
 
     /**
      * 获取迁移文件的存储路径
-     *
      * 根据命令选项确定迁移文件应该保存的路径
      *
-     * @param mixed $module 模块实例
+     * @param  mixed  $module  模块实例
      * @return string 迁移文件保存的路径
      */
     protected function getMigrationPath($module): string

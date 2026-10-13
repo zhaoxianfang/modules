@@ -13,12 +13,9 @@ class MigrateStatusCommand extends Command
 {
     /**
      * 命令签名
-     *
      * 定义命令的名称、参数和选项
-     *
      * 参数：
      * - module: 可选参数，指定要查看的模块名称
-     *
      * 选项：
      * - --path: 指定自定义的迁移文件路径
      * - --pending: 只显示尚未运行的迁移文件
@@ -43,22 +40,17 @@ class MigrateStatusCommand extends Command
 
     /**
      * 表头定义
-     *
      * 定义输出表格的列名
      * - #: 序号
      * - 模块: 模块名称
      * - 迁移文件: 迁移文件名
      * - 批量: 迁移批次号
      * - 状态: 迁移状态（已运行/待运行）
-     *
-     * @var array
      */
     protected array $headers = ['#', '模块', '迁移文件', '批量', '状态'];
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -76,8 +68,6 @@ class MigrateStatusCommand extends Command
 
     /**
      * 检查是否应该显示待运行的迁移
-     *
-     * @return bool
      */
     protected function shouldShowPending(): bool
     {
@@ -86,8 +76,6 @@ class MigrateStatusCommand extends Command
 
     /**
      * 检查是否应该显示已运行的迁移
-     *
-     * @return bool
      */
     protected function shouldShowRan(): bool
     {
@@ -96,8 +84,6 @@ class MigrateStatusCommand extends Command
 
     /**
      * 检查是否应该显示统计信息
-     *
-     * @return bool
      */
     protected function shouldShowStats(): bool
     {
@@ -106,10 +92,6 @@ class MigrateStatusCommand extends Command
 
     /**
      * 显示指定模块的迁移状态
-     *
-     * @param string $moduleName
-     * @param string|null $customPath
-     * @return void
      */
     protected function showModuleStatus(string $moduleName, ?string $customPath = null): void
     {
@@ -117,7 +99,7 @@ class MigrateStatusCommand extends Command
 
         if (! $module) {
             $this->error("模块 [{$moduleName}] 不存在。");
-            $this->line("");
+            $this->line('');
             $this->line("提示：使用 'php artisan module:list' 查看所有可用模块");
 
             return;
@@ -125,7 +107,7 @@ class MigrateStatusCommand extends Command
 
         if (! $module->isEnabled()) {
             $this->warn("模块 [{$moduleName}] 未启用。");
-            $this->line("");
+            $this->line('');
             $this->line("提示：使用 'php artisan module:enable {$moduleName}' 启用该模块");
 
             return;
@@ -135,7 +117,7 @@ class MigrateStatusCommand extends Command
 
         if (! is_dir($migrationPath)) {
             $this->warn("模块 [{$moduleName}] 没有迁移文件。");
-            $this->line("");
+            $this->line('');
             $this->line("迁移路径: {$migrationPath}");
 
             return;
@@ -147,7 +129,7 @@ class MigrateStatusCommand extends Command
 
         if (empty($rows)) {
             $this->warn("模块 [{$moduleName}] 没有迁移文件。");
-            $this->line("");
+            $this->line('');
             $this->line("迁移路径: {$migrationPath}");
 
             return;
@@ -186,7 +168,8 @@ class MigrateStatusCommand extends Command
         }
 
         if (empty($displayRows)) {
-            $this->warn("没有符合条件的迁移文件。");
+            $this->warn('没有符合条件的迁移文件。');
+
             return;
         }
 
@@ -196,7 +179,7 @@ class MigrateStatusCommand extends Command
         if ($this->shouldShowStats()) {
             $this->newLine();
             $this->info("模块 [{$moduleName}] 迁移统计:");
-            $this->line("  总计: " . count($displayRows));
+            $this->line('  总计: '.count($displayRows));
             $this->line("  <fg=green>已运行: {$ranCount}</>");
             $this->line("  <fg=red>待运行: {$pendingCount}</>");
         }
@@ -204,9 +187,6 @@ class MigrateStatusCommand extends Command
 
     /**
      * 显示所有模块的迁移状态
-     *
-     * @param string|null $customPath
-     * @return void
      */
     protected function showAllModulesStatus(?string $customPath = null): void
     {
@@ -276,6 +256,7 @@ class MigrateStatusCommand extends Command
 
         if (empty($allRows)) {
             $this->warn('没有符合条件的迁移文件。');
+
             return;
         }
 
@@ -284,9 +265,9 @@ class MigrateStatusCommand extends Command
         // 显示统计信息
         if ($this->shouldShowStats()) {
             $this->newLine();
-            $this->info("迁移统计:");
-            $this->line("  模块总数: {$modulesWithMigrations} / " . count($modules));
-            $this->line("  迁移文件总数: " . count($allRows));
+            $this->info('迁移统计:');
+            $this->line("  模块总数: {$modulesWithMigrations} / ".count($modules));
+            $this->line('  迁移文件总数: '.count($allRows));
             $this->line("  <fg=green>已运行: {$totalRan}</>");
             $this->line("  <fg=red>待运行: {$totalPending}</>");
         }
@@ -295,17 +276,16 @@ class MigrateStatusCommand extends Command
     /**
      * 获取迁移状态
      *
-     * @param ModuleInterface $module 模块实例（保留用于扩展性和方法签名一致性）
-     * @param string $migrationPath 迁移文件路径
-     * @param array $ranMigrations 预加载的已运行迁移数据 ['migration_name' => ['batch' => 1]]
-     * @return array
+     * @param  ModuleInterface  $module  模块实例（保留用于扩展性和方法签名一致性）
+     * @param  string  $migrationPath  迁移文件路径
+     * @param  array  $ranMigrations  预加载的已运行迁移数据 ['migration_name' => ['batch' => 1]]
      */
     protected function getMigrationStatus(ModuleInterface $module, string $migrationPath, array $ranMigrations = []): array
     {
         // 注：$module 参数保留以维持方法签名一致性，当前实现按迁移路径查询，
         // 模块归属由调用方在 showAllModulesStatus 中拼装，此处不依赖 $module。
 
-        $files = glob($migrationPath . DIRECTORY_SEPARATOR . '*.php');
+        $files = glob($migrationPath.DIRECTORY_SEPARATOR.'*.php');
 
         if (empty($files)) {
             return [];
@@ -342,11 +322,8 @@ class MigrateStatusCommand extends Command
 
     /**
      * 获取已运行的迁移及批次信息
-     *
      * 优化：一次性查询所有迁移的名称和批次，减少数据库查询次数
      * 返回格式: ['migration_name' => ['batch' => 1], ...]
-     *
-     * @return array
      */
     protected function getRanMigrationsWithBatches(): array
     {
@@ -359,9 +336,9 @@ class MigrateStatusCommand extends Command
                 ->toArray();
         } catch (\Throwable $e) {
             // 如果数据库表不存在或其他错误，返回空数组
-            logger()->error('查询迁移状态失败: ' . $e->getMessage());
+            logger()->error('查询迁移状态失败: '.$e->getMessage());
+
             return [];
         }
     }
-
 }

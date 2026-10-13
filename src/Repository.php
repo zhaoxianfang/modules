@@ -8,12 +8,12 @@ use Illuminate\Filesystem\Filesystem;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Exceptions\ModuleNotFoundException;
+use zxf\Modules\Support\ModuleAutoDiscovery;
 use zxf\Modules\Support\ModuleCacheStore;
 use zxf\Modules\Support\ModuleContext;
 
 /**
  * 模块仓库
- *
  * 负责模块的扫描、注册、存储和查询。支持:
  * - 多路径模块扫描
  * - 模块缓存（文件缓存 + 内存缓存）
@@ -21,7 +21,6 @@ use zxf\Modules\Support\ModuleContext;
  * - 批量操作
  * - 模块别名解析
  *
- * @package zxf\Modules
  * @version 4.0.0
  */
 class Repository implements RepositoryInterface
@@ -69,7 +68,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 启用模块内存缓存 [name => ModuleInterface]
-     *
      * 由 allEnabled() 惰性填充，invalidateStatusCache() 失效。
      *
      * @var array<string, ModuleInterface>|null
@@ -78,7 +76,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 禁用模块内存缓存 [name => ModuleInterface]
-     *
      * 由 allDisabled() 惰性填充，invalidateStatusCache() 失效。
      *
      * @var array<string, ModuleInterface>|null
@@ -97,7 +94,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 是否绕过缓存强制从磁盘扫描
-     *
      * 用于 module:delete 等需要确保与磁盘状态一致的场景，
      * 避免读取到过期的模块缓存而误判“模块不存在”。
      */
@@ -106,9 +102,9 @@ class Repository implements RepositoryInterface
     /**
      * 创建新实例
      *
-     * @param Filesystem     $files     文件系统
-     * @param array|null     $paths     模块根路径列表
-     * @param string|null    $namespace 模块根命名空间
+     * @param  Filesystem  $files  文件系统
+     * @param  array|null  $paths  模块根路径列表
+     * @param  string|null  $namespace  模块根命名空间
      */
     public function __construct(
         Filesystem $files,
@@ -208,7 +204,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 失效「启用/禁用模块」缓存
-     *
      * 运行时调用 Module::setEnabled 改变模块状态后，需调用此方法使
      * allEnabled()/allDisabled() 的缓存结果失效，否则会返回过时的集合。
      */
@@ -301,6 +296,7 @@ class Repository implements RepositoryInterface
         // 尝试从缓存加载（除非显式要求绕过缓存）
         if (! $this->bypassCache && $this->loadFromCache()) {
             $this->scanned = true;
+
             return;
         }
 
@@ -316,7 +312,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 确保已完成至少一次扫描
-     *
      * 所有公开查询方法都会先调用此方法，
      * 保证即使服务提供者 boot 阶段因故未触发扫描，
      * 或命令在扫描之前被调用，也能基于最新磁盘状态返回正确结果，
@@ -331,7 +326,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 强制重新扫描，忽略缓存
-     *
      * 用于模块被新增/删除后需要以磁盘真实状态为准的场景。
      * 会临时绕过模块缓存，扫描结束后恢复正常缓存策略。
      */
@@ -471,7 +465,7 @@ class Repository implements RepositoryInterface
 
         // 同步清除自动发现清单缓存（与元数据缓存同生命周期）
         try {
-            \zxf\Modules\Support\ModuleAutoDiscovery::clearDiscoveryCache();
+            ModuleAutoDiscovery::clearDiscoveryCache();
         } catch (\Throwable) {
             // 忽略：自动发现未启用时不阻断清缓存
         }
@@ -481,7 +475,6 @@ class Repository implements RepositoryInterface
 
     /**
      * 清除仓库级模块注册清单缓存并强制下次访问重新扫描磁盘
-     *
      * 与 clearCache() 的区别：本方法额外重置「已扫描」标记与内存中的模块注册表，
      * 使下一次 any 查询必然重新扫描磁盘，适用于
      * module:make / module:delete / module:clear 等改变了磁盘模块集合的场景。
@@ -544,6 +537,7 @@ class Repository implements RepositoryInterface
         $mtime = filemtime($cacheFile);
         if ($this->cacheTtl > 0 && (time() - $mtime) > $this->cacheTtl) {
             @unlink($cacheFile);
+
             return false;
         }
 
@@ -562,6 +556,7 @@ class Repository implements RepositoryInterface
             // 仅做一次廉价的 filemtime 探测（远轻于已消除的逐模块目录扫描）。
             if (! $this->pathMtimesUnchanged($data['path_mtimes'] ?? [])) {
                 @unlink($cacheFile);
+
                 return false;
             }
 
@@ -598,13 +593,13 @@ class Repository implements RepositoryInterface
             return true;
         } catch (\Throwable) {
             @unlink($cacheFile);
+
             return false;
         }
     }
 
     /**
      * 收集各模块根目录的修改时间（用于缓存防过期校验）
-     *
      * 模块目录的增删（以及 git 部署拉取）都会改变其父目录的 mtime，
      * 因此比对这些 mtime 即可在廉价开销下判断模块集合是否发生变化。
      *
@@ -685,14 +680,13 @@ class Repository implements RepositoryInterface
 
     /**
      * 获取缓存文件路径
-     *
      * 注意：使用 .json 而非 .php —— 早期版本把缓存写成可执行的 PHP 文件并 require，
      * 在生产环境（opcache.validate_timestamps=0）会导致缓存永久不失效，
      * 且缓存文件一旦被篡改即可执行任意代码。
      */
     protected function getCacheFilePath(): string
     {
-        return ($this->cachePath ?? storage_path('framework/cache/modules')) . '/modules.json';
+        return ($this->cachePath ?? storage_path('framework/cache/modules')).'/modules.json';
     }
 
     /**

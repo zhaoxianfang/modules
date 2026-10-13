@@ -12,7 +12,6 @@ use Illuminate\Support\Str;
 
 /**
  * 创建模型命令
- *
  * 在指定模块中创建 Eloquent 模型类，支持以下核心功能：
  * - 从现有数据库表自动解析字段信息（兼容 MySQL / PostgreSQL / SQLite）
  * - 自动生成 @property PHPDoc 属性注释（包括字段注释、类型、可空性）
@@ -22,21 +21,16 @@ use Illuminate\Support\Str;
  * - 自动检测软删除（deleted_at）、时间戳字段
  * - 可选创建对应的迁移文件（--migration）
  * - 支持覆盖已存在文件（--force）
- *
  * 使用示例：
  *   1. 从表生成模型：php artisan module:make-model Logs User --table=users
  *   2. 创建新模型和迁移：php artisan module:make-model Blog Post --migration
  *   3. 覆盖已存在的模型：php artisan module:make-model Blog User --force
- *
- * @package zxf\Modules\Commands
  */
 class ModelMakeCommand extends AbstractMakeCommand
 {
     /**
      * 数据库字段类型到 PHP / Eloquent 类型映射
-     *
      * 覆盖各大数据库引擎的通用字段类型。
-     *
      * 分类：
      * - 整数类型: int, integer, tinyint, smallint, mediumint, bigint
      * - 浮点类型: float, double, decimal
@@ -87,7 +81,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 时间戳相关的字段名称
-     *
      * 这些字段会被检测以决定 $timestamps 属性的值，
      * 默认情况下自动排除出 $fillable 列表。
      *
@@ -97,11 +90,9 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 命令签名
-     *
      * 参数：
      * - module: 必需，目标模块名称（首字母大写，如 Blog）
      * - name: 必需，模型类名（首字母大写，如 Post）
-     *
      * 选项：
      * - --table=: 从现有数据库表解析字段信息，自动生成完整模型属性
      * - --migration: 同时创建对应的数据库迁移文件
@@ -131,7 +122,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 执行命令
-     *
      * 流程：
      * 1. 解析并验证参数
      * 2. 检查模块是否存在
@@ -150,6 +140,7 @@ class ModelMakeCommand extends AbstractMakeCommand
 
         if ($this->hasInvalidName($moduleName) || $this->hasInvalidName($modelName)) {
             $this->error('模块名称和模型名称只能包含字母、数字');
+
             return Command::FAILURE;
         }
 
@@ -161,6 +152,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         // 校验表名合法性
         if (! $this->isValidTableName($tableName)) {
             $this->error("表名 [{$tableName}] 格式不合法");
+
             return Command::FAILURE;
         }
 
@@ -168,11 +160,12 @@ class ModelMakeCommand extends AbstractMakeCommand
         $module = $this->resolveModule();
         if (! $module) {
             $this->line("提示：请先创建模块，使用 php artisan module:make {$moduleName}");
+
             return Command::FAILURE;
         }
 
         $modelDir = config('modules.paths.generator.model.path', 'Models');
-        $modelPath = $this->targetPath($modelDir . '/' . $modelName . '.php');
+        $modelPath = $this->targetPath($modelDir.'/'.$modelName.'.php');
 
         // 存在性检查
         if (File::exists($modelPath)) {
@@ -180,6 +173,7 @@ class ModelMakeCommand extends AbstractMakeCommand
                 $this->error("模块 [{$moduleName}] 中已存在模型类 [{$modelName}]");
                 $this->line("文件位置: {$modelPath}");
                 $this->line('提示：使用 --force 选项覆盖已存在的模型');
+
                 return Command::FAILURE;
             }
             $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的模型类 [{$modelName}]");
@@ -199,7 +193,7 @@ class ModelMakeCommand extends AbstractMakeCommand
             $this->warn("表 [{$tableName}] 无可用字段信息，将创建基础模型");
             $this->line('');
         } else {
-            $this->info("已从表 [{$tableName}] 解析到 " . count($columns) . " 个字段");
+            $this->info("已从表 [{$tableName}] 解析到 ".count($columns).' 个字段');
             $this->line('');
         }
 
@@ -223,6 +217,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         if (! File::put($modelPath, $modelContent)) {
             $this->error("创建模型类 [{$modelName}] 失败");
             $this->line('提示：检查文件权限和磁盘空间');
+
             return Command::FAILURE;
         }
 
@@ -236,7 +231,7 @@ class ModelMakeCommand extends AbstractMakeCommand
             $this->line('正在创建迁移文件...');
             $this->call('module:make-migration', [
                 'module' => $moduleName,
-                'name' => 'create_' . $tableName . '_table',
+                'name' => 'create_'.$tableName.'_table',
                 '--create' => $tableName,
             ]);
         }
@@ -253,28 +248,26 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 创建模型对应的数据工厂类
-     *
      * 工厂目录取自 modules.paths.generator.factory.path（默认 Database/Factories）。
      *
-     * @param string $moduleName 模块名称
-     * @param string $modelName  模型名称
-     * @param bool   $force      是否覆盖已存在文件
-     * @return void
+     * @param  string  $moduleName  模块名称
+     * @param  string  $modelName  模型名称
+     * @param  bool  $force  是否覆盖已存在文件
      */
     protected function createFactory(string $moduleName, string $modelName, bool $force): void
     {
         $factoryDir = config('modules.paths.generator.factory.path', 'Database/Factories');
-        $relativePath = $factoryDir . '/' . $modelName . 'Factory.php';
+        $relativePath = $factoryDir.'/'.$modelName.'Factory.php';
 
         $generator = $this->makeStubGenerator();
         $generator
-            ->addReplacement('{{CLASS}}', $modelName . 'Factory')
+            ->addReplacement('{{CLASS}}', $modelName.'Factory')
             ->addReplacement('{{MODEL_CLASS}}', $modelName);
 
         $result = $this->writeStub($generator, 'factory.stub', $relativePath, '数据工厂', $force);
 
         if ($result === Command::SUCCESS) {
-            $this->line("工厂位置: " . $this->targetPath($relativePath));
+            $this->line('工厂位置: '.$this->targetPath($relativePath));
         }
     }
 
@@ -300,7 +293,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 检查名称是否包含非法字符
-     *
      * 允许字母、数字，排除纯符号或空字符串。
      */
     protected function hasInvalidName(string $name): bool
@@ -310,7 +302,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 校验表名格式（防止 SQL 注入和特殊字符）
-     *
      * 仅允许传统数据库标识符字符：字母、数字、下划线。
      */
     protected function isValidTableName(string $tableName): bool
@@ -324,14 +315,12 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 解析表的列信息（跨数据库兼容）
-     *
      * 优先级：
      * 1. Laravel 10+ Schema::getColumns() — 支持 MySQL / PostgreSQL / SQLite
      * 2. MySQL 专有语法 SHOW FULL COLUMNS（回退方案）
-     *
      * 返回 null 表示表不存在，返回空数组表示无字段。
      *
-     * @param string $tableName 表名
+     * @param  string  $tableName  表名
      * @return array<int, array<string, mixed>>|null
      */
     protected function resolveTableColumns(string $tableName): ?array
@@ -346,7 +335,8 @@ class ModelMakeCommand extends AbstractMakeCommand
                 return null;
             }
         } catch (\Throwable $e) {
-            $this->error("无法连接数据库检查表 [{$tableName}]: " . $e->getMessage());
+            $this->error("无法连接数据库检查表 [{$tableName}]: ".$e->getMessage());
+
             return null;
         }
 
@@ -366,7 +356,6 @@ class ModelMakeCommand extends AbstractMakeCommand
     /**
      * 通过 Schema::getColumns() 解析列信息（Laravel 10+）
      *
-     * @param string $tableName
      * @return array<int, array<string, mixed>>
      */
     protected function resolveColumnsViaSchema(string $tableName): array
@@ -376,13 +365,13 @@ class ModelMakeCommand extends AbstractMakeCommand
 
         foreach ($schemaColumns as $col) {
             $results[] = [
-                'name'       => $col['name'],
-                'type'       => $col['type'] ?? $col['type_name'] ?? 'varchar',
-                'null'       => $col['nullable'] ?? true,
-                'key'        => '',
-                'default'    => $col['default'] ?? null,
-                'extra'      => $col['auto_increment'] ? 'auto_increment' : '',
-                'comment'    => $col['comment'] ?? '',
+                'name' => $col['name'],
+                'type' => $col['type'] ?? $col['type_name'] ?? 'varchar',
+                'null' => $col['nullable'] ?? true,
+                'key' => '',
+                'default' => $col['default'] ?? null,
+                'extra' => $col['auto_increment'] ? 'auto_increment' : '',
+                'comment' => $col['comment'] ?? '',
             ];
         }
 
@@ -391,10 +380,8 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 通过 MySQL SHOW FULL COLUMNS 解析列信息（回退方案）
-     *
      * 注意：表名已经 isValidTableName() 校验，可直接拼接。
      *
-     * @param string $tableName
      * @return array<int, array<string, mixed>>|null
      */
     protected function resolveColumnsViaMysql(string $tableName): ?array
@@ -402,19 +389,20 @@ class ModelMakeCommand extends AbstractMakeCommand
         try {
             $rawColumns = DB::select("SHOW FULL COLUMNS FROM `{$tableName}`");
         } catch (\Throwable $e) {
-            $this->error("无法获取表 [{$tableName}] 的信息: " . $e->getMessage());
+            $this->error("无法获取表 [{$tableName}] 的信息: ".$e->getMessage());
+
             return null;
         }
 
         $results = [];
         foreach ($rawColumns as $column) {
             $results[] = [
-                'name'    => $column->Field,
-                'type'    => $column->Type,
-                'null'    => $column->Null === 'YES',
-                'key'     => $column->Key,
+                'name' => $column->Field,
+                'type' => $column->Type,
+                'null' => $column->Null === 'YES',
+                'key' => $column->Key,
                 'default' => $column->Default,
-                'extra'   => $column->Extra,
+                'extra' => $column->Extra,
                 'comment' => $column->Comment ?? '',
             ];
         }
@@ -429,12 +417,12 @@ class ModelMakeCommand extends AbstractMakeCommand
     /**
      * 生成完整的模型 PHP 文件内容
      *
-     * @param string $moduleName 模块名称
-     * @param string $modelName  模型类名
-     * @param string $namespace  根命名空间
-     * @param string $modelDir   模型子目录（如 Models）
-     * @param string $tableName  数据表名称
-     * @param array  $columns    列信息数组
+     * @param  string  $moduleName  模块名称
+     * @param  string  $modelName  模型类名
+     * @param  string  $namespace  根命名空间
+     * @param  string  $modelDir  模型子目录（如 Models）
+     * @param  string  $tableName  数据表名称
+     * @param  array  $columns  列信息数组
      * @return string 模型 PHP 文件内容
      */
     protected function generateModelContent(
@@ -460,7 +448,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = " * {$modelName} 模型";
         $lines[] = ' *';
         $lines[] = " * {$moduleName} 模块的数据模型，对应 [{$tableName}] 表。";
-        $lines[] = " * 继承 Eloquent Model，提供完整的数据库操作能力。";
+        $lines[] = ' * 继承 Eloquent Model，提供完整的数据库操作能力。';
         $lines[] = ' *';
 
         // 生成 @property 注释
@@ -487,7 +475,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = '     * 数据表名称';
         $lines[] = '     *';
         $lines[] = "     * 对应数据库中的 `{$tableName}` 表。";
-        $lines[] = "     * 如不指定，Eloquent 会默认使用模型类名的蛇形复数形式。";
+        $lines[] = '     * 如不指定，Eloquent 会默认使用模型类名的蛇形复数形式。';
         $lines[] = '     *';
         $lines[] = '     * @var string';
         $lines[] = '     */';
@@ -501,7 +489,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = '     *';
         $lines[] = '     * @var bool';
         $lines[] = '     */';
-        $lines[] = '    public $timestamps = ' . ($hasTimestamps ? 'true' : 'false') . ';';
+        $lines[] = '    public $timestamps = '.($hasTimestamps ? 'true' : 'false').';';
         $lines[] = '';
 
         // $fillable 属性
@@ -522,7 +510,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 构建字段注释文本
-     *
      * 优先级：数据库注释 > 默认值 + extra 信息
      */
     protected function buildColumnComment(array $column): string
@@ -581,7 +568,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = '     */';
 
         if (! empty($fillable)) {
-            $fillableStr = "'" . implode("', '", $fillable) . "'";
+            $fillableStr = "'".implode("', '", $fillable)."'";
             $lines[] = "    protected \$fillable = [{$fillableStr}];";
         } else {
             $lines[] = '    protected $fillable = [];';
@@ -650,7 +637,7 @@ class ModelMakeCommand extends AbstractMakeCommand
             if (is_string($value)) {
                 $lines[] = "        '{$key}' => '{$value}',";
             } elseif (is_bool($value)) {
-                $lines[] = "        '{$key}' => " . ($value ? 'true' : 'false') . ',';
+                $lines[] = "        '{$key}' => ".($value ? 'true' : 'false').',';
             } else {
                 $lines[] = "        '{$key}' => {$value},";
             }
@@ -666,7 +653,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 获取 PHPDoc @property 类型
-     *
      * 特殊处理：
      * - datetime / timestamp → Carbon
      * - date → Carbon
@@ -695,7 +681,7 @@ class ModelMakeCommand extends AbstractMakeCommand
 
         // 可空标记
         if ($nullable) {
-            return $phpType . '|null';
+            return $phpType.'|null';
         }
 
         return $phpType;
@@ -703,7 +689,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 收集可批量赋值的字段
-     *
      * 排除规则：
      * - 主键 id
      * - 时间戳字段（created_at / updated_at / deleted_at）
@@ -741,7 +726,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 收集类型转换规则
-     *
      * 特殊处理：
      * - created_at / updated_at → datetime:Y-m-d H:i:s
      * - decimal → decimal:小数位
@@ -765,24 +749,28 @@ class ModelMakeCommand extends AbstractMakeCommand
             // 时间戳字段：格式化 datetime 转换
             if (in_array($name, $this->timestampColumns, true)) {
                 $casts[$name] = 'datetime:Y-m-d H:i:s';
+
                 continue;
             }
 
             // 主键自增
             if ($name === 'id') {
                 $casts[$name] = 'integer';
+
                 continue;
             }
 
             // decimal 精度处理
             if ($baseType === 'decimal' && preg_match('/decimal\((\d+),\s*(\d+)\)/', $type, $matches)) {
-                $casts[$name] = 'decimal:' . $matches[2];
+                $casts[$name] = 'decimal:'.$matches[2];
+
                 continue;
             }
 
             // JSON 类型
             if ($baseType === 'json' || $baseType === 'jsonb') {
                 $casts[$name] = 'array';
+
                 continue;
             }
 
@@ -804,7 +792,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 收集数据库默认值
-     *
      * 跳过规则：
      * - 可空字段的 NULL 默认值
      * - CURRENT_TIMESTAMP（由数据库处理）
@@ -850,7 +837,6 @@ class ModelMakeCommand extends AbstractMakeCommand
 
     /**
      * 检测表是否包含时间戳字段
-     *
      * 至少存在 created_at 或 updated_at 即认为使用了时间戳。
      */
     protected function detectTimestamps(array $columns): bool
@@ -861,6 +847,7 @@ class ModelMakeCommand extends AbstractMakeCommand
                 return true;
             }
         }
+
         return false;
     }
 }

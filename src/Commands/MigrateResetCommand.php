@@ -10,24 +10,18 @@ use zxf\Modules\Support\MigrationPathHelper;
 
 /**
  * 模块迁移重置命令
- *
  * 回滚指定模块或全部模块的数据库迁移。
- *
  * 参照 nWidart/laravel-modules 的 MigrateResetCommand 设计：
  * - 通过路径过滤回滚模块迁移（--path 选项）
  * - 生产环境确认
  * - 返回正确的退出码
- *
  * 与 MigrateRollbackCommand 的区别：
  * - migrate:rollback 只回滚最近一次迁移批次
  * - migrate:reset   回滚所有迁移（重复调用直至全部回滚）
- *
  * 使用示例：
  *   php artisan module:migrate-reset Blog              # 回滚 Blog 模块所有迁移
  *   php artisan module:migrate-reset Blog --force      # 强制回滚，不提示确认
  *   php artisan module:migrate-reset                   # 回滚所有模块的迁移
- *
- * @package zxf\Modules\Commands
  */
 class MigrateResetCommand extends Command
 {
@@ -52,8 +46,6 @@ class MigrateResetCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -85,11 +77,6 @@ class MigrateResetCommand extends Command
 
     /**
      * 回滚指定模块的迁移
-     *
-     * @param string $moduleName
-     * @param bool $force
-     * @param string|null $customPath
-     * @return int
      */
     protected function resetModule(string $moduleName, bool $force, ?string $customPath = null): int
     {
@@ -127,10 +114,6 @@ class MigrateResetCommand extends Command
 
     /**
      * 回滚所有模块的迁移
-     *
-     * @param bool $force
-     * @param string|null $customPath
-     * @return int
      */
     protected function resetAllModules(bool $force, ?string $customPath = null): int
     {

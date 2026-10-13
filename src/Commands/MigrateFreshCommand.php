@@ -10,22 +10,17 @@ use zxf\Modules\Support\MigrationPathHelper;
 
 /**
  * 模块迁移清空命令
- *
  * 删除所有数据表后重新运行迁移（相当于 migrate:fresh 的模块版本）。
- *
  * 参照 nWidart/laravel-modules 的 MigrateFreshCommand 设计：
  * - 删除所有表后重新迁移
  * - 支持 --seed + --seeder 自动填充
  * - 生产环境确认
  * - 支持 --database 选项
- *
  * 使用示例：
  *   php artisan module:migrate-fresh Blog                        # 清空并重建 Blog 模块
  *   php artisan module:migrate-fresh Blog --seed                 # 清空重建后运行 Seeder
  *   php artisan module:migrate-fresh Blog --seeder=PostSeeder    # 清空重建后运行指定 Seeder
  *   php artisan module:migrate-fresh                             # 清空并重建所有模块
- *
- * @package zxf\Modules\Commands
  */
 class MigrateFreshCommand extends Command
 {
@@ -54,8 +49,6 @@ class MigrateFreshCommand extends Command
 
     /**
      * 执行命令
-     *
-     * @return int
      */
     public function handle(): int
     {
@@ -91,15 +84,6 @@ class MigrateFreshCommand extends Command
 
     /**
      * 清空并重建指定模块的迁移
-     *
-     * @param string $moduleName
-     * @param string|null $database
-     * @param bool $force
-     * @param bool $seed
-     * @param string|null $seeder
-     * @param bool $dropViews
-     * @param bool $dropTypes
-     * @return int
      */
     protected function freshModule(
         string $moduleName,
@@ -185,14 +169,6 @@ class MigrateFreshCommand extends Command
 
     /**
      * 清空并重建所有模块的迁移
-     *
-     * @param string|null $database
-     * @param bool $force
-     * @param bool $seed
-     * @param string|null $seeder
-     * @param bool $dropViews
-     * @param bool $dropTypes
-     * @return int
      */
     protected function freshAllModules(
         ?string $database,
@@ -257,6 +233,7 @@ class MigrateFreshCommand extends Command
 
             if ($this->call('migrate', $migrateParams) !== Command::SUCCESS) {
                 $hasFailures = true;
+
                 continue;
             }
 

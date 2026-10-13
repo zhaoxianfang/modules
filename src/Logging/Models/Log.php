@@ -9,33 +9,29 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * 系统日志模型（数据库日志通道落库表 logs）。
- *
  * 一条记录代表一条日志，并尽可能完整地携带触发它的「请求」与「响应」上下文，
  * 便于事后在后台检索、复盘问题（尤其是生产环境的 500 / 异常）。
- *
  * 命名说明：本模型类名为 Log（对应数据表 logs）。在引用 Laravel 的日志门面时，
  * 请使用 Illuminate\Support\Facades\Log 的完全限定名或别名，避免与本类冲突。
- *
  * 字段语义（核心字段）：
  *   - module_name      模块名称（由宿主应用 module_name() 助手获取，小写下划线蛇形），按模块检索 / 统计；
  *   - level            日志等级，统一为 PSR 小写键：debug / info / notice / warning / error / critical / alert / emergency；
  *   - is_crawler       是否为爬虫 / 机器人请求（bool）；
  *   - response_content 响应内容：视图页面响应记录「视图页面地址（视图名）」，JSON 响应记录「JSON 数据」。
- *
  * 常用查询示例：
  *   Log::recent(7)->errors()->get();                       // 近 7 天所有异常 / 错误
  *   Log::level('error')->where('module_name','users');     // 某模块的错误
  *   Log::ofChannel('database')->search('timeout');         // 按通道 + 关键字模糊检索
  *   Log::where('is_crawler', true)->count();               // 爬虫请求数
  *
- * @property int         $id
- * @property string|null $module_name       模块名称（由 module_name() 函数获取，小写下划线蛇形）
- * @property string      $level             日志等级（PSR 小写键，如 error / info / warning）
+ * @property int $id
+ * @property string|null $module_name 模块名称（由 module_name() 函数获取，小写下划线蛇形）
+ * @property string $level 日志等级（PSR 小写键，如 error / info / warning）
  * @property string|null $channel
- * @property string      $message
- * @property array|null  $context
- * @property array|null  $extra
- * @property bool        $is_crawler        是否为爬虫请求
+ * @property string $message
+ * @property array|null $context
+ * @property array|null $extra
+ * @property bool $is_crawler 是否为爬虫请求
  * @property string|null $request_method
  * @property string|null $request_url
  * @property string|null $request_path
@@ -45,16 +41,16 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $request_user_agent
  * @property string|null $request_referer
  * @property string|null $request_session_id
- * @property array|null  $request_input
- * @property array|null  $request_headers
- * @property int|null    $user_id
+ * @property array|null $request_input
+ * @property array|null $request_headers
+ * @property int|null $user_id
  * @property string|null $user_type
- * @property int|null    $response_code
+ * @property int|null $response_code
  * @property string|null $response_status
- * @property string|null $response_content  响应内容：视图页面地址（视图名） 或 JSON 数据
- * @property int|null    $response_duration_ms
- * @property float|null  $response_memory_mb
- * @property array|null  $response_headers
+ * @property string|null $response_content 响应内容：视图页面地址（视图名） 或 JSON 数据
+ * @property int|null $response_duration_ms
+ * @property float|null $response_memory_mb
+ * @property array|null $response_headers
  * @property string|null $response_body
  * @property string|null $exception_class
  * @property string|null $exception_message
@@ -67,8 +63,6 @@ use Illuminate\Database\Eloquent\Model;
  * @method static Builder|Log errors()
  * @method static Builder|Log between($from, $to)
  * @method static Builder|Log search(string $term)
- *
- * @package zxf\Modules\Logging
  */
 class Log extends Model
 {

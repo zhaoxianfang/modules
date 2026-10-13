@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Logging\Handler;
 
+use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log as LogFacade;
 use Illuminate\Support\Facades\Schema;
 use Monolog\Handler\AbstractProcessingHandler;
@@ -20,7 +22,6 @@ use zxf\Modules\Logging\Writer\DatabaseLogWriter;
 
 /**
  * 数据库日志处理器（Monolog 3 兼容，Laravel 11 / 12 / 13 通用）。
- *
  * 职责拆分（清晰的关注点分离）：
  * - 去重：单次请求内相同日志只落库一次（去重集合存于 LogContext，随每次请求 reset）；
  * - 归一化：把 LogRecord 翻译为与 logs 表字段对应的属性数组（buildAttributes）；
@@ -28,7 +29,6 @@ use zxf\Modules\Logging\Writer\DatabaseLogWriter;
  * - 落库：委托给 LogWriter 抽象（默认 DatabaseLogWriter，可配置为 QueuedDatabaseLogWriter）；
  * - 事件：每次成功落库派发 LogRecorded 事件（默认无监听，可用于告警 / 同步 / 审计）；
  * - 回退：落库失败时回退到 stack 文件通道，确保关键日志不丢失。
- *
  * 设计要点：
  * - LogRecord 的 level 是 Monolog\Level 枚举；取等级名请用数组访问 `$record['level_name']`
  *   （返回大写名如 'ERROR'）。本环境的 Monolog 在 LogRecord 上未暴露 level_name 公共属性，
@@ -41,8 +41,6 @@ use zxf\Modules\Logging\Writer\DatabaseLogWriter;
  * - 任何写入异常都被捕获或回退，绝不影响主业务流程。
  * - 异常处理策略：异常日志的「文件落盘」由 Laravel 默认通道（report($e) / stack）负责，
  *   本 handler 不再二次写 stack，避免与默认通道重复；仅当数据库写入失败时回退 stack 文件。
- *
- * @package zxf\Modules\Logging
  */
 class DatabaseLogHandler extends AbstractProcessingHandler
 {
@@ -66,11 +64,9 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     /**
      * 检查日志表是否存在（结果按「请求」缓存于 LogContext）。
-     *
      * 用于实现「未发布 / 未执行迁移、或库表未初始化时自动跳过本日志模块」的能力：
      * 此时绝不抛错，也不会回退到文件通道刷屏，仅仅是静默跳过。
      * 任何数据库不可达 / 查询异常都被视为「不存在」并安全跳过。
-     *
      * 缓存放在 LogContext（随每次请求 reset 清空），而非处理器实例：
      * 既避免每条日志都查 information_schema，又能在 Octane / Swoole 常驻进程下
      * 保证表存在性判定随请求刷新（实例会跨请求复用，挂在实例上会跨请求残留）。
@@ -83,7 +79,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         }
 
         try {
-            $table = $this->table ?? (new LogModel())->getTable();
+            $table = $this->table ?? (new LogModel)->getTable();
             $exists = Schema::hasTable($table);
         } catch (Throwable) {
             $exists = false;
@@ -244,7 +240,6 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     /**
      * 把 Monolog 等级归一化为 PSR 小写键（如 error / info / warning）。
-     *
      * 优先使用 Monolog\Level::toPsrLogLevel()（语义最准确）；该方法不可用时回退为
      * 对 level_name 做 strtolower。logs 表的 level 列只存这种小写键，
      * 便于 where('level','error') 之类的检索与跨驱动一致。
@@ -261,10 +256,8 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
     /**
      * 跨请求限流判定：同一错误 / 警告签名在短时间内只应落库一次。
-     *
      * 用于消除「每个请求都报同一个错」导致的海量重复日志（例如反复出现的
      * "Cannot modify header information - headers already sent" 提示）。
-     *
      * 优先级：Laravel Cache（跨进程、跨请求持久，键 60s 过期）> 进程内内存限流（兜底）。
      * 任何异常都被视为「不限流」（放行），绝不因限流逻辑自身故障而吞掉日志。
      */
@@ -283,9 +276,9 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
         try {
             if (function_exists('cache')
-                && class_exists(\Illuminate\Support\Facades\Cache::class)) {
-                /** @var \Illuminate\Contracts\Cache\Repository $store */
-                $store = \Illuminate\Support\Facades\Cache::store();
+                && class_exists(Cache::class)) {
+                /** @var Repository $store */
+                $store = Cache::store();
                 $cacheKey = 'logging:burst:'.md5($signature);
                 if ($store->has($cacheKey)) {
                     return true;
@@ -294,7 +287,7 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
                 return false;
             }
-        } catch (\Throwable) {
+        } catch (Throwable) {
             // Cache 不可用时回退进程内限流
         }
 

@@ -10,12 +10,10 @@ use InvalidArgumentException;
 
 /**
  * 方言抽象层（Dialect Abstraction）
- *
  * 本 trait 是「BuilderQuery 宏扩展」实现 MySQL 8.0+ 与 PostgreSQL 15+ 双数据库通用的核心。
  * 所有依赖数据库专属语法的宏（正则、JSON、字符串函数、全文检索、抽样、批量写、随机数等）
  * 都必须经由此层生成 SQL 片段，绝不在宏类内硬编码 `REGEXP_LIKE` / `JSON_EXTRACT` / 反引号等
  * 某一数据库的专属写法。
- *
  * 设计原则：
  *  1. 驱动识别 —— {@see self::driver()} 返回当前连接驱动名（mysql / pgsql / sqlite …），
  *     宏据此走对应分支；{@see self::assertSupportedOn()} 在功能不支持当前驱动时抛出清晰异常。
@@ -26,7 +24,6 @@ use InvalidArgumentException;
  *     MySQL 得到反引号、PostgreSQL/SQLite 得到双引号，无需任何硬编码。
  *  4. 等价优先 —— 优先使用两种数据库语义一致的标准写法（窗口函数、CTE、LATERAL、INTERSECT/EXCEPT、
  *     GROUP BY 条件透视等）；仅在函数名不一致时做分支（如 FIND_IN_SET→ANY(string_to_array)）。
- *
  * 覆盖范围（结合 Laravel 11+ / MySQL 8.0+ / PostgreSQL 15+ 的能力）：
  *  - 正则：匹配 / 提取 / 替换 / 位置 / 计数 / 全量提取
  *  - JSON：提取（含类型转换）/ 路径存在 / 包含 / 长度 / 键 / 搜索 / 数组聚合 / 对象聚合 / 行聚合
@@ -35,7 +32,6 @@ use InvalidArgumentException;
  *           GROUP_CONCAT(string_agg) / SOUNDEX / 自然排序 / 全文检索(MATCH vs tsvector)
  *  - 抽样 / 批量写（VALUES、UPSERT）/ 随机函数
  *
- * @package zxf\Modules\BuilderQuery\Concerns
  * @internal 仅用于 BuilderQuery 内部宏实现；所有方法均声明为 public static 以便跨 Macroable 作用域调用
  */
 trait Dialect
@@ -49,7 +45,6 @@ trait Dialect
     /**
      * 获取当前查询连接使用的数据库驱动名。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
      * @return string 小写驱动名，如 'mysql' / 'pgsql' / 'sqlite'
      */
     public static function driver(EloquentBuilder|QueryBuilder $builder): string
@@ -72,10 +67,9 @@ trait Dialect
     /**
      * 断言当前驱动在受支持列表内，否则抛出清晰异常。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $feature 功能名（用于异常提示）
-     * @param string[] $drivers 受支持驱动白名单，默认 ['mysql', 'pgsql']
-     * @return void
+     * @param  string  $feature  功能名（用于异常提示）
+     * @param  string[]  $drivers  受支持驱动白名单，默认 ['mysql', 'pgsql']
+     *
      * @throws InvalidArgumentException
      */
     public static function assertSupportedOn(
@@ -97,11 +91,9 @@ trait Dialect
 
     /**
      * 将 MySQL 正则 match type（c/i/m/n）映射为 PostgreSQL 内联修饰符。
-     *
      * MySQL: c=区分大小写(默认) / i=不区分 / m=多行 / n=.匹配换行
      * PG:    i=不区分 / m=多行 / s=.匹配换行（PG 无 n，用 s 等价）
      *
-     * @param string $mode
      * @return string 内联修饰符串，如 'im'；空串表示默认
      */
     public static function pgRegexInlineFlags(string $mode): string
@@ -124,11 +116,10 @@ trait Dialect
     /**
      * 正则匹配片段（WHERE 条件用）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn 已 wrap 的安全列名
-     * @param string $pattern 正则模式（字面值，走绑定）
-     * @param string $mode c/i/m/n 子集
-     * @param bool $negate 是否取反（NOT / !~）
+     * @param  string  $wrappedColumn  已 wrap 的安全列名
+     * @param  string  $pattern  正则模式（字面值，走绑定）
+     * @param  string  $mode  c/i/m/n 子集
+     * @param  bool  $negate  是否取反（NOT / !~）
      * @return array{0: string, 1: array} [sql 片段, 绑定]
      */
     public static function regexMatchFragment(
@@ -140,7 +131,7 @@ trait Dialect
     ): array {
         if (self::isPostgres($builder)) {
             $flags = self::pgRegexInlineFlags($mode);
-            $finalPattern = $flags !== '' ? '(?' . $flags . ')' . $pattern : $pattern;
+            $finalPattern = $flags !== '' ? '(?'.$flags.')'.$pattern : $pattern;
             $operator = $negate ? '!~' : '~';
 
             return ["{$wrappedColumn} {$operator} ?", [$finalPattern]];
@@ -157,12 +148,7 @@ trait Dialect
     /**
      * 正则替换片段（SELECT 表达式用）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn
-     * @param string $pattern
-     * @param string $replacement
-     * @param int $occurrence 0=全部，>0=第 N 次
-     * @param string $mode
+     * @param  int  $occurrence  0=全部，>0=第 N 次
      * @return array{0: string, 1: array}
      */
     public static function regexReplaceFragment(
@@ -192,12 +178,8 @@ trait Dialect
     /**
      * 正则提取片段（SELECT 表达式用）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn
-     * @param string $pattern
-     * @param int $group 捕获组索引（0=完整匹配，1=第一组）
-     * @param int $occurrence 第几次匹配（1=第一次）
-     * @param string $mode
+     * @param  int  $group  捕获组索引（0=完整匹配，1=第一组）
+     * @param  int  $occurrence  第几次匹配（1=第一次）
      * @return array{0: string, 1: array}
      */
     public static function regexExtractFragment(
@@ -221,18 +203,15 @@ trait Dialect
 
         self::assertSupportedOn($builder, 'regexpExtract');
 
-        return ["REGEXP_SUBSTR({$wrappedColumn}, ?, ?, ?, ?, ?)", [$pattern, $occurrence, $mode, $group]];
+        // MySQL：REGEXP_SUBSTR(expr, pattern, position, occurrence, match_type, capture_group)
+        // 第 3 个参数 position（起始位置）固定为 1（字面量），故共 4 个占位符、4 个绑定值。
+        return ["REGEXP_SUBSTR({$wrappedColumn}, ?, 1, ?, ?, ?)", [$pattern, $occurrence, $mode, $group]];
     }
 
     /**
      * 正则匹配位置片段（SELECT 表达式用）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn
-     * @param string $pattern
-     * @param int $occurrence
-     * @param string $mode
-     * @param int $returnOption 0=匹配起始位置，1=匹配结束位置
+     * @param  int  $returnOption  0=匹配起始位置，1=匹配结束位置
      * @return array{0: string, 1: array}
      */
     public static function regexPositionFragment(
@@ -244,10 +223,14 @@ trait Dialect
         int $returnOption
     ): array {
         if (self::isPostgres($builder)) {
+            // PostgreSQL：regexp_matches(..., 'g') WITH ORDINALITY 取得第 occurrence 次匹配，
+            // strpos 取其在原串中的 1 基起始位置；returnOption=1 时返回结束位置（起始 + 长度 - 1）。
+            // 无匹配时 COALESCE 回退为 0，与 MySQL REGEXP_INSTR 的语义对齐。
             $sql = sprintf(
-                '(SELECT CASE WHEN m.m IS NULL THEN 0 ELSE strpos(%s, m.m) + CASE WHEN ? = 1 THEN length(m.m) - 1 ELSE 0 END END
-                  FROM (SELECT (regexp_matches(%s, ?, \'g\'))[1] AS m) AS m)',
-                $wrappedColumn,
+                'COALESCE((SELECT CASE WHEN rm.match IS NULL THEN 0
+                       ELSE strpos(%1$s, rm.match[1]) + CASE WHEN ? = 1 THEN length(rm.match[1]) - 1 ELSE 0 END END
+                  FROM regexp_matches(%1$s, ?, \'g\') WITH ORDINALITY AS rm(match, ord)
+                  WHERE rm.ord = ?), 0)',
                 $wrappedColumn
             );
 
@@ -256,7 +239,9 @@ trait Dialect
 
         self::assertSupportedOn($builder, 'regexpPosition');
 
-        return ["REGEXP_INSTR({$wrappedColumn}, ?, ?, ?, ?, ?)", [$pattern, $occurrence, $returnOption, $mode]];
+        // MySQL：REGEXP_INSTR(expr, pat, pos, occurrence, return_option, match_type)
+        // 第 3 个参数 pos（起始位置）固定为 1（字面量），故共 4 个占位符、4 个绑定值。
+        return ["REGEXP_INSTR({$wrappedColumn}, ?, 1, ?, ?, ?)", [$pattern, $occurrence, $returnOption, $mode]];
     }
 
     /**
@@ -328,7 +313,6 @@ trait Dialect
 
     /**
      * 将 MySQL 风格 JSON Path（$.a.b[0]）直接作为 PostgreSQL jsonpath 使用。
-     *
      * 两种数据库 jsonpath 语法高度一致（均 0 基下标、点号导航），可直接透传。
      */
     public static function jsonPathForPg(string $path): string
@@ -339,10 +323,8 @@ trait Dialect
     /**
      * JSON 提取值并可选类型转换片段。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn
-     * @param string $path 已校验的 JSON Path
-     * @param string $type string|int|float|bool|datetime|date|time|json
+     * @param  string  $path  已校验的 JSON Path
+     * @param  string  $type  string|int|float|bool|datetime|date|time|json
      * @return array{0: string, 1: array}
      */
     public static function jsonExtractFragment(
@@ -409,10 +391,8 @@ trait Dialect
     /**
      * JSON 包含片段（数组/对象包含某值）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn
-     * @param string $jsonLiteral 已 json_encode 的字面量（走绑定）
-     * @param string|null $path 嵌套路径（可空）
+     * @param  string  $jsonLiteral  已 json_encode 的字面量（走绑定）
+     * @param  string|null  $path  嵌套路径（可空）
      * @return array{0: string, 1: array}
      */
     public static function jsonContainsFragment(
@@ -499,12 +479,11 @@ trait Dialect
         string $path
     ): array {
         if (self::isPostgres($builder)) {
-            $jsonValue = json_encode($search, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $escaped = strtr($jsonValue, ["'" => "''"]);
-
+            // 使用 jsonpath 变量 $search 承载搜索值，避免把用户输入插值进 SQL 字面量
+            // （原先的手动单引号转义在含引号文本下会破坏 SQL 字符串边界，存在语法/注入隐患）。
             return [
-                "jsonb_path_query_first({$wrappedColumn}::jsonb, '\$.** ? (@ == {$escaped})')",
-                [],
+                "jsonb_path_query_first({$wrappedColumn}::jsonb, '\$.** ? (@ == \$search)', jsonb_build_object('search', ?))",
+                [$search],
             ];
         }
 
@@ -530,7 +509,7 @@ trait Dialect
     ): array {
         if (self::isPostgres($builder)) {
             $expr = $orderColumn !== null
-                ? "jsonb_agg({$wrappedColumn} ORDER BY " . self::wrapIdentifier($builder, $orderColumn) . ' ' . self::assertDirection((string) $orderDirection)
+                ? "jsonb_agg({$wrappedColumn} ORDER BY ".self::wrapIdentifier($builder, $orderColumn).' '.self::assertDirection((string) $orderDirection)
                 : "jsonb_agg({$wrappedColumn})";
 
             return [$expr, []];
@@ -538,7 +517,7 @@ trait Dialect
 
         self::assertSupportedOn($builder, 'jsonArrayAgg');
         $expr = $orderColumn !== null
-            ? "JSON_ARRAYAGG({$wrappedColumn} ORDER BY " . self::wrapIdentifier($builder, $orderColumn) . ' ' . self::assertDirection((string) $orderDirection) . ')'
+            ? "JSON_ARRAYAGG({$wrappedColumn} ORDER BY ".self::wrapIdentifier($builder, $orderColumn).' '.self::assertDirection((string) $orderDirection).')'
             : "JSON_ARRAYAGG({$wrappedColumn})";
 
         return [$expr, []];
@@ -566,8 +545,7 @@ trait Dialect
     /**
      * JSON 行聚合片段（多列合成为对象数组）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param array<string,string> $columnPairs ['别名' => 已wrap列名, ...]
+     * @param  array<string,string>  $columnPairs  ['别名' => 已wrap列名, ...]
      * @return array{0: string, 1: array}
      */
     public static function jsonRowAggFragment(
@@ -576,18 +554,18 @@ trait Dialect
     ): array {
         $parts = [];
         foreach ($columnPairs as $alias => $wrappedColumn) {
-            $parts[] = "'" . self::assertValidIdentifier((string) $alias, 'alias') . "'";
+            $parts[] = "'".self::assertValidIdentifier((string) $alias, 'alias')."'";
             $parts[] = $wrappedColumn;
         }
-        $objectExpr = 'JSON_OBJECT(' . implode(', ', $parts) . ')';
+        $objectExpr = 'JSON_OBJECT('.implode(', ', $parts).')';
 
         if (self::isPostgres($builder)) {
-            return ['jsonb_agg(' . $objectExpr . ')', []];
+            return ['jsonb_agg('.$objectExpr.')', []];
         }
 
         self::assertSupportedOn($builder, 'jsonRowAgg');
 
-        return ['JSON_ARRAYAGG(' . $objectExpr . ')', []];
+        return ['JSON_ARRAYAGG('.$objectExpr.')', []];
     }
 
     /**
@@ -617,7 +595,7 @@ trait Dialect
     /**
      * JSON 删除键（UPDATE 表达式）。
      *
-     * @param string[] $paths
+     * @param  string[]  $paths
      * @return array{0: string, 1: array}
      */
     public static function jsonRemoveFragment(
@@ -626,7 +604,7 @@ trait Dialect
         array $paths
     ): array {
         if (self::isPostgres($builder)) {
-            $expr = $wrappedColumn . '::jsonb';
+            $expr = $wrappedColumn.'::jsonb';
             foreach ($paths as $path) {
                 $expr = "jsonb_delete({$expr}, ?)";
             }
@@ -693,16 +671,13 @@ trait Dialect
 
     /**
      * JSON 数组中按值删除元素（UPDATE 表达式，SET 段用）。
-     *
      * MySQL:   JSON_REMOVE(col, JSON_SEARCH(col, 'one', ?[, NULL, ?]))
      *          JSON_SEARCH 返回首个匹配的路径，JSON_REMOVE 据此删除。
      * PostgreSQL: col::jsonb - (SELECT (ord-1)::int ... FROM jsonb_array_elements(...) WHERE elem = ?::jsonb LIMIT 1)
      *          按值在数组中的下标删除（0 基）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn
-     * @param string $jsonValue 已 json_encode 的字面量（走绑定）
-     * @param string|null $path 嵌套数组路径（可空）
+     * @param  string  $jsonValue  已 json_encode 的字面量（走绑定）
+     * @param  string|null  $path  嵌套数组路径（可空）
      * @return array{0: string, 1: array}
      */
     public static function jsonRemoveValueFragment(
@@ -771,7 +746,7 @@ trait Dialect
     /**
      * FIELD 自定义排序片段（PG 用 array_position 等价实现）。
      *
-     * @param mixed[] $order
+     * @param  mixed[]  $order
      * @return array{0: string, 1: array}
      */
     public static function fieldOrderFragment(
@@ -878,17 +853,18 @@ trait Dialect
 
     /**
      * 全文检索 MATCH 片段（MySQL MATCH...AGAINST / PostgreSQL tsvector）。
+     * 关键词始终走参数绑定（绝不拼接），调用方须传入 $keyword。
      *
-     * @param string[] $wrappedColumns
-     * @param string $mode natural|boolean|expansion
-     * @param string $direction 仅 PG 相关度排序方向
-     * @return array{0: string, 1: array}
+     * @param  string[]  $wrappedColumns
+     * @param  string  $keyword  检索关键词（走绑定，杜绝注入）
+     * @param  string  $mode  natural|boolean|expansion
+     * @return array{0: string, 1: array} [sql 片段, 绑定]
      */
     public static function fullTextMatchFragment(
         EloquentBuilder|QueryBuilder $builder,
         array $wrappedColumns,
-        string $mode,
-        string $direction = 'desc'
+        string $keyword,
+        string $mode
     ): array {
         $mode = strtolower(trim($mode));
         if (! in_array($mode, ['natural', 'boolean', 'expansion'], true)) {
@@ -901,7 +877,7 @@ trait Dialect
             $tsvector = implode(' || ', array_map(static fn ($c) => "to_tsvector('simple', COALESCE({$c}, ''))", $wrappedColumns));
             $tsqueryFn = $mode === 'boolean' ? 'to_tsquery' : 'plainto_tsquery';
 
-            return ["({$tsvector}) @@ {$tsqueryFn}('simple', ?)", []];
+            return ["({$tsvector}) @@ {$tsqueryFn}('simple', ?)", [$keyword]];
         }
 
         self::assertSupportedOn($builder, 'whereFullText');
@@ -912,7 +888,7 @@ trait Dialect
         };
         $columnsSql = implode(', ', $wrappedColumns);
 
-        return ["MATCH({$columnsSql}) AGAINST (? {$modeSql})", []];
+        return ["MATCH({$columnsSql}) AGAINST (? {$modeSql})", [$keyword]];
     }
 
     /** 全文检索相关度表达式（ORDER BY 用）。 */
@@ -955,7 +931,7 @@ trait Dialect
     /**
      * VALUES 行语法片段：MySQL `ROW(?, ?, ...)`，PostgreSQL `(?, ?, ...)`。
      *
-     * @param int $count 占位符数量
+     * @param  int  $count  占位符数量
      */
     public static function valuesRowSyntax(EloquentBuilder|QueryBuilder $builder, int $count): string
     {
@@ -966,12 +942,11 @@ trait Dialect
 
     /**
      * UPSERT 后缀片段（用于批量 INSERT）。
-     *
      * MySQL: `ON DUPLICATE KEY UPDATE col = new_values.col ...`
      * PG:    `ON CONFLICT (unique) DO UPDATE SET col = EXCLUDED.col ...`
      *
-     * @param string[] $updateColumns 已 wrap 的更新列
-     * @param string[] $uniqueColumns 已 wrap 的唯一键列（PG 必需）
+     * @param  string[]  $updateColumns  已 wrap 的更新列
+     * @param  string[]  $uniqueColumns  已 wrap 的唯一键列（PG 必需）
      * @return array{0: string, 1: array}
      */
     public static function upsertSuffix(
@@ -985,7 +960,7 @@ trait Dialect
             foreach ($updateColumns as $col) {
                 $setParts[] = "{$col} = EXCLUDED.{$col}";
             }
-            $suffix = empty($setParts) ? "ON CONFLICT ({$uniqueList}) DO NOTHING" : 'ON CONFLICT (' . $uniqueList . ') DO UPDATE SET ' . implode(', ', $setParts);
+            $suffix = empty($setParts) ? "ON CONFLICT ({$uniqueList}) DO NOTHING" : 'ON CONFLICT ('.$uniqueList.') DO UPDATE SET '.implode(', ', $setParts);
 
             return [$suffix, []];
         }
@@ -995,36 +970,41 @@ trait Dialect
         foreach ($updateColumns as $col) {
             $setParts[] = "{$col} = new_values.{$col}";
         }
-        $suffix = empty($setParts) ? '' : 'ON DUPLICATE KEY UPDATE ' . implode(', ', $setParts);
+        $suffix = empty($setParts) ? '' : 'ON DUPLICATE KEY UPDATE '.implode(', ', $setParts);
 
         return [$suffix, []];
     }
 
     /**
-     * 表级抽样片段（TABLESAMPLE）。
+     * 表级抽样片段（WHERE 可下推的跨库抽样条件）。
+     * 生成可在 `whereRaw` 中直接使用的抽样条件片段（双库一致语义）：
+     *  - system：基于主键等距取模 `MOD(pk, ceil(100/pct)) = 0`，适合按主键有序的大表；
+     *  - random：基于数据库随机函数（MySQL RAND() / PostgreSQL random()）按比例命中。
+     * 注：PostgreSQL 原生 `TABLESAMPLE` 语法须置于 FROM 子句、无法作为 WHERE 条件，
+     * 故此处统一采用与 MySQL 一致的 WHERE 方案，保证双库行为等价、可被索引下推。
      *
-     * MySQL 8.0.33+ 支持 `TABLESAMPLE`；PostgreSQL 支持 `TABLESAMPLE {SYSTEM|BERNOULLI}(pct)`。
-     *
-     * @return array{0: string, 1: array}
+     * @param  string  $wrappedPrimaryKey  已 wrap 的安全主键列名
+     * @param  float  $percentage  抽样百分比 (0, 100]
+     * @param  string  $method  'system' | 'random'
+     * @return array{0: string, 1: array} [sql 片段, 绑定]
      */
     public static function tableSampleFragment(
         EloquentBuilder|QueryBuilder $builder,
+        string $wrappedPrimaryKey,
         float $percentage,
         string $method
     ): array {
-        if (self::isPostgres($builder)) {
-            $method = strtolower($method) === 'system' ? 'SYSTEM' : 'BERNOULLI';
-
-            return ["TABLESAMPLE {$method}(?)", [$percentage]];
-        }
-
-        self::assertSupportedOn($builder, 'sample');
+        $method = strtolower($method);
 
         if ($method === 'system') {
-            return ["MOD(?, ?) = 0", [null, null]]; // 由调用方补充主键/模数
+            $mod = (int) ceil(100 / $percentage);
+
+            return ["MOD({$wrappedPrimaryKey}, ?) = 0", [$mod]];
         }
 
-        return ["RAND() * 100 <= ?", [$percentage]];
+        $randomFn = self::randomFunction($builder);
+
+        return ["{$randomFn} * 100 <= ?", [$percentage]];
     }
 
     /* =====================================================================
@@ -1033,15 +1013,14 @@ trait Dialect
 
     /**
      * 日期分桶表达式（按时间粒度把时间戳归一到桶起点，便于 GROUP BY 统计）。
-     *
      * 支持粒度：day / week / month / quarter / year。
      * - MySQL：DATE_FORMAT 系列（quarter 用 CONCAT+YEAR+QUARTER 模拟）
      * - PostgreSQL：date_trunc 系列
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn 已 wrap 的安全列名
-     * @param string $unit 分桶粒度
+     * @param  string  $wrappedColumn  已 wrap 的安全列名
+     * @param  string  $unit  分桶粒度
      * @return string SQL 表达式（无绑定）
+     *
      * @throws InvalidArgumentException 非法粒度
      */
     public static function dateBucketFragment(
@@ -1061,25 +1040,24 @@ trait Dialect
         }
 
         return match ($unit) {
-            'day'     => "DATE_FORMAT({$wrappedColumn}, '%Y-%m-%d')",
-            'week'    => "DATE_FORMAT({$wrappedColumn}, '%Y-%u')",
-            'month'   => "DATE_FORMAT({$wrappedColumn}, '%Y-%m')",
+            'day' => "DATE_FORMAT({$wrappedColumn}, '%Y-%m-%d')",
+            'week' => "DATE_FORMAT({$wrappedColumn}, '%Y-%u')",
+            'month' => "DATE_FORMAT({$wrappedColumn}, '%Y-%m')",
             'quarter' => "CONCAT(DATE_FORMAT({$wrappedColumn}, '%Y'), '-Q', QUARTER({$wrappedColumn}))",
-            'year'    => "DATE_FORMAT({$wrappedColumn}, '%Y')",
+            'year' => "DATE_FORMAT({$wrappedColumn}, '%Y')",
         };
     }
 
     /**
      * 时间分桶表达式（按 N 分钟归一时间，用于 15 分钟 / 30 分钟等固定步长统计）。
-     *
      * 两种库均基于 epoch 秒做整除归桶，语义一致：
      * - MySQL：`FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(col)/?) * ?)`
      * - PostgreSQL：`to_timestamp(floor(extract(epoch from col)/?) * ?)`
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn 已 wrap 的安全列名
-     * @param int $minutes 步长（分钟），须 > 0
+     * @param  string  $wrappedColumn  已 wrap 的安全列名
+     * @param  int  $minutes  步长（分钟），须 > 0
      * @return array{0: string, 1: array} [sql 片段, 绑定]
+     *
      * @throws InvalidArgumentException
      */
     public static function timeBucketFragment(
@@ -1101,13 +1079,11 @@ trait Dialect
 
     /**
      * NULL 安全等值比较表达式（不区分 NULL 与值）。
-     *
      * - MySQL：`col <=> ?`
      * - PostgreSQL：`col IS NOT DISTINCT FROM ?`
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn 已 wrap 的安全列名
-     * @param mixed $value 比较值（走绑定）
+     * @param  string  $wrappedColumn  已 wrap 的安全列名
+     * @param  mixed  $value  比较值（走绑定）
      * @return array{0: string, 1: array}
      */
     public static function nullSafeEqualsExpr(
@@ -1124,16 +1100,13 @@ trait Dialect
 
     /**
      * 无全文索引时的两阶段相关度表达式（LOCATE + 长度归一化）。
-     *
      * 相关度 = 命中位置（越靠前分越高）× 长度归一因子（文本越短越精准），
      * 与 {@see self::fullTextRelevanceExpr()} 可组合成「先全文粗筛、再 LOCATE 精排」的两阶段检索。
-     *
      * - MySQL：`LOCATE(?, col) * (1.0 / NULLIF(CHAR_LENGTH(col), 0))`
      * - PostgreSQL：`strpos(col, ?) * (1.0 / NULLIF(length(col), 0))`
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string $wrappedColumn 已 wrap 的安全列名
-     * @param string $keyword 关键词（走绑定）
+     * @param  string  $wrappedColumn  已 wrap 的安全列名
+     * @param  string  $keyword  关键词（走绑定）
      * @return array{0: string, 1: array}
      */
     public static function likeRelevanceExpr(
@@ -1151,9 +1124,9 @@ trait Dialect
     /**
      * 加权排序表达式（多列按权重线性组合，常用于搜索结果综合打分）。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param array<int,array{column:string,weight:float}> $items 每项含已 wrap 的 column 与权重
+     * @param  array<int,array{column:string,weight:float}>  $items  每项含已 wrap 的 column 与权重
      * @return array{0: string, 1: array} 如 `(col1 * ? + col2 * ?)`，绑定为权重
+     *
      * @throws InvalidArgumentException
      */
     public static function weightedOrderFragment(
@@ -1172,18 +1145,17 @@ trait Dialect
             $bindings[] = $weight;
         }
 
-        return ['(' . implode(' + ', $parts) . ')', $bindings];
+        return ['('.implode(' + ', $parts).')', $bindings];
     }
 
     /**
      * 多级兜底表达式（COALESCE 链，取首个非 NULL 值，末位为默认值）。
-     *
      * 双库通用：`COALESCE(c1, c2, ..., ?)`。
      *
-     * @param EloquentBuilder|QueryBuilder $builder
-     * @param string[] $wrappedColumns 已 wrap 的安全列名（至少 1 个）
-     * @param mixed $default 最终默认值（走绑定）
+     * @param  string[]  $wrappedColumns  已 wrap 的安全列名（至少 1 个）
+     * @param  mixed  $default  最终默认值（走绑定）
      * @return array{0: string, 1: array}
+     *
      * @throws InvalidArgumentException
      */
     public static function coalesceChainExpr(
@@ -1195,6 +1167,6 @@ trait Dialect
             throw new InvalidArgumentException('coalesceChainExpr 至少需要一个列。');
         }
 
-        return ['COALESCE(' . implode(', ', $wrappedColumns) . ', ?)', [$default]];
+        return ['COALESCE('.implode(', ', $wrappedColumns).', ?)', [$default]];
     }
 }

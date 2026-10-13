@@ -4,30 +4,34 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
+use Illuminate\Database\Eloquent\Builder;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 数值 / 比较运算宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
- *
  * 基于 study_mysql「数学 / 比较函数」章节系统化封装：把常见的 NULL 安全比较、取值夹紧、
  * 多级兜底、加权排序、精度控制等模式抽象为语义化宏，避免在各处手写易错、易注入的裸 SQL。
- *
  * 提供的宏：
  *  - whereNullSafeEqual：NULL 安全等值比较（MySQL <=> / PG IS NOT DISTINCT FROM）
  *  - selectClamp：将列值夹紧到 [min, max] 区间（GREATEST + LEAST），常用于评分/百分比封顶
  *  - selectCoalesce：多级兜底取值（COALESCE 链），末位为默认值
  *  - orderByWeighted：多列按权重线性组合的加权排序（搜索综合打分）
  *  - selectRound：四舍五入 / 截断到指定小数位（ROUND / TRUNCATE）
- *
  * 安全性：列名 / 别名经白名单校验并由 grammar wrap；所有字面量一律参数绑定。
  *
- * @package zxf\Modules\BuilderQuery\WindowMacros
  * @version 3.1.0
+ *
  * @requires MySQL 8.0+ / PostgreSQL 15+
+ *
+ * @scenario 数值 / 比较运算宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class MathMacro extends BaseMacro
 {
-    /** 注册所有数值运算宏。 */
+    /**
+     *  注册所有数值运算宏。
+     *
+     * @scenario 注册所有数值运算宏。
+     */
     public static function register(): void
     {
         self::registerNullSafe();
@@ -39,19 +43,20 @@ class MathMacro extends BaseMacro
 
     /**
      * 注册 NULL 安全比较宏。
+     *
+     * @scenario 注册 NULL 安全比较宏。
      */
-public static function registerNullSafe(): void
+    public static function registerNullSafe(): void
     {
         /**
          * NULL 安全等值比较筛选。
-         *
          * 与普通 `=` 不同：当两侧都为 NULL 时返回真，一侧为 NULL 一侧非 NULL 时返回假，
          * 语义等价于「IS NOT DISTINCT FROM」，避免 `col = ?` 在 NULL 上永远不成立导致的漏判。
          *
-         * @param string $column 比较列
-         * @param mixed $value 比较值（可传 null 以匹配 NULL 行）
-         * @param string $boolean 连接条件 and|or
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $column  比较列
+         * @param  mixed  $value  比较值（可传 null 以匹配 NULL 行）
+         * @param  string  $boolean  连接条件 and|or
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 找出 parent_id 为 NULL 的顶层记录（NULL = NULL 判定为真）
@@ -64,8 +69,12 @@ public static function registerNullSafe(): void
             string $column,
             mixed $value,
             string $boolean = 'and'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             [$sql, $bindings] = BaseMacro::nullSafeEqualsExpr($this, $wrapped, $value);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
@@ -76,19 +85,20 @@ public static function registerNullSafe(): void
 
     /**
      * 注册区间夹紧宏。
+     *
+     * @scenario 注册区间夹紧宏。
      */
-public static function registerClamp(): void
+    public static function registerClamp(): void
     {
         /**
          * 将列值夹紧（clamp）到 [min, max] 区间后作为字段返回。
-         *
          * 等价于 `GREATEST(min, LEAST(max, col))`，用于评分封顶、百分比限制、坐标范围约束等。
          *
-         * @param string $column 目标列
-         * @param mixed $min 下限
-         * @param mixed $max 上限（须 >= min）
-         * @param string $alias 返回字段别名（默认 clamped）
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $column  目标列
+         * @param  mixed  $min  下限
+         * @param  mixed  $max  上限（须 >= min）
+         * @param  string  $alias  返回字段别名（默认 clamped）
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 将折扣率限制在 0~0.5，避免脏数据导致超过 5 折
@@ -101,8 +111,12 @@ public static function registerClamp(): void
             mixed $min,
             mixed $max,
             string $alias = 'clamped'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             if ($min > $max) {
                 throw new \InvalidArgumentException('selectClamp 的下限必须大于等于上限。');
             }
@@ -116,16 +130,18 @@ public static function registerClamp(): void
 
     /**
      * 注册多级兜底宏。
+     *
+     * @scenario 注册多级兜底宏。
      */
-public static function registerCoalesce(): void
+    public static function registerCoalesce(): void
     {
         /**
          * 多级兜底取值（COALESCE 链），取首个非 NULL 值，末位为默认值。
          *
-         * @param array $columns 候补列（按顺序，前者优先）
-         * @param mixed $default 最终默认值（走绑定）
-         * @param string $alias 返回字段别名（默认 value）
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  array  $columns  候补列（按顺序，前者优先）
+         * @param  mixed  $default  最终默认值（走绑定）
+         * @param  string  $alias  返回字段别名（默认 value）
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 优先取用户昵称，其次取用户名，最后兜底为「匿名用户」
@@ -137,8 +153,12 @@ public static function registerCoalesce(): void
             array $columns,
             mixed $default,
             string $alias = 'value'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $builder = $this;
             $wrapped = array_map(
                 static function (string $c) use ($builder) {
@@ -155,15 +175,17 @@ public static function registerCoalesce(): void
 
     /**
      * 注册加权排序宏。
+     *
+     * @scenario 注册加权排序宏。
      */
-public static function registerWeighted(): void
+    public static function registerWeighted(): void
     {
         /**
          * 多列按权重线性组合的加权排序（综合打分排序）。
          *
-         * @param array<int,array{column:string,weight:float}> $items 每项 = ['column'=>列名, 'weight'=>权重]
-         * @param string $direction 排序方向 desc（默认）| asc
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  array<int,array{column:string,weight:float}>  $items  每项 = ['column'=>列名, 'weight'=>权重]
+         * @param  string  $direction  排序方向 desc（默认）| asc
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 热度权重 0.3、销量权重 0.2、评分权重 0.5 综合排序
@@ -178,8 +200,12 @@ public static function registerWeighted(): void
         static::define('orderByWeighted', function (
             array $items,
             string $direction = 'desc'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $wrappedItems = [];
             foreach ($items as $item) {
                 $wrappedItems[] = [
@@ -196,17 +222,19 @@ public static function registerWeighted(): void
 
     /**
      * 注册精度控制宏。
+     *
+     * @scenario 注册精度控制宏。
      */
-public static function registerRound(): void
+    public static function registerRound(): void
     {
         /**
          * 将列值四舍五入 / 截断到指定小数位后作为字段返回。
          *
-         * @param string $column 目标列
-         * @param int $decimals 小数位数（默认 2）
-         * @param bool $truncate 是否截断（true=TRUNCATE 直接舍去，false=ROUND 四舍五入）
-         * @param string $alias 返回字段别名（默认 rounded）
-         * @return \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder
+         * @param  string  $column  目标列
+         * @param  int  $decimals  小数位数（默认 2）
+         * @param  bool  $truncate  是否截断（true=TRUNCATE 直接舍去，false=ROUND 四舍五入）
+         * @param  string  $alias  返回字段别名（默认 rounded）
+         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 金额截断到 2 位小数，避免浮点误差
@@ -219,8 +247,12 @@ public static function registerRound(): void
             int $decimals = 2,
             bool $truncate = false,
             string $alias = 'rounded'
-        ): \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder {
-            /** @var \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder $this */
+        ): Builder|\Illuminate\Database\Query\Builder {
+            /**
+             * @var Builder|\Illuminate\Database\Query\Builder $this
+             *
+             * @scenario 本类/成员说明。
+             */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
 

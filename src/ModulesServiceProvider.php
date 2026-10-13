@@ -6,30 +6,28 @@ namespace zxf\Modules;
 
 use Composer\InstalledVersions;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Foundation\Console\AboutCommand;
 use Illuminate\Support\ServiceProvider;
 use zxf\Modules\BuilderQuery\MacrosBuilder;
 use zxf\Modules\Contracts\RepositoryInterface;
+use zxf\Modules\Support\ModuleAutoDiscovery;
 use zxf\Modules\Support\ModuleLoader;
 
 /**
  * 模块系统服务提供者
- *
  * 为 Laravel 11+ / 12+ / 13+ 优化的模块化系统服务提供者。
- *
  * 设计原则：
  * - 最小化 Laravel 框架依赖，使用 illuminate/contracts 而非完整框架
  * - 延迟加载非必要服务，不影响 HTTP 请求性能
  * - 自动发现和注册模块组件（路由、视图、中间件、事件、命令等）
  * - 支持模块缓存以提升生产环境加载速度
  * - **环境隔离**：CLI 命令相关功能/文件仅在命令行环境加载，浏览器环境完全跳过
- *
  * Laravel 13 兼容特性：
  * - 兼容 Eloquent Builder 的新查询宏（如向量相似度 whereVectorSimilarTo）
  * - 兼容 withRouting() 回调与属性路由（#[Get]/#[Post]/#[Middleware]）
  * - CSRF 中间件已使用新增的 PreventRequestForgery 命名约定
  * - 兼容 withScheduling() 的延迟注册时机与队列路由等 13.x 新特性
  *
- * @package zxf\Modules
  * @version 5.1.0
  */
 class ModulesServiceProvider extends ServiceProvider
@@ -66,19 +64,14 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 引导服务
-     *
      * 加载策略严格区分「浏览器（HTTP）环境」与「命令行（CLI）环境」：
-     *
      *  - HTTP 环境：仅加载处理请求所必需的模块组件
      *    （路由、视图、翻译、配置、迁移、服务提供者等），
      *    完全不触碰 Artisan 命令相关逻辑与文件。
-     *
      *  - CLI 环境：在 HTTP 加载的基础上，额外注册扩展包自身的
      *    Artisan 命令、模块内自动发现的命令，以及 about 信息。
-     *
      * 这样可确保 src/Commands 下的命令类在 HTTP 请求期间不会被
      * 自动加载/实例化，减少内存占用与自动加载开销。
-     *
      * 注意：由于模块的加载必须在服务提供者注册后立刻执行
      * （路由、视图、翻译等都需要在请求处理前完成），
      * 因此本提供者不支持延迟加载，boot() 会立即执行。
@@ -118,7 +111,7 @@ class ModulesServiceProvider extends ServiceProvider
             }
 
             // 过滤无效路径
-            $paths = array_filter($paths, fn($p) => is_string($p) && $p !== '');
+            $paths = array_filter($paths, fn ($p) => is_string($p) && $p !== '');
 
             return new Repository(
                 $app['files'],
@@ -148,7 +141,7 @@ class ModulesServiceProvider extends ServiceProvider
      */
     protected function mergeModuleConfig(): void
     {
-        $configPath = __DIR__ . '/../config/modules.php';
+        $configPath = __DIR__.'/../config/modules.php';
 
         if (file_exists($configPath)) {
             $this->mergeConfigFrom($configPath, 'modules');
@@ -161,12 +154,12 @@ class ModulesServiceProvider extends ServiceProvider
     protected function publishConfig(): void
     {
         $this->publishes([
-            __DIR__ . '/../config/modules.php' => config_path('modules.php'),
+            __DIR__.'/../config/modules.php' => config_path('modules.php'),
         ], 'modules-config');
 
         // 发布 stub 文件
         $this->publishes([
-            __DIR__ . '/Commands/stubs' => resource_path('stubs/modules'),
+            __DIR__.'/Commands/stubs' => resource_path('stubs/modules'),
         ], 'modules-stubs');
     }
 
@@ -240,7 +233,7 @@ class ModulesServiceProvider extends ServiceProvider
             return;
         }
 
-        $moduleCommands = \zxf\Modules\Support\ModuleAutoDiscovery::getGlobalCommands();
+        $moduleCommands = ModuleAutoDiscovery::getGlobalCommands();
 
         if (! empty($moduleCommands)) {
             $this->commands($moduleCommands);
@@ -252,7 +245,7 @@ class ModulesServiceProvider extends ServiceProvider
      */
     protected function registerViewNamespace(): void
     {
-        $viewPath = __DIR__ . '/../resources/views';
+        $viewPath = __DIR__.'/../resources/views';
 
         if (! is_dir($viewPath)) {
             return;
@@ -281,7 +274,7 @@ class ModulesServiceProvider extends ServiceProvider
         }
 
         try {
-            \Illuminate\Foundation\Console\AboutCommand::add('Extend', [
+            AboutCommand::add('Extend', [
                 'zxf/modules' => fn () => InstalledVersions::getPrettyVersion('zxf/modules') ?? 'unknown',
             ]);
         } catch (\Throwable) {
@@ -291,7 +284,6 @@ class ModulesServiceProvider extends ServiceProvider
 
     /**
      * 获取服务提供者提供的服务
-     *
      * 注意：本提供者因 boot() 阶段需要加载模块路由/视图/翻译等，
      * 不可使用 Laravel 延迟加载机制。provides() 仅作文档用途。
      *
