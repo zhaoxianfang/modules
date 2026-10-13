@@ -26,7 +26,15 @@ class DatabaseLogTap
         }
 
         try {
-            $logger->getLogger()->pushProcessor(new RequestContextProcessor());
+            $monolog = $logger->getLogger();
+            // 幂等保护：若通道被重建（配置缓存刷新 / 重入），避免重复追加同一处理器导致
+            // 请求上下文被重复注入（虽为幂等覆盖，但徒增开销）。
+            foreach ($monolog->getProcessors() as $existing) {
+                if ($existing instanceof RequestContextProcessor) {
+                    return;
+                }
+            }
+            $monolog->pushProcessor(new RequestContextProcessor());
         } catch (\Throwable) {
             // 忽略
         }

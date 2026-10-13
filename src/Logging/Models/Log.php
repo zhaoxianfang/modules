@@ -16,13 +16,26 @@ use Illuminate\Database\Eloquent\Model;
  * 命名说明：本模型类名为 Log（对应数据表 logs）。在引用 Laravel 的日志门面时，
  * 请使用 Illuminate\Support\Facades\Log 的完全限定名或别名，避免与本类冲突。
  *
+ * 字段语义（核心字段）：
+ *   - module_name      模块名称（由宿主应用 module_name() 助手获取，小写下划线蛇形），按模块检索 / 统计；
+ *   - level            日志等级，统一为 PSR 小写键：debug / info / notice / warning / error / critical / alert / emergency；
+ *   - is_crawler       是否为爬虫 / 机器人请求（bool）；
+ *   - response_content 响应内容：视图页面响应记录「视图页面地址（视图名）」，JSON 响应记录「JSON 数据」。
+ *
+ * 常用查询示例：
+ *   Log::recent(7)->errors()->get();                       // 近 7 天所有异常 / 错误
+ *   Log::level('error')->where('module_name','users');     // 某模块的错误
+ *   Log::ofChannel('database')->search('timeout');         // 按通道 + 关键字模糊检索
+ *   Log::where('is_crawler', true)->count();               // 爬虫请求数
+ *
  * @property int         $id
- * @property string      $level            等级键（error）
- * @property string      $level_name       等级名（ERROR）
+ * @property string|null $module_name       模块名称（由 module_name() 函数获取，小写下划线蛇形）
+ * @property string      $level             日志等级（PSR 小写键，如 error / info / warning）
  * @property string|null $channel
  * @property string      $message
  * @property array|null  $context
  * @property array|null  $extra
+ * @property bool        $is_crawler        是否为爬虫请求
  * @property string|null $request_method
  * @property string|null $request_url
  * @property string|null $request_path
@@ -38,6 +51,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $user_type
  * @property int|null    $response_code
  * @property string|null $response_status
+ * @property string|null $response_content  响应内容：视图页面地址（视图名） 或 JSON 数据
  * @property int|null    $response_duration_ms
  * @property float|null  $response_memory_mb
  * @property array|null  $response_headers
@@ -61,12 +75,12 @@ class Log extends Model
     protected $table = 'logs';
 
     protected $fillable = [
-        'level', 'level_name', 'channel', 'message', 'context', 'extra',
+        'module_name', 'level', 'channel', 'message', 'context', 'extra', 'is_crawler',
         'request_method', 'request_url', 'request_path', 'request_route', 'request_controller',
         'request_ip', 'request_user_agent', 'request_referer', 'request_session_id',
         'request_input', 'request_headers',
         'user_id', 'user_type',
-        'response_code', 'response_status', 'response_duration_ms', 'response_memory_mb',
+        'response_code', 'response_status', 'response_content', 'response_duration_ms', 'response_memory_mb',
         'response_headers', 'response_body',
         'exception_class', 'exception_message', 'file', 'trace',
     ];
@@ -74,6 +88,7 @@ class Log extends Model
     protected $casts = [
         'context' => 'array',
         'extra' => 'array',
+        'is_crawler' => 'boolean',
         'request_input' => 'array',
         'request_headers' => 'array',
         'response_headers' => 'array',
@@ -83,10 +98,10 @@ class Log extends Model
 
     public $timestamps = true;
 
-    /** 按等级名查询（如 'ERROR'） */
+    /** 按等级查询（如 'error' / 'info'，统一转小写 PSR 键） */
     public function scopeLevel($query, string $level)
     {
-        return $query->where('level_name', strtoupper($level));
+        return $query->where('level', strtolower($level));
     }
 
     /** 按通道查询 */
@@ -113,9 +128,9 @@ class Log extends Model
         return $query->where('message', 'like', '%'.addcslashes($term, '%_').'%');
     }
 
-    /** 仅异常 / 错误级别 */
+    /** 仅异常 / 错误级别（与 PSR 小写键保持一致） */
     public function scopeErrors($query)
     {
-        return $query->whereIn('level_name', ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY']);
+        return $query->whereIn('level', ['error', 'critical', 'alert', 'emergency']);
     }
 }

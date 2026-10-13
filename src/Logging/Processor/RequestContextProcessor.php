@@ -39,6 +39,8 @@ class RequestContextProcessor implements ProcessorInterface
             $extra['request_session_id'] = $req['session_id'] ?? null;
             $extra['request_input'] = $req['input'] ?? null;
             $extra['request_headers'] = $req['headers'] ?? null;
+            $extra['module_name'] = $req['module_name'] ?? null;
+            $extra['is_crawler'] = $req['is_crawler'] ?? false;
 
             if (! empty($req['user'])) {
                 $extra['user_id'] = $req['user']['id'] ?? null;
@@ -51,6 +53,7 @@ class RequestContextProcessor implements ProcessorInterface
             $resp = LogContext::getResponse();
             $extra['response_code'] = $resp['code'] ?? null;
             $extra['response_status'] = $resp['status'] ?? null;
+            $extra['response_content'] = $resp['content'] ?? null;
             $extra['response_duration_ms'] = $resp['duration_ms'] ?? null;
             $extra['response_memory_mb'] = $resp['memory_mb'] ?? null;
             $extra['response_headers'] = $resp['headers'] ?? null;

@@ -20,7 +20,23 @@ declare(strict_types=1);
  */
 
 $loader = require '/Users/aha/www/wsf/vendor/autoload.php';
-$loader->setPsr4('zxf\\Modules\\', '/Users/aha/www/modules/src/');
+// 优先从本仓库 src 加载 zxf\Modules\* 类（覆盖 wsf vendor 中的 zxf/modules 旧副本）。
+// 直接在 Composer 之前注册一个 prepended 自动加载器：命中本仓库源码即 require 并短路，
+// 使 Composer 的 ClassLoader 不再介入，确保测试始终针对当前源码。
+spl_autoload_register(function (string $class): bool {
+    if (strncmp($class, 'zxf\\Modules\\', 12) !== 0) {
+        return false;
+    }
+    $rel = substr($class, 12);
+    $file = '/Users/aha/www/modules/src/' . str_replace('\\', '/', $rel) . '.php';
+    if (is_file($file)) {
+        require $file;
+
+        return true;
+    }
+
+    return false;
+}, true, true);
 
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -29,6 +45,7 @@ use zxf\Modules\Logging\Contracts\LogWriter;
 use zxf\Modules\Logging\Contracts\RedactorContract;
 use zxf\Modules\Logging\Events\LogRecorded;
 use zxf\Modules\Logging\Handler\DatabaseLogHandler;
+use zxf\Modules\Logging\Middleware\LogContextMiddleware;
 use zxf\Modules\Logging\Support\Redactor;
 use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
 
@@ -108,6 +125,9 @@ $record = new LogRecord(
         'password' => 'hunter2',
         'response_body' => '{"token":"abc"}',
         'request_path' => '/login',
+        'module_name' => 'users',
+        'is_crawler' => true,
+        'response_content' => '{"ok":1}',
     ],
 );
 
@@ -124,7 +144,11 @@ $ref = new ReflectionMethod($handler, 'buildAttributes');
 $ref->setAccessible(true);
 $attrs = $ref->invoke($handler, $record);
 
-check($attrs['level_name'] === 'ERROR', 'buildAttributes level_name');
+check($attrs['level'] === 'error', 'buildAttributes level 归一化为 PSR 小写键');
+check(! array_key_exists('level_name', $attrs), 'buildAttributes 已移除冗余 level_name 字段');
+check($attrs['module_name'] === 'users', 'buildAttributes module_name 透传');
+check($attrs['is_crawler'] === true, 'buildAttributes is_crawler 透传');
+check($attrs['response_content'] === '{"ok":1}', 'buildAttributes response_content 透传');
 check($attrs['channel'] === 'test', 'buildAttributes channel');
 check($attrs['context']['token'] === Redactor::MASK, 'buildAttributes context 敏感键脱敏');
 check($attrs['extra']['password'] === Redactor::MASK, 'buildAttributes extra 敏感键脱敏');
@@ -135,6 +159,93 @@ check($attrs['exception_message'] === 'boom', 'buildAttributes 异常消息');
 check(str_contains($attrs['file'] ?? '', ':'), 'buildAttributes 异常文件:行');
 check(is_string($attrs['trace'] ?? null), 'buildAttributes 异常堆栈');
 check(! isset($attrs['context']['console_to_log']), 'buildAttributes 剔除一次性控制标记 console_to_log');
+
+// response_content 同样经过脱敏（与 response_body 一致，避免 JSON 响应泄露敏感字段）
+$recMask = new LogRecord(
+    datetime: new DateTimeImmutable(),
+    channel: 't',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: ['response_content' => '{"token":"abc"}', 'module_name' => 'x', 'is_crawler' => false],
+);
+$attrsMask = $ref->invoke($handler, $recMask);
+check($attrsMask['response_content'] === '{"token":"***"}', 'buildAttributes response_content 脱敏(JSON 敏感键)');
+
+// 其它等级的 level 归一化（info / warning / critical）
+foreach ([Level::Info, Level::Warning, Level::Critical] as $lv) {
+    $lvlRecord = new LogRecord(
+        datetime: new DateTimeImmutable(),
+        channel: 't',
+        level: $lv,
+        message: 'm',
+        context: [],
+        extra: [],
+    );
+    $a = $ref->invoke($handler, $lvlRecord);
+    $expect = strtolower($lv->name);
+    check($a['level'] === $expect, 'buildAttributes level 归一化 '.strtoupper($lv->name).' -> '.$expect);
+}
+
+// ===================== 爬虫检测 =====================
+use Illuminate\Http\Request;
+
+$reqWithUa = static function (string $ua): Request {
+    return Request::create('/', 'GET', [], [], [], $ua === '' ? [] : ['HTTP_USER_AGENT' => $ua]);
+};
+check(LogContextMiddleware::detectCrawler($reqWithUa('Mozilla/5.0 (compatible; Googlebot/2.1)')) === true, 'detectCrawler Googlebot');
+check(LogContextMiddleware::detectCrawler($reqWithUa('curl/8.4.0')) === true, 'detectCrawler curl');
+$emptyReq = Request::create('/');
+$emptyReq->headers->remove('user-agent');
+check(LogContextMiddleware::detectCrawler($emptyReq) === true, 'detectCrawler 空 UA');
+check(LogContextMiddleware::detectCrawler($reqWithUa('Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36')) === false, 'detectCrawler 普通浏览器');
+
+// ===================== 响应内容语义解析 =====================
+$viewResp = new class {
+    public function getOriginalContent(): object { return new class implements \Illuminate\Contracts\View\View {
+        public function getName(): string { return 'users::index'; }
+        public function name(): string { return 'users::index'; }
+        public function with($key, $value = null) { return $this; }
+        public function getData(): array { return []; }
+        public function render(): string { return ''; }
+    }; }
+};
+$rcm = new ReflectionMethod(LogContextMiddleware::class, 'resolveResponseContent');
+$rcm->setAccessible(true);
+check(LogContextMiddleware::resolveResponseContent($viewResp, 'text/html; charset=UTF-8', '<html></html>') === 'users::index', 'resolveResponseContent 视图页面记录视图名');
+
+$jsonResp = new class {
+    public function getOriginalContent() { return ['ok' => 1]; }
+};
+check(LogContextMiddleware::resolveResponseContent($jsonResp, 'application/json', '{"ok":1}') === '{"ok":1}', 'resolveResponseContent JSON 记录数据');
+
+$redirectResp = new class {
+    public function getOriginalContent() { return null; }
+};
+check(LogContextMiddleware::resolveResponseContent($redirectResp, 'text/html; charset=UTF-8', '') === null, 'resolveResponseContent 重定向/无内容返回 null');
+
+// ===================== 响应体采集（JsonResponse 修复验证） =====================
+// 回归：Laravel JSON 接口返回 JsonResponse（非 Illuminate\Http\Response 子类），
+// 旧实现因限定 instanceof Illuminate\Http\Response 导致 JSON 响应体永不采集、
+// response_content 恒为 null。此处验证 JsonResponse 也能正确采集 JSON 数据。
+$mw = new LogContextMiddleware(new Redactor());
+$jsonHeaderBag = new class {
+    public function get(string $k, $default = null) { return $k === 'content-type' ? 'application/json' : $default; }
+    public function all(): array { return []; }
+};
+$jsonResp = new class($jsonHeaderBag) {
+    public $headers;
+    public function __construct($h) { $this->headers = $h; }
+    public function getStatusCode(): int { return 200; }
+    public function getReasonPhrase(): string { return 'OK'; }
+    public function getContent(): string { return '{"ok":1}'; }
+    public function getOriginalContent() { return ['ok' => 1]; }
+};
+$mwRef = new ReflectionMethod(LogContextMiddleware::class, 'captureResponse');
+$mwRef->setAccessible(true);
+$mwRef->invoke($mw, Request::create('/api/x'), $jsonResp);
+$respCtx = \zxf\Modules\Logging\LogContext::getResponse();
+check(($respCtx['content'] ?? null) === '{"ok":1}', 'captureResponse JSON(JsonResponse) 采集响应体并记录 JSON 数据');
 
 // ===================== 构造参数顺序守卫 =====================
 $rc = new ReflectionClass(DatabaseLogHandler::class);

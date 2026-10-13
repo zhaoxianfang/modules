@@ -34,6 +34,9 @@ use zxf\Modules\Logging\Writer\DatabaseLogWriter;
  *   （返回大写名如 'ERROR'）。本环境的 Monolog 在 LogRecord 上未暴露 level_name 公共属性，
  *   只能通过 offsetGet 访问；切勿写 `$record->level_name`（会触发 Undefined property）。
  *   切勿对 level 重新赋值（会抛 LogicException）。
+ * - logs 表的 level 列统一存储「PSR 小写等级键」（如 error / info / warning），由
+ *   normalizeLevel() 归一化（优先 Monolog\Level::toPsrLogLevel()，回退 strtolower）。
+ *   原冗余的 level_name（大写名）列已移除，避免与 level 重复。
  * - 仅 extra / formatted 可写；context / message 等为 readonly，不可重新赋值。
  * - 任何写入异常都被捕获或回退，绝不影响主业务流程。
  * - 异常处理策略：异常日志的「文件落盘」由 Laravel 默认通道（report($e) / stack）负责，
@@ -44,6 +47,9 @@ use zxf\Modules\Logging\Writer\DatabaseLogWriter;
 class DatabaseLogHandler extends AbstractProcessingHandler
 {
     private ?LoggingConfig $config = null;
+
+    /** 进程内兜底限流状态（仅错误 / 警告级别使用，跨请求去重的兜底手段） */
+    private static array $burstSeen = [];
 
     public function __construct(
         protected ?string $model = null,
@@ -115,6 +121,14 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         }
         LogContext::markSeen($key);
 
+        // 跨请求限流（仅对错误 / 警告等级）：同一个错误签名在一段时间内只落库一次，
+        // 避免「每请求都报同一个错误」时日志被海量重复内容刷屏（如测试期反复出现的
+        // "Cannot modify header information - headers already sent" 类提示）。
+        // 通过 Cache 实现跨进程去重；Cache 不可用时回退为进程内限流。
+        if ($this->shouldThrottleBurst($record)) {
+            return;
+        }
+
         // 落库（失败时回退到 stack 文件通道，确保关键日志不丢失）
         try {
             $this->writer()->write($this->buildAttributes($record));
@@ -140,12 +154,13 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         $trace = $this->trace($record);
 
         return [
-            'level' => $record['level_name'],
-            'level_name' => $record['level_name'],
+            'module_name' => $extra['module_name'] ?? null,
+            'level' => $this->normalizeLevel($record),
             'channel' => $record->channel,
             'message' => mb_substr($redactor->maskText($record->message), 0, 65535),
             'context' => $redactor->sanitizeContext($context),
             'extra' => $redactor->sanitizeContext($extra),
+            'is_crawler' => $extra['is_crawler'] ?? false,
 
             'request_method' => $extra['request_method'] ?? null,
             'request_url' => $extra['request_url'] ?? null,
@@ -164,6 +179,12 @@ class DatabaseLogHandler extends AbstractProcessingHandler
 
             'response_code' => $extra['response_code'] ?? null,
             'response_status' => $extra['response_status'] ?? null,
+            // response_content 单独成列（视图名 / JSON 数据）。与 response_body 保持一致，
+            // 经过脱敏处理：视图名不含敏感信息仅做格式保留；JSON 数据中的敏感键（password / token …）
+            // 会被 Redactor 统一脱敏，避免泄露到 logs 表。
+            'response_content' => isset($extra['response_content'])
+                ? $redactor->maskText((string) $extra['response_content'])
+                : null,
             'response_duration_ms' => $extra['response_duration_ms'] ?? null,
             'response_memory_mb' => $extra['response_memory_mb'] ?? null,
             'response_headers' => ($this->captureResponseBody ? ($extra['response_headers'] ?? null) : null),
@@ -219,6 +240,78 @@ class DatabaseLogHandler extends AbstractProcessingHandler
             'file' => $e->getFile().':'.$e->getLine(),
             'trace' => mb_substr($e->getTraceAsString(), 0, 60000),
         ];
+    }
+
+    /**
+     * 把 Monolog 等级归一化为 PSR 小写键（如 error / info / warning）。
+     *
+     * 优先使用 Monolog\Level::toPsrLogLevel()（语义最准确）；该方法不可用时回退为
+     * 对 level_name 做 strtolower。logs 表的 level 列只存这种小写键，
+     * 便于 where('level','error') 之类的检索与跨驱动一致。
+     */
+    protected function normalizeLevel(LogRecord $record): string
+    {
+        $level = $record->level;
+        if ($level instanceof Level && method_exists($level, 'toPsrLogLevel')) {
+            return $level->toPsrLogLevel();
+        }
+
+        return strtolower((string) ($record['level_name'] ?? 'info'));
+    }
+
+    /**
+     * 跨请求限流判定：同一错误 / 警告签名在短时间内只应落库一次。
+     *
+     * 用于消除「每个请求都报同一个错」导致的海量重复日志（例如反复出现的
+     * "Cannot modify header information - headers already sent" 提示）。
+     *
+     * 优先级：Laravel Cache（跨进程、跨请求持久，键 60s 过期）> 进程内内存限流（兜底）。
+     * 任何异常都被视为「不限流」（放行），绝不因限流逻辑自身故障而吞掉日志。
+     */
+    protected function shouldThrottleBurst(LogRecord $record): bool
+    {
+        $name = strtolower((string) ($record['level_name'] ?? ''));
+        // 仅对错误 / 警告级别限流；info / debug 等常规日志保持全量落库
+        if (! in_array($name, ['error', 'critical', 'alert', 'emergency', 'warning'], true)) {
+            return false;
+        }
+
+        $signature = $name.'|'.$record->message;
+        if ($this->hasException($record)) {
+            $signature .= '|'.get_class($record->context['exception']);
+        }
+
+        try {
+            if (function_exists('cache')
+                && class_exists(\Illuminate\Support\Facades\Cache::class)) {
+                /** @var \Illuminate\Contracts\Cache\Repository $store */
+                $store = \Illuminate\Support\Facades\Cache::store();
+                $cacheKey = 'logging:burst:'.md5($signature);
+                if ($store->has($cacheKey)) {
+                    return true;
+                }
+                $store->put($cacheKey, 1, 60);
+
+                return false;
+            }
+        } catch (\Throwable) {
+            // Cache 不可用时回退进程内限流
+        }
+
+        return self::throttleInMemory($signature);
+    }
+
+    /** 进程内兜底限流（仅当前 PHP 进程有效，FPM 下按 worker 隔离） */
+    private static function throttleInMemory(string $signature): bool
+    {
+        $now = microtime(true);
+        if (isset(self::$burstSeen[$signature])
+            && ($now - self::$burstSeen[$signature]) < 60) {
+            return true;
+        }
+        self::$burstSeen[$signature] = $now;
+
+        return false;
     }
 
     /**

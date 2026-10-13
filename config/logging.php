@@ -18,6 +18,12 @@
  * 如需覆盖默认行为，可在应用自身的 config/logging.php 中重新定义
  * channels.database 或 logging.db 段（应用配置优先）。
  *
+ * logs 数据表核心字段说明（详见迁移）：
+ *   - module_name      模块名称（由宿主应用的 module_name() 助手获取，小写下划线）
+ *   - level            日志等级（PSR 小写键：error / info / warning / critical …，与 Monolog 一致）
+ *   - is_crawler       是否为爬虫 / 机器人请求（bool）
+ *   - response_content 响应内容：视图页面响应记录「视图页面地址（视图名）」，JSON 响应记录「JSON 数据」
+ *
  * @package zxf\Modules\Logging
  */
 

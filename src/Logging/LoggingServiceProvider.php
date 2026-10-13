@@ -25,10 +25,10 @@ use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
  *    无需先执行 `php artisan vendor:publish --tag=modules-logging`（同时保留 publishes 以兼容旧用法）。
  * 3. 运行时若 logs 表不存在（迁移未发布 / 未执行 migrate），数据库日志处理器会自动跳过，
  *    不影响主业务流程（详见 DatabaseLogHandler::write 的表存在性守卫）。
- * 3. 注册请求 / 响应上下文中间件（web / api 组，仅 HTTP 模式），用于自动采集上下文。
- * 4. 监听日志事件，使 Laravel 的 report($e) 等携带异常的日志也能落入 database 通道
+ * 4. 注册请求 / 响应上下文中间件（web / api 组，仅 HTTP 模式），用于自动采集上下文。
+ * 5. 监听日志事件，使 Laravel 的 report($e) 等携带异常的日志也能落入 database 通道
  *    （被 datatable 检索），且避免重复写入。
- * 5. 绑定核心抽象（RedactorContract / LogWriter），LogWriter 可按配置切换为队列异步写入。
+ * 6. 绑定核心抽象（RedactorContract / LogWriter），LogWriter 可按配置切换为队列异步写入。
  *
  * 说明：日志的查看 / 检索 / 删除等管理功能不在本模块职责范围内（已由控制器 / 视图中移除），
  * 需要检索时直接使用 Log 模型或接入外部日志平台即可。
@@ -80,11 +80,12 @@ class LoggingServiceProvider extends ServiceProvider
         // 由于迁移文件名相同，Laravel 在 migrate 时会按名称去重，不会产生重复执行。
         $this->loadMigrationsFrom(__DIR__.'/Database/Migrations');
 
-        // 发布迁移文件（仅 CLI）
+        // 发布迁移文件（仅 CLI）：发布合并后的单一迁移 0001_01_01_000000_create_logs_table，
+        // 全新项目只需运行本文件即可完成建表 + 演进。
         if ($this->app->runningInConsole()) {
             $this->publishes([
-                __DIR__.'/Database/Migrations/2026_09_18_000001_create_logs_table.php'
-                    => database_path('migrations/2026_09_18_000001_create_logs_table.php'),
+                __DIR__.'/Database/Migrations/0001_01_01_000000_create_logs_table.php'
+                    => database_path('migrations/0001_01_01_000000_create_logs_table.php'),
             ], 'modules-logging');
         }
 
