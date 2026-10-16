@@ -34,6 +34,7 @@ return new class extends Migration
             // normalizeLevel() 归一化。原冗余的 level_name（大写名）字段已废弃并移除。
             $table->string('level', 20)->index()
                 ->comment('日志等级（PSR 小写键，如 error / info / warning）');
+            $table->text('request_url')->nullable()->comment('完整请求 URL');
             $table->string('channel', 50)->nullable()->index()->comment('日志通道名（如 database / stack）');
             $table->longText('message')->comment('日志正文');
 
@@ -44,10 +45,14 @@ return new class extends Migration
             // is_crawler：基于 User-Agent 等特征识别搜索引擎 / 机器人，单独成列便于统计与过滤。
             $table->boolean('is_crawler')->default(false)->index()
                 ->comment('是否为爬虫请求：1=爬虫/机器人，0=普通浏览器或接口调用');
+            $table->string('bot_type', 40)->nullable()
+                ->comment('客户端分类：search_engine/ai_crawler/seo/monitor/social/feed/security_scanner/http_library/headless/library_other/attack_probe/unknown_bot/no_ua/human');
+            $table->unsignedTinyInteger('bot_score')->nullable()->comment('机器人判定置信分（0~100）');
+            $table->string('bot_client', 100)->nullable()->comment('命中的客户端/工具标识（如 python-requests、go-http-client）');
+            $table->text('bot_signals')->nullable()->comment('命中证据链（| 分隔），用于解释判定依据');
 
             // ---- 请求上下文 ----
             $table->string('request_method', 10)->nullable()->index()->comment('HTTP 方法（GET/POST…）');
-            $table->text('request_url')->nullable()->comment('完整请求 URL');
             $table->string('request_path', 512)->nullable()->index()->comment('请求路径（不含域名与查询串）');
             $table->string('request_route', 255)->nullable()->comment('路由名称（命名路由）');
             $table->string('request_controller', 255)->nullable()->comment('控制器@方法');
@@ -68,7 +73,7 @@ return new class extends Migration
             // response_content：视图页面响应记录「视图名」，JSON 响应记录「JSON 数据」，便于事后复盘。
             $table->longText('response_content')->nullable()
                 ->comment('响应内容：视图页面响应记录视图页面地址（视图名），JSON 响应记录 JSON 数据');
-            $table->unsignedInteger('response_duration_ms')->nullable()->comment('请求耗时（毫秒）');
+            $table->unsignedInteger('response_duration_ms')->index()->nullable()->comment('请求耗时（毫秒）');
             $table->decimal('response_memory_mb', 8, 2)->nullable()->comment('峰值内存（MB）');
             $table->longText('response_headers')->nullable()->comment('响应头（敏感头已脱敏，JSON）');
             $table->longText('response_body')->nullable()->comment('响应体（文本类，截断至 20000 字符，已脱敏）');
@@ -84,9 +89,18 @@ return new class extends Migration
             // 常见检索组合索引：按「等级 / 通道 + 时间」过滤（单列 created_at 已单独建索引）。
             $table->index(['level', 'created_at']);
             $table->index(['channel', 'created_at']);
+            $table->index(['is_crawler', 'created_at'], 'logs_crawler_created_at_index');
+            $table->index(['module_name', 'created_at'], 'logs_module_created_index');
+            $table->index(['request_path', 'created_at'], 'logs_path_created_index');
+            $table->index(['response_code', 'created_at'], 'logs_status_created_index');
+            $table->index(['user_id', 'created_at'], 'logs_user_created_index');
+            $table->index(['level', 'response_code', 'created_at'], 'logs_level_status_created_index');
+            $table->index(['is_crawler', 'bot_type', 'created_at'], 'logs_crawler_type_created_index');
+            $table->index(['bot_type', 'created_at'], 'logs_bottype_created_index');
+            $table->index(['exception_class', 'created_at'], 'logs_exception_created_index');
 
             if (DB::getDriverName() !== 'sqlite') {
-                $table->comment('管理员角色组');
+                $table->comment('系统日志表-zxf/modules');
             }
         });
     }

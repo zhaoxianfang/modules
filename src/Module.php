@@ -17,7 +17,7 @@ use zxf\Modules\Support\ModuleContext;
  * - 目录结构灵活配置
  * - 严格的类型安全和空值检查
  *
- * @version 5.0.0
+ * @version 1.13.9
  */
 class Module implements ModuleInterface
 {

@@ -21,7 +21,7 @@ use zxf\Modules\Support\ModuleContext;
  * - 批量操作
  * - 模块别名解析
  *
- * @version 4.0.0
+ * @version 1.13.9
  */
 class Repository implements RepositoryInterface
 {
@@ -102,21 +102,72 @@ class Repository implements RepositoryInterface
     /**
      * 创建新实例
      *
-     * @param  Filesystem  $files  文件系统
+     * 三处健壮性约束：
+     *  1. $files 可选。调用方（ModulesServiceProvider）是从容器解析的，
+     *     一旦容器没有 'files' 绑定，必填参数会在 boot 期抛
+     *     `Target class [files] does not exist`，故允许不传并由内部自建 Filesystem。
+     *  2. $namespace / $sortByPriority 显式收敛类型。本文件是 strict_types=1，
+     *     而配置值是 mixed（env() 未定义时返回 null，"0"/"false" 是字符串），
+     *     直接赋值会抛：
+     *     TypeError: Cannot assign null to property ...$namespace of type string
+     *  3. $paths 过滤非字符串元素，避免 scanPath(string $path) 收到 null 抛 TypeError。
+     *
+     * @param  Filesystem|null  $files  文件系统（可选，缺省时内部自建）
      * @param  array|null  $paths  模块根路径列表
      * @param  string|null  $namespace  模块根命名空间
      */
     public function __construct(
-        Filesystem $files,
+        ?Filesystem $files = null,
         ?array $paths = null,
         ?string $namespace = null
     ) {
-        $this->files = $files;
-        $this->namespace = $namespace ?? ModuleContext::getConfig('modules.namespace', 'Modules');
-        $this->paths = $paths ?? [ModuleContext::getConfig('modules.path', base_path('Modules'))];
-        $this->cachePath = ModuleContext::getConfig('modules.cache.path', storage_path('framework/cache/modules'));
+        $this->files = $files ?? new Filesystem;
+
+        $this->namespace = (string) ($namespace
+            ?: ModuleContext::getConfig('modules.namespace')
+            ?: 'Modules');
+
+        // 显式 (bool)：配置里 "0"/"false"/null 都要归一化，避免 strict_types 下 TypeError
+        $this->sortByPriority = (bool) ModuleContext::getConfig('modules.sort_by_priority', true);
+
+        $this->cachePath = (string) (ModuleContext::getConfig('modules.cache.path')
+            ?: $this->defaultCachePath());
         $this->cacheTtl = (int) ModuleContext::getConfig('modules.cache.ttl', 3600);
-        $this->sortByPriority = ModuleContext::getConfig('modules.sort_by_priority', true);
+
+        // 过滤非法路径元素：scanPath() 的形参是 string，喂 null 会抛未捕获 TypeError
+        $candidates = $paths ?? [$this->defaultModulesPath()];
+        $clean = [];
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && trim($candidate) !== '') {
+                $clean[] = rtrim(trim($candidate), '/\\');
+            }
+        }
+
+        // 兜底：至少保留一条路径，否则整个包表现为「零模块」且无任何提示
+        $this->paths = ! empty($clean) ? $clean : [$this->defaultModulesPath()];
+    }
+
+    /**
+     * 默认模块目录
+     *
+     * 判据是「容器实例上有没有 basePath() 方法」，统一交给 ModuleContext。
+     * 不可用 function_exists('base_path') 判断：Laravel 的 base_path() 助手
+     * 在 helpers.php 里**总是已加载**，function_exists 恒为 true；而它内部调用
+     * app()->basePath()，该实例方法只存在于 Illuminate\Foundation\Application，
+     * 裸容器下照样抛「Call to undefined method Container::basePath()」。
+     */
+    protected function defaultModulesPath(): string
+    {
+        return ModuleContext::basePath('Modules');
+    }
+
+    /**
+     * 默认缓存目录
+     */
+    protected function defaultCachePath(): string
+    {
+        return ModuleContext::storagePath('framework/cache/modules');
     }
 
     /**
@@ -384,14 +435,36 @@ class Repository implements RepositoryInterface
                     $this->aliases[$alias] = $moduleName;
                 }
             } catch (\Throwable $e) {
-                // 单个模块加载失败不影响其他
-                if (function_exists('logger')) {
-                    logger()->warning("Failed to load module: {$moduleName}", [
-                        'error' => $e->getMessage(),
-                        'path' => $directory,
-                    ]);
-                }
+                // 单个模块加载失败不影响其他模块 —— 保持隔离。
+                //
+                // 之所以用 error 级别 + report()（有容器才走）而不是 logger()->warning()：
+                //  1) logger() 自身依赖容器 'log' 绑定，在最小容器里会抛二次异常，
+                //     把整个扫描打断（后面的模块一个都注册不上）。
+                //  2) Error / ParseError 这类「代码本身有错」若降级成 warning，
+                //     外部只看到「模块凭空消失」，排查方向会被完全带偏。
+                $context = [
+                    'module' => $moduleName,
+                    'error' => $e->getMessage(),
+                    'path' => $directory,
+                    'exception' => $e::class,
+                ];
+
+                $this->reportModuleLoadFailure($moduleName, $context, $e);
             }
+        }
+    }
+
+    /**
+     * 报告模块加载失败（容器不可用时静默，绝不因日志再抛二次异常）
+     */
+    protected function reportModuleLoadFailure(string $moduleName, array $context, \Throwable $e): void
+    {
+        try {
+            if (function_exists('logger') && function_exists('app') && app()->bound('log')) {
+                logger()->error("模块 [{$moduleName}] 加载失败，已跳过该模块", $context);
+            }
+        } catch (\Throwable) {
+            // 日志系统不可用：绝不因记录失败而中断扫描
         }
     }
 
@@ -533,8 +606,17 @@ class Repository implements RepositoryInterface
             return false;
         }
 
+        // 缓存文件在 file_exists 之后可能被并发删除（module:cache / module:clear /
+        // TTL 到期分支的 unlink），filemtime() 此时会发出 warning，
+        // 而 Laravel 的 HandleExceptions 会把 warning 升级为 ErrorException 抛出。
+        // 该方法不在 try 范围内，异常会一路冒泡到 boot() → 每个请求 500。
+        $mtime = @filemtime($cacheFile);
+
+        if ($mtime === false) {
+            return false;
+        }
+
         // 检查缓存是否过期
-        $mtime = filemtime($cacheFile);
         if ($this->cacheTtl > 0 && (time() - $mtime) > $this->cacheTtl) {
             @unlink($cacheFile);
 

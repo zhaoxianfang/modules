@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\MigrationPathHelper;
 
@@ -24,6 +25,7 @@ use zxf\Modules\Support\MigrationPathHelper;
  */
 class MigrateCommand extends Command
 {
+    use EscapesConsoleOutput;
     use MigrationPathHelper;
 
     /**
@@ -90,23 +92,23 @@ class MigrateCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->components->error("模块 [{$moduleName}] 不存在。");
+            $this->components->error("模块 [{$this->esc($moduleName)}] 不存在。");
 
             return Command::FAILURE;
         }
 
         if (! $module->isEnabled()) {
-            $this->components->warn("模块 [{$moduleName}] 未启用，跳过。");
+            $this->components->warn("模块 [{$this->esc($moduleName)}] 未启用，跳过。");
 
             return Command::SUCCESS;
         }
 
-        $this->components->info("正在运行模块 [{$moduleName}] 的迁移...");
+        $this->components->info("正在运行模块 [{$this->esc($moduleName)}] 的迁移...");
 
         $migrationPath = $customPath ?: $module->getMigrationsPath();
 
         if (! is_dir($migrationPath)) {
-            $this->components->warn("模块 [{$moduleName}] 没有迁移文件。");
+            $this->components->warn("模块 [{$this->esc($moduleName)}] 没有迁移文件。");
 
             return Command::SUCCESS;
         }
@@ -168,6 +170,41 @@ class MigrateCommand extends Command
 
         // 全模块模式 + --seeder：警告用户不会传递
         $this->warnSeederIgnoredForAllModules($seeder);
+
+        // --path 在全模块模式下会被对每个模块重复执行。
+        //
+        // --path 表达的是「扫描哪个目录下的迁移文件」，
+        // 同一个目录跑 N 次是纯粹的重复劳动：
+        //   - 第 1 次执行完迁移后，后续 N-1 次都只是打印 "Nothing to migrate"；
+        //   - 若该目录不属于任何模块，这份「无意义」的工作同样会重复 N 次。
+        //
+        // 只要显式给了 --path，就**只跑一次**（路径与模块无关），
+        // 不套进模块循环里。
+        if (! empty($customPath)) {
+            $this->components->info("--path 已指定，跳过模块循环，仅对 [{$this->esc($customPath)}] 执行一次迁移。");
+
+            // 本命令签名里没有 --database；Symfony 的 option() 遇到未声明选项会抛
+            // InvalidArgumentException，这里必须用 MigrationPathHelper::safeOption()。
+            $databaseOption = $this->safeOption('database');
+
+            if ($seed || $seeder) {
+                $this->components->warn('--path 模式不执行数据填充，--seed / --seeder 已被忽略。');
+            }
+
+            $migrateParams = ['--force' => true];
+
+            if ($databaseOption) {
+                $migrateParams['--database'] = $databaseOption;
+            }
+
+            $migrateParams['--path'] = method_exists($this, 'getRelativePath')
+                ? $this->getRelativePath($customPath)
+                : $customPath;
+
+            return $this->call('migrate', $migrateParams) === Command::SUCCESS
+                ? Command::SUCCESS
+                : Command::FAILURE;
+        }
 
         $hasFailures = false;
 

@@ -31,14 +31,29 @@ trait MigrationPathHelper
      */
     protected function getMigrationPaths(): array
     {
-        $path = $this->option('path');
-        $onlyModule = $this->option('only-module');
+        // 问题有二：
+        //  1) 本包所有迁移命令（Migrate / Reset / Rollback / Status）**都没有**
+        //     定义 --only-module 选项。Symfony 的 option() 遇到未定义选项会抛
+        //     InvalidArgumentException: The "--only-module" option does not exist.
+        //     一旦有人调用本方法就会直接崩。
+        //  2) getMigrationPaths() 在包内**没有任何调用点**（死代码），
+        //     真正的 --path 处理散落在各命令里，导致行为不一致
+        //     （例如 MigrateCommand 曾把 --path 放进模块循环重复执行 N 次）。
+        //
+        // 现在：先安全读取选项（仅在命令确实声明了该选项时才用），
+        // 保证本方法随时可被第三方模块命令复用而不炸。
+        $path = $this->safeOption('path');
+        $onlyModule = $this->safeOption('only-module');
 
         if (! empty($path)) {
             return [$path];
         }
 
         if (! empty($onlyModule)) {
+            if (! method_exists($this, 'resolveModule')) {
+                return [];
+            }
+
             $module = $this->resolveModule();
             if (! $module) {
                 return [];
@@ -60,9 +75,30 @@ trait MigrationPathHelper
     }
 
     /**
+     * 安全读取命令选项
+     *
+     * 本 trait 被多个命令共用，而各命令声明的选项并不一致。
+     * 直接调用 $this->option($key) 在选项未声明时会抛 InvalidArgumentException，
+     * 因此统一走这里：未声明则返回 $default。
+     */
+    protected function safeOption(string $key, mixed $default = null): mixed
+    {
+        if (! method_exists($this, 'option')) {
+            return $default;
+        }
+
+        try {
+            return $this->option($key);
+        } catch (\Throwable) {
+            return $default;
+        }
+    }
+
+    /**
      * 将绝对路径转换为相对于项目根目录的相对路径
-     * 替代原先在各命令中重复的 str_replace(base_path() . DIRECTORY_SEPARATOR, '', ...) 实现，
-     * 使用 Str::after() 确保只截取一次，避免路径中重复出现 base_path 组件时的替换错误。
+     * 各命令不要重复写 str_replace(base_path() . DIRECTORY_SEPARATOR, '', ...)：
+     * 那在路径中重复出现 base_path 组件时会替换出错。
+     * 这里用 Str::after() 确保只截取一次。
      * 示例：
      *   /var/www/project/Modules/Blog/Database/Migrations/xxx.php
      *   → Modules/Blog/Database/Migrations/xxx.php

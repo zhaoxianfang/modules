@@ -26,7 +26,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 方言差异（LOCATE、FIND_IN_SET、SUBSTRING_INDEX、GROUP_CONCAT、FIELD、
  * 自然排序、SOUNDEX）统一交由 Dialect 方言抽象层生成。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

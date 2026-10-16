@@ -16,7 +16,7 @@ use zxf\Modules\Contracts\RepositoryInterface;
  * - 自动降级：框架功能不可用时返回安全默认值
  * - 零异常传播：所有方法内部捕获异常
  *
- * @version 4.0.0
+ * @version 1.13.9
  */
 class ModuleContext
 {
@@ -273,7 +273,16 @@ class ModuleContext
      */
     protected static function detectByFile(bool $toLower): string
     {
-        $configured = self::getConfig('modules.path', base_path('Modules'));
+        $configured = self::getConfig('modules.path');
+
+        // 不能写成 getConfig('modules.path', base_path('Modules'))：
+        // PHP 默认参数在调用前求值，容器未就绪时 base_path() 会先抛异常，
+        // getConfig 内的降级保护没有机会执行；function_exists('base_path') 兜底
+        // 同样无效（助手函数已加载，但它依赖 Foundation 应用实例）。
+        // 统一走「能力感知」的 basePath()，任何环境下都不抛。
+        if (! is_string($configured) || $configured === '') {
+            $configured = self::basePath('Modules');
+        }
         $real = realpath($configured);
         $modulePath = rtrim(str_replace('\\', '/', $real !== false ? $real : $configured), '/').'/';
         $trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 15);
@@ -337,5 +346,136 @@ class ModuleContext
         self::$repository = null;
         self::$cachedModuleName = null;
         self::$moduleConfigCache = [];
+    }
+
+    /**
+     * 清理「请求作用域」的静态缓存
+     *
+     * clearCache() 会连 $repository 一起置空，只有 reload() 这类
+     * 「主动重扫」场景才该调用。
+     * 但另外两项是**纯请求作用域**的：
+     *  - $cachedModuleName：detectModuleName() 的结果（当前请求是哪个模块）
+     *  - $moduleConfigCache：module_config() 的值缓存
+     *
+     * 在 php-fpm 下每请求新进程，静态变量天然重置，没问题；
+     * 但在 Octane / queue worker / supervisor 这类长驻进程里，
+     * 这些静态会**跨请求存活**：
+     *  - 第二个请求若没走到检测分支，会直接复用上一个请求的模块名；
+     *  - A 请求改了配置，B 请求读到的是 A 请求留下的旧值。
+     * 于是「模块识别」与「模块配置」在长驻进程下会串台，
+     * 且很难复现（只在 Octane/常驻 worker 上出现）。
+     *
+     * 因此单独提供本方法，只清请求作用域的两项（保留 repository），
+     * 并由 ModulesServiceProvider 挂到 $app->terminating() 上，
+     * 让每个请求/每个任务结束后自动归零。
+     */
+    public static function flushRequestScopedCache(): void
+    {
+        self::$cachedModuleName = null;
+        self::$moduleConfigCache = [];
+    }
+
+    // ==========================================================
+    //  「能力感知」路径助手
+    //
+    //
+    //  Laravel 的全局助手 base_path() / storage_path() / config_path() /
+    //  resource_path() 内部实现为 `return app()->basePath($path)`，
+    //  而 basePath() 只存在于 Illuminate\Foundation\Application，
+    //  裸 Container 调用会抛
+    //      Call to undefined method Illuminate\Container\Container::basePath()
+    //
+    //  注意：这些助手**函数本身始终存在**（helpers.php 已由 autoload 加载），
+    //  因此用 function_exists() 作兜底是无效的（返回 true 后照样崩），
+    //  正确判据是「容器实例上有没有对应方法」。
+    //
+    //  下面这组方法统一封装该判据，全包统一使用，任何环境下都不抛异常。
+    // ==========================================================
+
+    /**
+     * 当前容器是否支持 Laravel 的 Foundation 路径助手
+     *
+     * 判据：Illuminate\Foundation\Application 提供了 basePath() / storagePath()
+     * / configPath() / resourcePath() 实例方法，裸 Container 没有。
+     */
+    public static function supportsFoundationPaths(): bool
+    {
+        try {
+            if (! function_exists('app')) {
+                return false;
+            }
+
+            $app = app();
+
+            return is_object($app)
+                && method_exists($app, 'basePath')
+                && method_exists($app, 'configPath');
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * 安全的 base_path()
+     */
+    public static function basePath(string $path = ''): string
+    {
+        if (self::supportsFoundationPaths()) {
+            try {
+                return base_path($path);
+            } catch (\Throwable) {
+                // 落到下面的兜底
+            }
+        }
+
+        return (getcwd() ?: '.').($path !== '' ? '/'.ltrim($path, '/') : '');
+    }
+
+    /**
+     * 安全的 storage_path()
+     */
+    public static function storagePath(string $path = ''): string
+    {
+        if (self::supportsFoundationPaths() && method_exists(app(), 'storagePath')) {
+            try {
+                return storage_path($path);
+            } catch (\Throwable) {
+                // 落到下面的兜底
+            }
+        }
+
+        return self::basePath('storage'.($path !== '' ? '/'.ltrim($path, '/') : ''));
+    }
+
+    /**
+     * 安全的 config_path()
+     */
+    public static function configPath(string $path = ''): string
+    {
+        if (self::supportsFoundationPaths()) {
+            try {
+                return config_path($path);
+            } catch (\Throwable) {
+                // 落到下面的兜底
+            }
+        }
+
+        return self::basePath('config'.($path !== '' ? '/'.ltrim($path, '/') : ''));
+    }
+
+    /**
+     * 安全的 resource_path()
+     */
+    public static function resourcePath(string $path = ''): string
+    {
+        if (self::supportsFoundationPaths() && method_exists(app(), 'resourcePath')) {
+            try {
+                return resource_path($path);
+            } catch (\Throwable) {
+                // 落到下面的兜底
+            }
+        }
+
+        return self::basePath('resources'.($path !== '' ? '/'.ltrim($path, '/') : ''));
     }
 }

@@ -20,9 +20,9 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - regexpPosition：定位匹配位置
  *  - regexpCount / whereRegexpCount：计数匹配
  * 安全性：列名 / 别名经 {@see BaseMacro::assertValidIdentifier()} 白名单校验并由 grammar wrap；
- * 正则模式、替换文本、匹配模式一律走参数绑定（?），彻底消除原先将模式裸拼进 SQL 导致的注入风险。
+ * 正则模式、替换文本、匹配模式一律走参数绑定（?），杜绝模式裸拼进 SQL 造成的注入风险。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

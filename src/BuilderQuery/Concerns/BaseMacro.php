@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace zxf\Modules\BuilderQuery\Concerns;
 
+use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\Expression;
+use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,7 +31,7 @@ use Illuminate\Support\Facades\DB;
  *    内部调用 `self::registerXxx()` 分组注册；每个宏闭包头部须含 `@example` 与 `@scenario`
  *    （场景）注释，参数须声明类型并经白名单校验，链式查询宏一律返回 `$this`（Builder）。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+ / PostgreSQL 15+
  *
@@ -55,6 +57,23 @@ abstract class BaseMacro
      * ===================================================================== */
 
     /**
+     * 宏名与框架原生方法冲突登记表。
+     *
+     * Laravel 13.32 起，Query\Builder 新增了原生方法
+     * whereFullText() / orWhereFullText()（带 array $options 的全文检索）。
+     * 由于 Macroable 只在「方法不存在」时才会走 __call，一旦框架提供了同名真实方法，
+     * 本包的同名宏就永远不会生效（静默失效）；更糟的是：本包文档里
+     * whereFullText($cols, $kw, 'boolean') 的「字符串模式」写法在新版框架上会直接
+     * 触发 TypeError（原生签名第三参是 array $options）。
+     *
+     * 本表在注册时自动探测冲突并记录，供诊断接口 {@see conflicts()} 查询，
+     * 避免这类「注册成功但永远不会被调用」的静默坑被彻底遗漏。
+     *
+     * @var array<string, array{class: class-string, method: string, since: string}>
+     */
+    private static array $nativeConflicts = [];
+
+    /**
      * 将宏同时注册到 Eloquent Builder（ORM）与 Query Builder（DB）。
      * 注意：闭包内 `$this` 在运行时会被重绑到被调用的构建器实例，
      * 因此闭包体必须兼容两种构建器（详见类注释第 2 点）。
@@ -64,8 +83,71 @@ abstract class BaseMacro
      */
     public static function define(string $name, \Closure $closure): void
     {
+        self::recordNativeConflict(EloquentBuilder::class, $name);
+        self::recordNativeConflict(QueryBuilder::class, $name);
+
         EloquentBuilder::macro($name, $closure);
         QueryBuilder::macro($name, $closure);
+    }
+
+    /**
+     * 探测宏名是否与框架原生方法冲突，冲突则登记到冲突表（不阻断注册）。
+     *
+     * 注意判定方式必须是「反射查真实方法」而非 method_exists：
+     * method_exists 对 __call 之外的动态手段不敏感，而 method_exists 会把
+     * 通过 Macroable 动态混入的方法也算进来，导致自我误报。
+     *
+     * @param  class-string  $class  目标构建器类
+     * @param  string  $name  宏名
+     */
+    private static function recordNativeConflict(string $class, string $name): void
+    {
+        if (! method_exists($class, $name) || isset(self::$nativeConflicts[$class.'::'.$name])) {
+            return;
+        }
+
+        // 反射取「声明该方法的类」：若声明者就是目标构建器本身，说明是框架原生真实方法
+        try {
+            $declaring = (new \ReflectionMethod($class, $name))->getDeclaringClass()->getName();
+        } catch (\ReflectionException) {
+            return;
+        }
+
+        if ($declaring === $class) {
+            self::$nativeConflicts[$class.'::'.$name] = [
+                'class' => $class,
+                'method' => $name,
+                'since' => self::frameworkVersion(),
+            ];
+        }
+    }
+
+    /**
+     * 取当前 Laravel 框架版本（不可用时返回 'unknown'）。
+     */
+    private static function frameworkVersion(): string
+    {
+        if (class_exists(Application::class)
+            && defined(Application::class.'::VERSION')) {
+            return (string) constant(Application::class.'::VERSION');
+        }
+
+        return 'unknown';
+    }
+
+    /**
+     * 返回「宏名与框架原生方法冲突」登记表。
+     *
+     * 维护指引：新增宏时若此处出现同名条目，说明该宏在对应 Laravel 版本上永远不会被调用，
+     * 必须二选一：
+     *   ① 把本包宏的签名调整为与原生方法兼容（推荐，保证跨版本行为一致）；
+     *   ② 改用不冲突的宏名并在文档中说明。
+     *
+     * @return array<string, array{class: class-string, method: string, since: string}>
+     */
+    public static function conflicts(): array
+    {
+        return self::$nativeConflicts;
     }
 
     /* =====================================================================
@@ -131,9 +213,32 @@ abstract class BaseMacro
     }
 
     /**
+     * 取当前构建器所用的数据库连接
+     *
+     * 宏承诺 Eloquent / Query 双构建器等价，而宏内部若用 `DB::table()` /
+     * `DB::select()` 会走 DatabaseManager 的**默认连接**。在多库、读写分离、
+     * 多租户场景下，这会让子查询作用到另一个库上（`deleteInChunks()` 会删错库）。
+     * 因此内部一律经此方法取连接。
+     *
+     * @param  EloquentBuilder|QueryBuilder|null  $builder
+     */
+    public static function connOf($builder): ?ConnectionInterface
+    {
+        if ($builder instanceof EloquentBuilder) {
+            return $builder->getQuery()->getConnection();
+        }
+
+        if ($builder instanceof QueryBuilder) {
+            return $builder->getConnection();
+        }
+
+        return null;
+    }
+
+    /**
      * 构建一个与当前构建器同源的「全新」查询（用于 CTE / 子查询 / 延迟关联等）。
      * - Eloquent\Builder：返回模型的 `newQuery()`；
-     * - Query\Builder：返回 `DB::table(表名)`，清空所有既有条件。
+     * - Query\Builder：返回**同连接**上的 `table(表名)`，清空所有既有条件。
      *
      * @param  EloquentBuilder|QueryBuilder  $builder
      * @return EloquentBuilder|QueryBuilder
@@ -144,7 +249,11 @@ abstract class BaseMacro
             return $builder->getModel()->newQuery();
         }
 
-        return DB::table(static::resolveTable($builder));
+        $connection = self::connOf($builder);
+
+        return $connection !== null
+            ? $connection->table(static::resolveTable($builder))
+            : DB::table(static::resolveTable($builder));
     }
 
     /**

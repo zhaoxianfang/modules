@@ -27,9 +27,9 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - jsonSearch / whereJsonLike：JSON 内搜索 / 模糊匹配
  *  - jsonArrayAgg / jsonObjectAgg / jsonRowAgg：多行聚合为 JSON
  * 安全性：列名 / 别名经白名单校验并由 grammar wrap；JSON Path 经格式校验；字面量与默认值
- * 一律走参数绑定（?），彻底消除原先将模式 / 字面量裸拼进 SQL 导致的注入风险。
+ * 一律走参数绑定（?），杜绝模式 / 字面量裸拼进 SQL 造成的注入风险。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

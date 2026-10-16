@@ -23,7 +23,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - whereFullTextOrLike：两阶段检索（先全文粗筛，无索引时回退 LOCATE 兜底）
  * 安全性：列名经白名单校验并由 grammar wrap；关键词一律参数绑定，杜绝注入。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+（全文索引/tsvector 配置非必须，但强烈建议以获最佳性能）
  *
@@ -69,16 +69,28 @@ class FullTextMacro extends BaseMacro
         /**
          * 全文检索筛选（自然语言 / 布尔 / 查询扩展）。
          *
+         *   Laravel 13.32 起 Query\Builder 提供了原生方法 whereFullText()，其签名为
+         *   `whereFullText($columns, $value, array $options = [], $boolean = 'and')`。
+         *   由于 Macroable 只在「方法不存在」时才走 __call，在这些版本上：
+         *     - 本宏【不会生效】，实际执行的是框架原生方法；
+         *     - 因此第三个参数必须传数组（['mode' => 'boolean']），传字符串 'boolean' 会 TypeError。
+         *   为让同一份代码在新旧 Laravel 上都能跑，本宏第三参同时接受两种写法：
+         *     - 数组：['mode' => 'boolean', 'expanded' => true]（推荐，跨版本通用）
+         *     - 字符串：'boolean' / 'expansion' / 'natural'（仅旧版本宏生效时可用）
+         *   见 BaseMacro::conflicts() 可查询此类冲突。
+         *
          * @param  array|string  $columns  参与检索的列（单列或数组）
          * @param  string  $keyword  检索关键词
-         * @param  string  $mode  natural（默认）/ boolean / expansion
+         * @param  array|string  $mode  模式：['mode' => 'boolean'|'natural', 'expanded' => bool] 或 'natural'|'boolean'|'expansion'
          * @param  string  $boolean  连接条件 and|or
          * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
-         * // 自然语言模式：检索标题或正文中包含 "laravel" 的文章
+         * // 自然语言模式：检索标题或正文中包含 "laravel" 的文章（数组写法，跨版本通用）
          * Article::query()->whereFullText(['title','body'], 'laravel')->get();
          * // 布尔模式：必须包含 laravel 且排除旧版，支持 + - "短语" word* 前缀
+         * Article::query()->whereFullText(['title','body'], 'laravel', ['mode' => 'boolean'])->get();
+         * // 旧版 Laravel（本宏生效时）也可用字符串写法
          * Article::query()->whereFullText(['title','body'], 'laravel', 'boolean')->get();
          *
          * @scenario 站内搜索、商品检索、文档检索等需要「词级相关度」而非简单 LIKE 的场景；
@@ -87,7 +99,7 @@ class FullTextMacro extends BaseMacro
         static::define('whereFullText', function (
             array|string $columns,
             string $keyword,
-            string $mode = 'natural',
+            array|string $mode = 'natural',
             string $boolean = 'and'
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
@@ -146,7 +158,7 @@ class FullTextMacro extends BaseMacro
          *
          * @param  array|string  $columns  检索列（须与 whereFullText 一致）
          * @param  string  $keyword  检索关键词（须与筛选一致）
-         * @param  string  $mode  natural / boolean / expansion
+         * @param  array|string  $mode  natural / boolean / expansion（或 ['mode'=>'boolean'|'natural', 'expanded'=>bool] 数组写法，跨 Laravel 13.32+ 通用）
          * @param  string  $direction  排序方向 desc（默认）| asc
          * @return Builder|\Illuminate\Database\Query\Builder
          *
@@ -163,7 +175,7 @@ class FullTextMacro extends BaseMacro
         static::define('orderByFullTextRelevance', function (
             array|string $columns,
             string $keyword,
-            string $mode = 'natural',
+            array|string $mode = 'natural',
             string $direction = 'desc'
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
@@ -192,7 +204,7 @@ class FullTextMacro extends BaseMacro
          * @param  array|string  $columns  检索列
          * @param  string  $keyword  关键词
          * @param  string  $alias  分数别名（默认 relevance）
-         * @param  string  $mode  natural / boolean / expansion
+         * @param  array|string  $mode  natural / boolean / expansion（或 ['mode'=>'boolean'|'natural', 'expanded'=>bool] 数组写法，跨 Laravel 13.32+ 通用）
          * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
@@ -208,7 +220,7 @@ class FullTextMacro extends BaseMacro
             array|string $columns,
             string $keyword,
             string $alias = 'relevance',
-            string $mode = 'natural'
+            array|string $mode = 'natural'
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
@@ -229,7 +241,7 @@ class FullTextMacro extends BaseMacro
          * @param  array|string  $columns  检索列
          * @param  string  $keyword  关键词
          * @param  float  $minScore  最小相关度（建议 0~10，依数据分布调参）
-         * @param  string  $mode  natural / boolean / expansion
+         * @param  array|string  $mode  natural / boolean / expansion（或 ['mode'=>'boolean'|'natural', 'expanded'=>bool] 数组写法，跨 Laravel 13.32+ 通用）
          * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
@@ -245,7 +257,7 @@ class FullTextMacro extends BaseMacro
             array|string $columns,
             string $keyword,
             float $minScore = 1.0,
-            string $mode = 'natural'
+            array|string $mode = 'natural'
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this

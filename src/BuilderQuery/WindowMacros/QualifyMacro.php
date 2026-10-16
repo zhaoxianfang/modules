@@ -15,7 +15,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - PostgreSQL 15+ 同样不支持 QUALIFY 关键字，HAVING 方案天然通用。
  * 安全性：窗口结果列名经白名单校验并由 grammar wrap，运算符经白名单校验，值走参数绑定。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0.31+ / PostgreSQL 15+
  *

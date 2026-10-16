@@ -22,7 +22,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 安全约束：聚合列名经白名单校验并 wrap；条件片段为开发者提供的 SQL（可含 ? 占位符），
  * 其绑定值通过 $conditionBindings 参数化传入，杜绝注入。
  *
- * @version 3.2.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

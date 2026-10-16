@@ -10,7 +10,7 @@ use zxf\Modules\Exceptions\ModuleNotFoundException;
  * 模块仓库接口
  * 定义模块仓库的核心契约。
  *
- * @version 4.0.0
+ * @version 1.13.9
  */
 interface RepositoryInterface
 {

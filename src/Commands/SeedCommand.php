@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 
@@ -24,6 +25,8 @@ use zxf\Modules\Facades\Module;
  */
 class SeedCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -64,19 +67,19 @@ class SeedCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->components->error("模块 [{$moduleName}] 不存在。");
+            $this->components->error("模块 [{$this->esc($moduleName)}] 不存在。");
             $this->components->info('提示：使用 \'php artisan module:list\' 查看所有可用模块');
 
             return Command::FAILURE;
         }
 
         if (! $module->isEnabled()) {
-            $this->components->warn("模块 [{$moduleName}] 未启用，跳过。");
+            $this->components->warn("模块 [{$this->esc($moduleName)}] 未启用，跳过。");
 
             return Command::SUCCESS;
         }
 
-        $this->components->info("正在运行模块 [{$moduleName}] 的数据填充...");
+        $this->components->info("正在运行模块 [{$this->esc($moduleName)}] 的数据填充...");
 
         $specificClass = $this->option('class');
 
@@ -117,15 +120,18 @@ class SeedCommand extends Command
         $totalSkipped = 0;
 
         foreach ($modules as $module) {
-            // 预先判断是否存在 Seeder，区分「跳过（无 Seeder）」与「成功/失败」，
-            // 避免将无 Seeder 的模块静默计入成功数。
-            if (empty($this->discoverSeeders($module))) {
+            // 先探测一次 Seeder 清单，再把结果透传给 runAllModuleSeeders()：
+            // 既用于区分「跳过（无 Seeder）」与「成功/失败」，
+            // 也避免 discoverSeeders()（内含 glob + 目录扫描）被执行两遍。
+            $seeders = $this->discoverSeeders($module);
+
+            if ($seeders === []) {
                 $totalSkipped++;
 
                 continue;
             }
 
-            $result = $this->runAllModuleSeeders($module);
+            $result = $this->runAllModuleSeeders($module, $seeders);
 
             if ($result === Command::SUCCESS) {
                 $totalSuccess++;
@@ -160,13 +166,13 @@ class SeedCommand extends Command
         $fullClass = $module->getClassNamespace().'\\Database\\Seeders\\'.$className;
 
         if (! class_exists($fullClass)) {
-            $this->error("数据填充器 [{$fullClass}] 不存在。");
+            $this->error("数据填充器 [{$this->esc($fullClass)}] 不存在。");
             $this->line('提示：确保文件位于 '.$module->getPath('Database/Seeders/'.$className.'.php'));
 
             return Command::FAILURE;
         }
 
-        $this->line("  类名: {$fullClass}");
+        $this->line("  类名: {$this->esc($fullClass)}");
 
         return $this->callDbSeed($fullClass);
     }
@@ -179,12 +185,12 @@ class SeedCommand extends Command
      *
      * @param  ModuleInterface  $module
      */
-    protected function runAllModuleSeeders($module): int
+    protected function runAllModuleSeeders($module, ?array $seeders = null): int
     {
-        $seeders = $this->discoverSeeders($module);
+        $seeders ??= $this->discoverSeeders($module);
 
-        if (empty($seeders)) {
-            $this->components->warn("模块 [{$module->getName()}] 没有数据填充器，跳过。");
+        if ($seeders === []) {
+            $this->components->warn("模块 [{$this->esc($module->getName())}] 没有数据填充器，跳过。");
 
             return Command::SUCCESS;
         }
@@ -274,7 +280,7 @@ class SeedCommand extends Command
             // 子命令失败（非 0 退出码）必须透传，否则调用方会误判为成功
             return $exitCode === Command::SUCCESS ? Command::SUCCESS : Command::FAILURE;
         } catch (\Throwable $e) {
-            $this->error("运行数据填充器 [{$fullClass}] 失败: ".$e->getMessage());
+            $this->error("运行数据填充器 [{$this->esc($fullClass)}] 失败: ".$e->getMessage());
 
             return Command::FAILURE;
         }

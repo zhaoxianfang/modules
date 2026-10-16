@@ -25,7 +25,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *    适用于「概览数字 / 分页总数近似 / 大屏趋势」等对精度不敏感的场景；精确业务统计仍应使用精确 COUNT。
  * 双构建器友好：全部通过 {@see BaseMacro::define()} 同时注册到 Eloquent\Builder 与 Query\Builder。
  *
- * @version 3.3.0
+ * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5），Laravel 11+ / 12+ / 13+，MySQL 8.0+ / PostgreSQL 15+
  *
@@ -111,23 +111,35 @@ class FastCountMacro extends BaseMacro
 
         // 读取数据字典估算（O(1)，不触达业务数据）。任何异常均回退精确 COUNT。
         try {
+            $connection = BaseMacro::connOf($builder) ?? DB::getFacadeRoot()->getConnection();
+
             if (BaseMacro::isPostgres($builder)) {
-                $estimate = DB::table('pg_class')
+                $estimate = $connection->table('pg_class')
                     ->selectRaw('reltuples::bigint AS n')
                     ->where('relname', $table)
                     ->value('n');
             } else {
-                $schema = $builder->getConnection()->getDatabaseName();
-                $estimate = DB::table('information_schema.TABLES')
+                $schema = $connection->getDatabaseName();
+                $estimate = $connection->table('information_schema.TABLES')
                     ->where('TABLE_SCHEMA', $schema)
                     ->where('TABLE_NAME', $table)
                     ->value('TABLE_ROWS');
             }
 
-            return (int) ($estimate ?? $builder->count($column ?? BaseMacro::keyName($builder)));
-        } catch (\Throwable $e) {
+            // 估算值必须先转成整数再判大小：统计字典里的「无效估算」有两个约定值，
+            // PostgreSQL 用 -1（表从未 ANALYZE），MySQL InnoDB 用 0
+            // （未 ANALYZE / 关闭 innodb_stats_auto_recalc / 分区表）。
+            // 只判 null 会把 0 和 -1 当成合法结果返回，
+            // 使分页 total 变成 0 或负数。
+            $estimate = (int) $estimate;
+
+            if ($estimate > 0) {
+                return $estimate;
+            }
+        } catch (\Throwable) {
             // 目录视图不可用 / 权限不足等：静默回退为精确计数，保证调用方永远拿到可用数字。
-            return (int) $builder->count($column ?? BaseMacro::keyName($builder));
         }
+
+        return (int) $builder->count($column ?? BaseMacro::keyName($builder));
     }
 }

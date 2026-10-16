@@ -52,19 +52,29 @@ class ViewMakeCommand extends AbstractMakeCommand
             return $this->generateFromTemplate((string) $type, $viewName, $force);
         }
 
+        // 视图名会被 str_replace('.', '/', $viewName) 直接拼进路径，
+        // 因此先做实体名校验（只允许字母、数字、下划线、中划线与点号），
+        // 防 "../../config/app" 造成路径穿越。
+        if (! $this->isValidEntityName((string) $viewName)) {
+            $this->error("视图名称 [{$this->esc($viewName)}] 格式不合法");
+            $this->line('提示：只允许字母、数字、下划线、中划线与点号（例如 posts.index）');
+
+            return Command::FAILURE;
+        }
+
         // 将点号转换为路径分隔符
         $viewPath = 'Resources/views/'.str_replace('.', '/', $viewName).'.blade.php';
         $fullPath = $this->targetPath($viewPath);
 
         if (File::exists($fullPath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在视图 [{$viewName}]");
+            $this->error("模块 [{$this->esc($moduleName)}] 中已存在视图 [{$this->esc($viewName)}]");
             $this->line('提示：使用 --force 选项覆盖已存在的视图');
 
             return Command::FAILURE;
         }
 
         if (File::exists($fullPath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的视图 [{$viewName}]");
+            $this->warn("正在覆盖模块 [{$this->esc($moduleName)}] 中已存在的视图 [{$this->esc($viewName)}]");
         }
 
         // 确保目录存在
@@ -81,13 +91,13 @@ class ViewMakeCommand extends AbstractMakeCommand
         $content = $this->generateViewContent($moduleName, $viewName);
 
         if (! File::put($fullPath, $content)) {
-            $this->error("创建视图 [{$viewName}] 失败");
+            $this->error("创建视图 [{$this->esc($viewName)}] 失败");
 
             return Command::FAILURE;
         }
 
-        $this->info("✓ 成功在模块 [{$moduleName}] 中创建视图 [{$viewName}]");
-        $this->line("引用方式: @include('{$viewNamespace}::{$viewName}')");
+        $this->info("✓ 成功在模块 [{$this->esc($moduleName)}] 中创建视图 [{$this->esc($viewName)}]");
+        $this->line("引用方式: @include('{$viewNamespace}::{$this->esc($viewName)}')");
 
         return Command::SUCCESS;
     }
@@ -108,7 +118,7 @@ class ViewMakeCommand extends AbstractMakeCommand
         ];
 
         if (! isset($stubMap[$type])) {
-            $this->error("不支持的视图类型 [{$type}]，可选值: ".implode(' / ', array_keys($stubMap)));
+            $this->error("不支持的视图类型 [{$this->esc($type)}]，可选值: ".implode(' / ', array_keys($stubMap)));
 
             return Command::FAILURE;
         }

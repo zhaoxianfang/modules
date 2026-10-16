@@ -6,6 +6,7 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\ModuleInfo;
 
@@ -16,6 +17,8 @@ use zxf\Modules\Support\ModuleInfo;
  */
 class ModuleInfoCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -48,7 +51,7 @@ class ModuleInfoCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
+            $this->error("模块 [{$this->esc($moduleName)}] 不存在");
             $this->line('提示：使用 php artisan module:list 查看所有可用模块');
 
             return Command::FAILURE;
@@ -58,7 +61,7 @@ class ModuleInfoCommand extends Command
         $info = ModuleInfo::getInfo($module);
 
         $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        $this->info("  模块 [{$moduleName}] 详细信息");
+        $this->info("  模块 [{$this->esc($moduleName)}] 详细信息");
         $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->newLine();
 

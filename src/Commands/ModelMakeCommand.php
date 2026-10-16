@@ -159,7 +159,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         // 验证模块是否存在（基类统一解析）
         $module = $this->resolveModule();
         if (! $module) {
-            $this->line("提示：请先创建模块，使用 php artisan module:make {$moduleName}");
+            $this->line("提示：请先创建模块，使用 php artisan module:make {$this->esc($moduleName)}");
 
             return Command::FAILURE;
         }
@@ -170,13 +170,13 @@ class ModelMakeCommand extends AbstractMakeCommand
         // 存在性检查
         if (File::exists($modelPath)) {
             if (! $force) {
-                $this->error("模块 [{$moduleName}] 中已存在模型类 [{$modelName}]");
+                $this->error("模块 [{$this->esc($moduleName)}] 中已存在模型类 [{$modelName}]");
                 $this->line("文件位置: {$modelPath}");
                 $this->line('提示：使用 --force 选项覆盖已存在的模型');
 
                 return Command::FAILURE;
             }
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的模型类 [{$modelName}]");
+            $this->warn("正在覆盖模块 [{$this->esc($moduleName)}] 中已存在的模型类 [{$modelName}]");
         }
 
         $namespace = $this->module->getNamespace();
@@ -221,7 +221,7 @@ class ModelMakeCommand extends AbstractMakeCommand
             return Command::FAILURE;
         }
 
-        $this->info("✓ 成功在模块 [{$moduleName}] 中创建模型类 [{$modelName}]");
+        $this->info("✓ 成功在模块 [{$this->esc($moduleName)}] 中创建模型类 [{$modelName}]");
         $this->line("模型位置: {$modelPath}");
         $this->line("数据表: {$tableName}");
 
@@ -341,8 +341,17 @@ class ModelMakeCommand extends AbstractMakeCommand
         }
 
         // 优先使用 Laravel 10+ 原生 Schema::getColumns() — 跨数据库兼容
+        //
+        // 必须对「门面的解析目标（Builder 实例）」做探测，不能用
+        // method_exists(Schema::class, 'getColumns')：Schema 是门面类，getColumns 是
+        // 通过 __callStatic 转发到 Illuminate\Database\Schema\Builder 的，
+        // 门面类本身并没有这个真实方法，method_exists() 恒为 false ——
+        // 「兼容 MySQL / PostgreSQL / SQLite」在 PostgreSQL / SQLite 上会失效，
+        // 实际总是掉进 MySQL 的 SHOW FULL COLUMNS 分支并报错。
         try {
-            if (method_exists(Schema::class, 'getColumns')) {
+            $schemaBuilder = Schema::getFacadeRoot();
+
+            if ($schemaBuilder !== null && method_exists($schemaBuilder, 'getColumns')) {
                 return $this->resolveColumnsViaSchema($tableName);
             }
         } catch (\Throwable $e) {
@@ -364,18 +373,23 @@ class ModelMakeCommand extends AbstractMakeCommand
         $results = [];
 
         foreach ($schemaColumns as $col) {
+            // getColumns() 返回的键集合随驱动而异：
+            // 例如 SQLite / PostgreSQL 不会返回 auto_increment，
+            // 「Undefined array key」警告，污染输出并中断生成。
+            // name / type 一律用 ?? 兜底，保证一定有值。
             $results[] = [
-                'name' => $col['name'],
-                'type' => $col['type'] ?? $col['type_name'] ?? 'varchar',
-                'null' => $col['nullable'] ?? true,
+                'name' => (string) ($col['name'] ?? ''),
+                'type' => (string) ($col['type'] ?? $col['type_name'] ?? 'varchar'),
+                'null' => (bool) ($col['nullable'] ?? true),
                 'key' => '',
                 'default' => $col['default'] ?? null,
-                'extra' => $col['auto_increment'] ? 'auto_increment' : '',
-                'comment' => $col['comment'] ?? '',
+                // auto_increment 缺失时按 false 处理（不可据此排除出 $fillable）
+                'extra' => ! empty($col['auto_increment']) ? 'auto_increment' : '',
+                'comment' => (string) ($col['comment'] ?? ''),
             ];
         }
 
-        return $results;
+        return array_values(array_filter($results, fn (array $c): bool => $c['name'] !== ''));
     }
 
     /**
@@ -435,12 +449,29 @@ class ModelMakeCommand extends AbstractMakeCommand
     ): string {
         $lines = [];
 
+        // $modelDir 来自配置 modules.paths.generator.model.path，
+        // 允许写成 'Models'，也可能写成 'Models/Admin'（子目录）。
+        //     namespace Modules\Blog\Models/Admin;
+        // 这种非法 PHP（斜杠不是命名空间分隔符）→ 生成物语法错误、无法加载。
+        // 这里统一归一化为反斜杠分段。
+        $namespaceSuffix = trim(str_replace('/', '\\', str_replace('\\', '/', $modelDir)), '\\');
+
         // 文件头
         $lines[] = '<?php';
         $lines[] = '';
-        $lines[] = "namespace {$namespace}\\{$moduleName}\\{$modelDir};";
+        $lines[] = "namespace {$namespace}\\{$moduleName}\\{$namespaceSuffix};";
         $lines[] = '';
         $lines[] = 'use Illuminate\Database\Eloquent\Model;';
+
+        // 类注释第 21 行一直写着「自动检测软删除（deleted_at）」，
+        // 但生成物里既没有 import 也没有 use SoftDeletes，
+        // 导致「表里有 deleted_at 列」的模型只能手动补，文档与行为不符。
+        $hasSoftDeletes = $this->detectSoftDeletes($columns);
+
+        if ($hasSoftDeletes) {
+            $lines[] = 'use Illuminate\Database\Eloquent\SoftDeletes;';
+        }
+
         $lines[] = '';
 
         // PHPDoc 类注释
@@ -469,6 +500,18 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = "class {$modelName} extends Model";
         $lines[] = '{';
         $lines[] = '';
+
+        // 软删除 trait（检测逻辑见 detectSoftDeletes()）
+        if ($hasSoftDeletes) {
+            $lines[] = '    /**';
+            $lines[] = '     * 启用软删除（数据表中存在 deleted_at 字段）';
+            $lines[] = '     *';
+            $lines[] = '     * 删除时仅写入 deleted_at 而非物理删除行，';
+            $lines[] = '     * 默认查询自动排除已软删除的记录。';
+            $lines[] = '     */';
+            $lines[] = '    use SoftDeletes;';
+            $lines[] = '';
+        }
 
         // $table 属性
         $lines[] = '    /**';
@@ -517,7 +560,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         $comment = $column['comment'] ?? '';
 
         if (! empty($comment)) {
-            return $comment;
+            return $this->sanitizeDocComment($comment);
         }
 
         // 无注释时，拼接默认值和额外信息
@@ -533,6 +576,23 @@ class ModelMakeCommand extends AbstractMakeCommand
         }
 
         return implode(' ', $parts);
+    }
+
+    /**
+     * 清洗数据库注释，使其可安全嵌入 PHPDoc 块
+     *
+     * 列注释直接写入 @property 所在的 PHPDoc 块内，
+     * 若注释本身含有注释终止序列「斜杠 + 星号」，
+     * 会提前闭合注释块，其后的代码被当作普通文本 → 生成物语法错误。
+     * 同时去掉换行，避免破坏 docblock 排版。
+     */
+    protected function sanitizeDocComment(string $comment): string
+    {
+        // 去掉换行与多余空白
+        $clean = trim((string) preg_replace('/\s+/u', ' ', $comment));
+
+        // 闭合注释序列必须转义，否则会提前结束 PHPDoc
+        return str_replace('*/', '*\\/', $clean);
     }
 
     /**
@@ -568,8 +628,10 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = '     */';
 
         if (! empty($fillable)) {
-            $fillableStr = "'".implode("', '", $fillable)."'";
-            $lines[] = "    protected \$fillable = [{$fillableStr}];";
+            // 同 generateAttributesSection：字段名来自数据库，
+            // 手工拼引号无法处理含引号的列名，改用 var_export 统一转义。
+            $quoted = array_map(fn (string $c): string => var_export($c, true), $fillable);
+            $lines[] = '    protected $fillable = ['.implode(', ', $quoted).'];';
         } else {
             $lines[] = '    protected $fillable = [];';
         }
@@ -634,13 +696,10 @@ class ModelMakeCommand extends AbstractMakeCommand
         $lines[] = '     */';
         $lines[] = '    protected $attributes = [';
         foreach ($attributes as $key => $value) {
-            if (is_string($value)) {
-                $lines[] = "        '{$key}' => '{$value}',";
-            } elseif (is_bool($value)) {
-                $lines[] = "        '{$key}' => ".($value ? 'true' : 'false').',';
-            } else {
-                $lines[] = "        '{$key}' => {$value},";
-            }
+            // 交给 var_export 处理转义与类型：手工拼接 '{$value}' 时，
+            // 一旦数据库默认值里含单引号或反斜杠（MySQL 极常见），
+            // 生成的就是语法错误的 PHP（例如默认值为 'it\'s' 会提前闭合字符串）。
+            $lines[] = '        '.var_export((string) $key, true).' => '.var_export($value, true).',';
         }
         $lines[] = '    ];';
 
@@ -661,7 +720,10 @@ class ModelMakeCommand extends AbstractMakeCommand
      */
     protected function resolvePhpDocType(array $column): string
     {
-        $type = strtolower($column['type']);
+        // type 键在两条解析链路上都可能缺失
+        // （如 getColumns 某驱动未返回 type_name），原代码直接下标访问
+        // 会抛 Undefined array key 警告，这里统一兜底为 string。
+        $type = strtolower((string) ($column['type'] ?? 'varchar'));
         $nullable = $column['null'] ?? false;
 
         // 解析基础类型名
@@ -833,6 +895,23 @@ class ModelMakeCommand extends AbstractMakeCommand
         }
 
         return $attributes;
+    }
+
+    /**
+     * 检测表是否包含软删除字段
+     *
+     * Laravel 约定的软删除列名为 deleted_at（也可通过 $dates 自定义，
+     * 但那已超出「从表结构推导」的范围），因此这里只认列名存在性。
+     */
+    protected function detectSoftDeletes(array $columns): bool
+    {
+        foreach ($columns as $column) {
+            if (($column['name'] ?? '') === 'deleted_at') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

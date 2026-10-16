@@ -7,6 +7,7 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
 
@@ -17,6 +18,8 @@ use zxf\Modules\Support\StubGenerator;
  */
 class ModuleMakeCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -52,6 +55,22 @@ class ModuleMakeCommand extends Command
             $force = $this->option('force');
             $full = $this->option('full');
 
+            // 模块名直接进 StubGenerator 拼成模块目录，而 Str::studly()
+            // 不会删除 '/' 与 '..'，所以
+            //     php artisan module:make ../../important --force
+            // 会算出 $modulePath = '<base>/Modules/../../important'，
+            // is_dir() 解析软链后为真 → 确认后执行
+            //     File::deleteDirectory('<base>/Modules/../../important')
+            // 即**递归删除 Modules 目录之外**的目录树。
+            // 因此先按模块名约定收紧（字母开头 + 字母数字），
+            // 再对解析出的绝对路径做一次「必须位于 Modules 根目录内」的兜底校验。
+            if (preg_match('/^[A-Za-z][A-Za-z0-9]*$/', $name) !== 1) {
+                $this->error("模块名称 [{$this->argument('name')}] 格式不合法");
+                $this->line('提示：只能包含字母与数字，且必须以字母开头（例如 Blog）');
+
+                return Command::FAILURE;
+            }
+
             // 检查多模块发布并发布用户指南
             $this->publishModulesUserGuide();
 
@@ -59,15 +78,31 @@ class ModuleMakeCommand extends Command
             $stubGenerator = new StubGenerator($name);
             $modulePath = $stubGenerator->getModulePath();
 
+            // 兜底：解析后的绝对路径必须仍位于模块根目录之内。
+            // 即便上面的名称校验被后续改动绕过，这一层仍能阻止越界删除。
+            $modulesRoot = rtrim(
+                (string) (config('modules.path') ?: (function_exists('base_path') ? base_path('Modules') : 'Modules')),
+                '/\\'
+            );
+            $normalizedModulePath = $this->normalizePath($modulePath);
+
+            if ($normalizedModulePath !== $modulesRoot
+                && ! str_starts_with($normalizedModulePath, $modulesRoot.'/')) {
+                $this->error("模块路径 [{$this->esc($modulePath)}] 超出了模块根目录 [{$modulesRoot}]，已拒绝操作");
+                $this->line('提示：模块名称不合法或 modules.path 配置有误');
+
+                return Command::FAILURE;
+            }
+
             if (is_dir($modulePath) && ! $force) {
-                $this->error("模块 [{$name}] 已存在");
+                $this->error("模块 [{$this->esc($name)}] 已存在");
                 $this->line('提示：使用 --force 选项覆盖已存在的模块');
 
                 return Command::FAILURE;
             }
 
             if (is_dir($modulePath) && $force) {
-                $this->warn("正在覆盖已存在的模块 [{$name}]");
+                $this->warn("正在覆盖已存在的模块 [{$this->esc($name)}]");
                 if (! $this->confirm("Are you sure you want to overwrite module [{$name}]? All files will be deleted.", true)) {
                     $this->info('Operation cancelled.');
 
@@ -78,7 +113,7 @@ class ModuleMakeCommand extends Command
                 File::deleteDirectory($modulePath);
             }
 
-            $this->info("Creating module [{$name}]...");
+            $this->info("Creating module [{$this->esc($name)}]...");
 
             // 初始化 stub 映射
             $this->initializeStubMapping($stubGenerator);
@@ -89,7 +124,7 @@ class ModuleMakeCommand extends Command
             // 根据 stub 映射生成所有文件
             $this->generateFilesFromStubMapping($stubGenerator);
 
-            $this->info("模块 [{$name}] 创建成功");
+            $this->info("模块 [{$this->esc($name)}] 创建成功");
             $this->line('用户指南位置: '.config('modules.path', base_path('Modules')).'/UserGuide.md');
 
             // 模块集合已发生变化：失效模块缓存（元数据 + 自动发现清单），
@@ -112,6 +147,35 @@ class ModuleMakeCommand extends Command
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * 归一化路径：消解「.」与「..」（纯字符串运算，不要求路径存在）
+     *
+     * 不能用 realpath()：
+     *  1) 目标目录尚未创建时它返回 false，无法用于校验；
+     *  2) realpath 会解析软链，可能把合法路径误判为越界。
+     */
+    protected function normalizePath(string $path): string
+    {
+        $isAbsolute = str_starts_with($path, '/');
+        $segments = [];
+
+        foreach (explode('/', str_replace('\\', '/', $path)) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+
+            if ($segment === '..') {
+                array_pop($segments);
+
+                continue;
+            }
+
+            $segments[] = $segment;
+        }
+
+        return ($isAbsolute ? '/' : '').implode('/', $segments);
     }
 
     /**
@@ -576,13 +640,19 @@ class ModuleMakeCommand extends Command
                     // 读取 stub 内容
                     $content = file_get_contents($stubPath);
 
+                    if ($content === false) {
+                        $failedFiles[] = "读取 stub 文件失败: {$mapping['stub']}";
+
+                        continue;
+                    }
+
                     // 获取当前替换变量的副本（避免污染 generator 的状态）
                     $replacements = array_merge($generator->getReplacements(), $mapping['replacements'] ?? []);
 
                     // 执行变量替换（按变量名长度降序排序，防止 {{NAME}} 干扰 {{MODULE_NAMESPACE}} 等长变量）
                     uksort($replacements, fn (string $a, string $b): int => strlen($b) - strlen($a));
                     foreach ($replacements as $search => $replace) {
-                        $content = str_replace($search, $replace, $content);
+                        $content = str_replace($search, (string) $replace, $content);
                     }
 
                     // 构建目标文件的完整路径
@@ -595,9 +665,20 @@ class ModuleMakeCommand extends Command
                     }
 
                     // 写入文件
-                    File::put($fullPath, $content);
+                    //
+                    // 必须检查 File::put() 的返回值：磁盘满 / 权限不足时它返回 false，
+                    // 若忽略而照样 $generatedCount++，最终打印的「成功生成 N 个文件」
+                    // 就是典型的假成功 —— 会让人以为模块已建好，实际缺文件，
+                    // 后续报「类不存在」之类毫无关联的错误。
+                    if (File::put($fullPath, $content) === false) {
+                        $failedFiles[] = "写入文件失败（磁盘空间或权限）: {$mapping['destination']}";
+
+                        continue;
+                    }
+
                     $generatedCount++;
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
+                    // 用 Throwable 而非 Exception：stub 内容替换出错可能抛 Error
                     $failedFiles[] = "生成文件失败 [{$mapping['destination']}]: {$e->getMessage()}";
                 }
             }

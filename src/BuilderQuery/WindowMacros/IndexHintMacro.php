@@ -21,7 +21,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 注入，SQL 片段均经 grammar wrap，字面量走参数绑定；PG 侧的提示依赖 pg_hint_plan 扩展，
  * 若未安装则注释无害（不会报错），已在各宏注释中说明。
  *
- * @version 3.2.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+（PG 索引/优化器提示需 pg_hint_plan）
  *
@@ -235,6 +235,13 @@ class IndexHintMacro extends BaseMacro
      */
     public static function applyIndexHint(Builder|\Illuminate\Database\Query\Builder $builder, array $indexes, string $kind, string $for, ?string $table): Builder|\Illuminate\Database\Query\Builder
     {
+        // 是直接 strtoupper() 后拼进 raw 表达式的：
+        // 而 $for 完全来自调用方（可能是 HTTP 参数），形如
+        // 即可闭合括号后追加任意 SQL 片段。
+        // 现在两者都按枚举白名单校验（宏的文档里本就只有固定取值）。
+        $kind = self::assertHintKeyword($kind, ['use', 'force', 'ignore'], 'kind');
+        $for = self::assertHintKeyword($for, ['', 'join', 'order', 'group'], 'for');
+
         $table = $table ?? BaseMacro::resolveTable($builder);
         $table = BaseMacro::assertValidIdentifier($table, 'table');
 
@@ -258,5 +265,31 @@ class IndexHintMacro extends BaseMacro
         BaseMacro::addOptimizerHint($builder, "{$pgKind}({$table} {$indexSql})");
 
         return $builder;
+    }
+
+    /**
+     * 校验索引提示的关键字 / 作用范围是否属于白名单
+     *
+     * 这两个值会被直接拼进 SQL 文本（无法用参数绑定），
+     * 因此必须做严格枚举校验，而不是简单 strtoupper()。
+     *
+     * @param  array<int,string>  $allowed
+     *
+     * @throws \InvalidArgumentException 取值不在白名单内
+     */
+    private static function assertHintKeyword(string $value, array $allowed, string $label): string
+    {
+        $normalized = strtolower(trim($value));
+
+        if (! in_array($normalized, $allowed, true)) {
+            throw new \InvalidArgumentException(sprintf(
+                '索引提示的 %s 取值非法：[%s]。允许值：%s。',
+                $label,
+                $value,
+                $allowed === [] ? '(无)' : "'".implode("', '", $allowed)."'"
+            ));
+        }
+
+        return $normalized;
     }
 }

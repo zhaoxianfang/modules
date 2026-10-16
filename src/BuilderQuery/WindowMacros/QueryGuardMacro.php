@@ -19,7 +19,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 设计原则：守卫类宏不改变业务语义，只做「兜底 + 熔断」，确保在大表、高并发、参数异常等
  * 场景下不会出现「长时间未响应 / 系统资源占用高 / 卡死」等问题。
  *
- * @version 3.2.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

@@ -86,7 +86,7 @@ use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
  * 29. 大表计数加速 - approximateCount（无过滤走数据字典 O(1) 估算，有过滤回退精确 COUNT，防大屏超时）
  * 30. 防失控写入/删除护栏 - mustHaveWhere 写前闸门 + deleteInChunks 按主键分批安全删除（防全表误操作/锁表）
  *
- * @version 3.3.0
+ * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5）, Laravel 11+ / 12+ / 13+, MySQL 8.0+ / PostgreSQL 15+
  * ============================================
@@ -640,14 +640,20 @@ class MacrosBuilder extends Builder
          * @scenario 关联筛选 + 需要关联表字段/排序/聚合；关联为「一对多」会产生主表重复行，需配合 distinct/count 处理。
          */
         Builder::macro('whereHasJoin', function ($relationName, $callable = null) {
-            return (new WhereHasJoin($this, $relationName, function (Builder $builder, Builder $relationBuilder) use ($callable) {
-                if ($callable) {
-                    $relationBuilder->callScope($callable);
+            // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
+            // 因为 JOIN 无法像 where 条件那样通过 addNestedWhereQuery 内嵌进子查询。
+            $self = $this;
 
-                    return $builder->addNestedWhereQuery($relationBuilder->getQuery());
+            return (new WhereHasJoin($this, $relationName, function ($nextRelation, Builder $relationBuilder) use ($callable, $self) {
+                if ($nextRelation) {
+                    return $self->whereHasJoin($nextRelation, $callable);
                 }
 
-                return $builder;
+                if ($callable) {
+                    $relationBuilder->callScope($callable);
+                }
+
+                return $relationBuilder;
             }))->execute();
         });
 
@@ -666,14 +672,20 @@ class MacrosBuilder extends Builder
          * @scenario whereHasCrossJoin —— 用 CROSS JOIN（笛卡尔积）关联查询。
          */
         Builder::macro('whereHasCrossJoin', function ($relationName, $callable = null) {
-            return (new WhereHasCrossJoin($this, $relationName, function (Builder $builder, Builder $relationBuilder) use ($callable) {
-                if ($callable) {
-                    $relationBuilder->callScope($callable);
+            // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
+            // 因为 JOIN 无法像 where 条件那样通过 addNestedWhereQuery 内嵌进子查询。
+            $self = $this;
 
-                    return $builder->addNestedWhereQuery($relationBuilder->getQuery());
+            return (new WhereHasCrossJoin($this, $relationName, function ($nextRelation, Builder $relationBuilder) use ($callable, $self) {
+                if ($nextRelation) {
+                    return $self->whereHasCrossJoin($nextRelation, $callable);
                 }
 
-                return $builder;
+                if ($callable) {
+                    $relationBuilder->callScope($callable);
+                }
+
+                return $relationBuilder;
             }))->execute();
         });
 
@@ -691,14 +703,20 @@ class MacrosBuilder extends Builder
          * @scenario whereHasLeftJoin —— 用 LEFT JOIN 关联查询，保留主表全部记录（即使关联不匹配）。
          */
         Builder::macro('whereHasLeftJoin', function ($relationName, $callable = null) {
-            return (new WhereHasLeftJoin($this, $relationName, function (Builder $builder, Builder $relationBuilder) use ($callable) {
-                if ($callable) {
-                    $relationBuilder->callScope($callable);
+            // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
+            // 因为 JOIN 无法像 where 条件那样通过 addNestedWhereQuery 内嵌进子查询。
+            $self = $this;
 
-                    return $builder->addNestedWhereQuery($relationBuilder->getQuery());
+            return (new WhereHasLeftJoin($this, $relationName, function ($nextRelation, Builder $relationBuilder) use ($callable, $self) {
+                if ($nextRelation) {
+                    return $self->whereHasLeftJoin($nextRelation, $callable);
                 }
 
-                return $builder;
+                if ($callable) {
+                    $relationBuilder->callScope($callable);
+                }
+
+                return $relationBuilder;
             }))->execute();
         });
 
@@ -716,14 +734,20 @@ class MacrosBuilder extends Builder
          * @scenario whereHasRightJoin —— 用 RIGHT JOIN 关联查询（以关联表为主，保留关联表全部记录）。
          */
         Builder::macro('whereHasRightJoin', function ($relationName, $callable = null) {
-            return (new WhereHasRightJoin($this, $relationName, function (Builder $builder, Builder $relationBuilder) use ($callable) {
-                if ($callable) {
-                    $relationBuilder->callScope($callable);
+            // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
+            // 因为 JOIN 无法像 where 条件那样通过 addNestedWhereQuery 内嵌进子查询。
+            $self = $this;
 
-                    return $builder->addNestedWhereQuery($relationBuilder->getQuery());
+            return (new WhereHasRightJoin($this, $relationName, function ($nextRelation, Builder $relationBuilder) use ($callable, $self) {
+                if ($nextRelation) {
+                    return $self->whereHasRightJoin($nextRelation, $callable);
                 }
 
-                return $builder;
+                if ($callable) {
+                    $relationBuilder->callScope($callable);
+                }
+
+                return $relationBuilder;
             }))->execute();
         });
 

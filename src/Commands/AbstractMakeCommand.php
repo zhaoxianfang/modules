@@ -6,6 +6,7 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\StubGenerator;
@@ -24,6 +25,8 @@ use zxf\Modules\Support\StubGenerator;
  */
 abstract class AbstractMakeCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 当前已解析的模块实例（resolveModule 后可用）
      */
@@ -43,7 +46,7 @@ abstract class AbstractMakeCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
+            $this->error("模块 [{$this->esc($moduleName)}] 不存在");
 
             return null;
         }
@@ -70,7 +73,14 @@ abstract class AbstractMakeCommand extends Command
     /**
      * 计算目标文件的绝对路径
      *
+     * 实体名里混入 '..'（例如把 name 传成 '../../config/app'）时，
+     * 生成的文件就会写到模块目录之外。StubGenerator::getFullPath() 虽有兜底，
+     * 但并非所有 make 命令都经由 StubGenerator（例如 ViewMakeCommand 会先
+     * 用 targetPath() 做过存在性判断），因此在基类这里统一拦截最稳妥。
+     *
      * @param  string  $relativePath  相对于模块根目录的路径（如 Http/Controllers/Foo.php）
+     *
+     * @throws \InvalidArgumentException 路径非法（含 ".." 或 NUL 字节）时抛出
      */
     protected function targetPath(string $relativePath): string
     {
@@ -78,7 +88,55 @@ abstract class AbstractMakeCommand extends Command
             throw new \RuntimeException('必须先调用 resolveModule() 解析模块');
         }
 
+        if (! $this->isSafeRelativePath($relativePath)) {
+            throw new \InvalidArgumentException(sprintf(
+                '非法的目标路径 [%s]：只允许字母、数字、下划线、中划线、斜杠与点，禁止包含 ".." 或空字节。',
+                $relativePath
+            ));
+        }
+
         return $this->module->getPath($relativePath);
+    }
+
+    /**
+     * 校验「相对模块根目录的路径」是否安全
+     *
+     * 判定规则：
+     * - 禁止 NUL 字节（可截断路径，绕过后续字符串判断）
+     * - 禁止任何一层为 ".."
+     * - 允许绝对路径（部分命令如 MigrationMakeCommand 的 --realpath 需要），
+     *   但同样禁止其中的 ".."
+     */
+    protected function isSafeRelativePath(string $path): bool
+    {
+        if ($path === '' || str_contains($path, "\0")) {
+            return false;
+        }
+
+        $normalized = str_replace('\\', '/', $path);
+
+        foreach (explode('/', $normalized) as $segment) {
+            if ($segment === '..') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 校验「实体名」是否可安全用于拼接文件路径
+     *
+     * 多数 make 命令把用户输入的实体名（视图名 / 路由名 / 模型名 …）直接拼进
+     * 相对路径。只要其中出现 '/' 或 '..' 就能写到模块目录之外，因此这里
+     * 在拼接之前就拦下，并给出可读的错误提示。
+     * targetPath() 里的抛出属于最后一道兜底，正常情况下不应触发。
+     */
+    protected function isValidEntityName(?string $name): bool
+    {
+        return $name !== null
+            && $name !== ''
+            && preg_match('/^[A-Za-z0-9_][A-Za-z0-9_.\-]*$/', $name) === 1;
     }
 
     /**
@@ -103,25 +161,33 @@ abstract class AbstractMakeCommand extends Command
         string $entityLabel,
         bool $force
     ): int {
+        // 非法路径不应以异常栈回溯的形式甩给使用者，转成常规失败返回
+        if (! $this->isSafeRelativePath($relativePath)) {
+            $this->error("非法的目标路径 [{$relativePath}]");
+            $this->line('提示：路径中不允许包含 ".." 或空字节');
+
+            return Command::FAILURE;
+        }
+
         $absolutePath = $this->targetPath($relativePath);
         $moduleName = $this->module->getName();
         $entityName = basename($relativePath, '.php');
 
         if (file_exists($absolutePath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在{$entityLabel} [{$entityName}]");
+            $this->error("模块 [{$this->esc($moduleName)}] 中已存在{$entityLabel} [{$entityName}]");
             $this->line("提示：使用 --force 选项覆盖已存在的{$entityLabel}");
 
             return Command::FAILURE;
         }
 
         if (file_exists($absolutePath) && $force) {
-            $this->warn("正在覆盖模块 [{$moduleName}] 中已存在的{$entityLabel} [{$entityName}]");
+            $this->warn("正在覆盖模块 [{$this->esc($moduleName)}] 中已存在的{$entityLabel} [{$entityName}]");
         }
 
         $result = $generator->generate($stub, $relativePath, $force);
 
         if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建{$entityLabel} [{$entityName}]");
+            $this->info("成功在模块 [{$this->esc($moduleName)}] 中创建{$entityLabel} [{$entityName}]");
 
             return Command::SUCCESS;
         }

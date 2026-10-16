@@ -15,7 +15,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 安全性：分组/排序列名经白名单校验并由 grammar wrap；排名条件通过参数化子查询（MAX + 关联）实现，
  * 不裸拼用户输入。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

@@ -12,7 +12,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 基于 study_mysql「日期时间函数 / 时段重叠 / 性能优化」章节系统化封装。所有语法经
  * {@see Dialect} 抽象层生成，双库通用。重点解决常见开发瓶颈：
  *  - 时间分桶统计（按 天/周/月/季度/年 或 固定 N 分钟）进行 GROUP BY 报表；
- *  - 「用 DATE(col) 包裹列导致索引失效」的反模式，改为列不包裹的范围查询；
+ *  - 「用 DATE(col) 包裹列导致索引失效」的反模式：改用列不包裹的范围查询；
  *  - 预约 / 排期 / 库存占用等「时段重叠」冲突检测。
  * 提供的宏：
  *  - dateBucket：按日/周/月/季/年分桶（自动 select + groupBy）
@@ -21,7 +21,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - whereTimeOverlap：时段重叠冲突检测（a.start < b.end AND a.end > b.start）
  * 安全性：列名 / 别名经白名单校验并由 grammar wrap；范围值与时段值一律参数绑定。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

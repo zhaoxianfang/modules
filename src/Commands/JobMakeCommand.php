@@ -56,7 +56,7 @@ class JobMakeCommand extends AbstractMakeCommand
             $this->line('任务位置: '.$this->targetPath('Jobs/'.$jobName.'.php'));
             $this->line('');
             $this->line('调度任务示例:');
-            $this->line("  \\{$namespace}\\{$module->getName()}\\Jobs\\{$jobName}::dispatch();");
+            $this->line("  \\{$namespace}\\{$this->esc($module->getName())}\\Jobs\\{$this->esc($jobName)}::dispatch();");
         }
 
         return $result;

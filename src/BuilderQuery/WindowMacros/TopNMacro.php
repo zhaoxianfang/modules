@@ -19,7 +19,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 实现：构造一个 ROW_NUMBER() OVER (PARTITION BY 分组 ORDER BY 排序列 方向) 的子查询，
  * 再用 whereIn(主键, 子查询 WHERE _rn <= N) 完成过滤；双构建器（ORM/DB）均可用。
  *
- * @version 3.2.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

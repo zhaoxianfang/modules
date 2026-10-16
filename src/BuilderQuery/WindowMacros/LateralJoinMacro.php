@@ -15,7 +15,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 安全性：用户传入的表别名 / 分组列 / 排序列 / 聚合列经白名单校验并由 grammar wrap；
  * 关联条件通过 whereColumn / 参数化子查询实现，不裸拼用户输入。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0.14+ / PostgreSQL 15+
  *

@@ -2,7 +2,7 @@
 
 > 本功能随 `zxf/modules` 包一同提供，命名空间为 `zxf\Modules\Logging`。
 > 它实现了一个**轻量且专注**的「数据库日志驱动」：开箱即可把 Laravel 全站日志
-> （包含每次 HTTP 请求自动产生的「请求 → 响应」汇总日志）写入 `logs` 数据表，
+> （包含每个 HTTP 请求自动产生的一条「请求 → 响应」访问记录）写入 `logs` 数据表，
 > 字段齐全、信息丰富。**本模块只负责采集与落库日志，不提供任何后台管理界面**
 > （查看 / 检索 / 删除等控制器功能已移除），过期日志的清理交由业务系统按需基于 `Log` 模型自行处理。
 
@@ -17,7 +17,11 @@
   峰值内存（MB）、响应头（敏感头脱敏）、响应体（仅文本类，截断至 2 万字符）。
 - **异常全链路**：异常类名、消息、文件:行、完整堆栈，并自动与触发它的请求/响应关联。
 - **安全**：密码 / token / secret / Authorization / Cookie 等敏感信息强制 `***`。
-- **去重**：单次请求内相同异常只落库一次，避免刷屏。
+- **去重**：单次请求内相同业务日志只落库一次，避免刷屏。
+- **请求日志幂等**：每个 HTTP 请求恰好一条请求日志（`LogContext::claimRequestLog()` 守卫 +
+  `RequestHandled` 兜底），异常路径同样不遗漏、且绝不重复写两条。
+- **完整落库语义**：请求日志承载完整 request/response 上下文；业务日志逐条落库且只带轻量请求上下文，
+  大体积的入参 / 请求头 / 响应体只存在于请求日志那一行（logs 表体积显著减小、写入更快）。
 - **健壮**：写库异常被静默吞掉，**绝不影响主业务流程**。
 - **友好检索**：落库表 `logs` 与模型 `zxf\Modules\Logging\Models\Log` 公开可用，可直接查询或接入外部日志平台。
 
@@ -68,34 +72,60 @@ LOG_DB_MAX_BODY_LENGTH=200
 | 字段 | 说明 |
 | --- | --- |
 | `id` | 主键 |
-| `level` / `level_name` | 等级键（error）/ 等级名（ERROR） |
+| `level` | 等级键（小写 PSR 键，如 `error` / `info`） |
 | `channel` | 日志通道名 |
 | `message` | 日志正文 |
 | `context` | Monolog context（已脱敏、剔除不可序列化对象，JSON） |
-| `extra` | Monolog extra 附加数据（JSON） |
+| `extra` | Monolog extra 附加数据（已脱敏 JSON；**不重复存放已有独立列的 request_*/response_* 字段**） |
 | `request_method` | 请求方法 |
-| `request_url` | 完整请求 URL |
+| `request_url` | 完整请求 URL（query string 中的凭证已脱敏） |
 | `request_path` | 请求路径 |
 | `request_route` | 路由名称 |
 | `request_controller` | 控制器@方法 |
 | `request_ip` | 客户端 IP |
 | `request_user_agent` | User-Agent |
-| `request_referer` | 来源 Referer |
-| `request_session_id` | Session ID |
-| `request_input` | 请求入参（已脱敏，JSON） |
-| `request_headers` | 请求头（敏感头已脱敏，JSON） |
+| `request_referer` | 来源 Referer（已脱敏） |
+| `request_session_id` | Session ID（已脱敏） |
+| `request_input` | 请求入参（已脱敏，JSON）——**仅请求日志行有值** |
+| `request_headers` | 请求头（敏感头已脱敏，JSON）——**仅请求日志行有值** |
+| `module_name` | 所属模块名 |
 | `user_id` / `user_type` | 认证用户 id / 类型 |
 | `response_code` | HTTP 状态码 |
 | `response_status` | 状态短语（如 OK） |
-| `response_duration_ms` | 请求耗时（毫秒） |
+| `response_duration_ms` | 请求耗时（毫秒，整型） |
 | `response_memory_mb` | 峰值内存（MB） |
-| `response_headers` | 响应头（敏感头已脱敏，JSON） |
-| `response_body` | 响应体（文本类，截断至 20000 字符） |
+| `response_content` | 响应内容：视图响应记视图名，JSON 响应记 JSON 数据 |
+| `response_headers` | 响应头（敏感头已脱敏，JSON）——**仅请求日志行有值** |
+| `response_body` | 响应体（文本类，截断至 20000 字符）——**仅请求日志行有值** |
 | `exception_class` | 异常类名 |
 | `exception_message` | 异常消息 |
 | `file` | 异常文件:行 |
 | `trace` | 异常堆栈 |
+| `bot_type` / `bot_score` / `bot_client` / `bot_signals` | 爬虫 / 自动化客户端识别结果 |
+| `is_crawler` | 是否为爬虫请求 |
 | `created_at` / `updated_at` | 时间戳 |
+
+### 行类型说明
+
+表中每一行代表**一条日志**，来源分两类：
+
+| 行类型 | 数量 | 特征 |
+| --- | --- | --- |
+| **请求日志** | 每个 HTTP 请求**恰好一行** | `request_*` 与 `response_*` 列为完整值；`request_input` / `request_headers` / `response_body` 只存在于这类行 |
+| **业务日志** | 逐条（`Log::info()` / `report($e)` 各一行） | 带轻量请求上下文以便溯源，大体积载荷列为 NULL |
+
+判定方式：请求日志的 `response_code` 有值而 `context` 为空；业务日志通常携带非空 `context`。
+
+### 查询索引
+
+迁移 `0001_01_01_000002_add_query_indexes_to_logs_table` 为高频检索组合建立复合索引
+（等值列在前、范围列在后）：`module_name+created_at`、`request_path+created_at`、
+`response_code+created_at`、`user_id+created_at`、`level+response_code+created_at`、
+`is_crawler+bot_type+created_at`、`bot_type+created_at`、`exception_class+created_at`，
+以及慢请求排序用的 `response_duration_ms` 单列索引。
+
+模型 `Log` 另提供 `anyLevel()`（等级白名单校验）、`businessLogs()`、`serverErrors()`、
+`clientErrors()`、`slowest()`、`metrics()` 等查询作用域。
 
 ---
 
@@ -126,19 +156,25 @@ LOG_DB_MAX_BODY_LENGTH=200
 
 ### 2. 请求 / 响应上下文捕获（核心）
 
-- **`LogContextMiddleware`**：在请求开始采集请求信息，并在 `app()->terminating()`
-  阶段采集**最终响应结果**，随后向 `database` 通道写入一条「请求 → 响应」汇总日志。
+- **`LogContextMiddleware`**：在请求开始采集请求信息，在响应返回前采集**最终响应结果**，
+  随后向 `database` 通道写入一条携带 `__request__` 标记的**请求日志**。
   同时会把数据同步进 Laravel 13 的 `Context` 门面（`Context::add`），供其它通道共享。
+  请求日志的幂等标记由落库处理器占用（中间件若自己先置位，采集异常时兜底会因「已写」跳过，
+  导致该请求日志彻底消失），故中间件只负责采集。
 - **`RequestContextProcessor`**：由 `DatabaseLogTap` 挂到通道上，在每条日志记录写入前
   把 `LogContext` 里的请求 / 响应信息注入 `extra`，最终映射到数据表字段。
-- 轻量请求信息**每条日志都附带**（便于溯源）；完整响应体**仅汇总日志写入**（避免重复存储）。
+- 轻量请求信息**每条日志都附带**（便于溯源）；大体积载荷（入参 / 请求头）与完整响应上下文
+  **只注入请求日志那一行**（避免重复存储与重复脱敏）。
 
 ### 3. 落库处理器 `DatabaseLogHandler`
 
 继承 `Monolog\Handler\AbstractProcessingHandler`，负责：
 
 - 使用 `$record['level_name']`（Monolog 3 数组访问，返回大写等级名如 ERROR，避免对 `level` 重新赋值）；
-- 请求内精确去重（去重集合存放于 `LogContext`，随每次请求 `reset()` 清空，Octane / Swoole 常驻进程下也不会跨请求串味）；
+- 分流：**请求日志**走 `claimRequestLog()`（每请求一条）；**业务日志**走请求内去重集合
+  （随每次请求 `reset()` 清空，Octane / Swoole 常驻进程下也不会跨请求串味）；
+- **预脱敏键跳过**：extra 中由中间件已脱敏的键（`LogContext::PRE_REDACTED_KEYS`）不再二次递归脱敏，
+  且不再重复写入 `extra` 列（已有独立列），每条日志省掉一次 headers/input 数组深度遍历；
 - **敏感字段脱敏**：对 `password` / `token` / `secret` / `authorization` / `api_key` / `access_token` /
   `client_secret` / `private_key` / `csrf_token` 等键名做键名脱敏，并对 `message` / `response_body`
   等自由文本做正则脱敏（命中 `"password":"..."` 形态即替换为 `***`），防止密码等明文落库；
@@ -242,6 +278,32 @@ $byEx = Log::where('exception_class', 'App\Exceptions\FooException')->get();
 数据库 I/O，显著提升高并发接口吞吐。需配置可用的队列连接（如 `QUEUE_CONNECTION=redis`）；
 若仍使用默认 `sync` 驱动，则等价于同步写入，行为不变。切换对业务代码与落库核心逻辑完全透明。
 
+队列 payload 会按 `QueuedDatabaseLogWriter::MAX_PAYLOAD_BYTES`（默认 200 KB）自动裁剪
+（超长标量截断、仍超限则丢弃 `trace` / `context` / `extra` 等非关键列），
+避免超出数据库驱动单行上限导致「入队成功、落库永远失败」。落库任务带 3 次重试与退避。
+
+### 跳过指定路径（零开销）
+
+```php
+// config/logging.php → 'db' => 'skip_paths'
+'skip_paths' => ['telescope*', 'horizon*', 'livewire/message/*', 'health', 'api/ping'],
+```
+
+命中的请求**一条日志都不写**（请求日志与业务日志一并跳过），
+适合健康检查、调试面板、Livewire 轮询等高频低价值路径。
+
+### 进程级缓存 TTL（降低高频表结构探测开销）
+
+| 配置 | 默认 | 作用 |
+| --- | --- | --- |
+| `LOG_DB_SCHEMA_CACHE_TTL` | 60s | 日志表存在性判定缓存；避免每个请求都查一次 `information_schema` |
+| `LOG_DB_COLUMN_CACHE_TTL` | 300s | 日志表列清单缓存；避免每条日志都查表结构 |
+| `LOG_DB_CONFIG_CACHE_TTL` | 300s | 常驻进程（Octane / queue worker）下重读 `logging.db.*` 的间隔 |
+
+设为 `0` 表示永不过期（需手动调用 `LogContext::flushLogsTableCache()` /
+`LogRecordFactory::flushCache()` 才会失效）。执行迁移或改表结构后若未等待 TTL 到期，
+可主动调用这两个方法立即生效。
+
 ---
 
 ## 九、与 Laravel 13 日志体系的关系
@@ -266,18 +328,21 @@ HTTP 请求
    ▼
 LogContextMiddleware（web / api 组，仅 HTTP）
    ├─ 请求开始：采集请求上下文 → LogContext（请求级单例）+ Laravel Context 门面
-   └─ 响应终止（terminating）：采集响应上下文 → LogContext
-        └─ 写入一条「请求 → 响应」汇总日志到 database 通道
+   │     同时把已脱敏的上下文压平为两组 extra 片段（轻量标量 / 大体积载荷）
+   └─ 响应返回前：采集响应上下文 → LogContext
+        └─ 写入一条携带 __request__ 标记的「请求 → 响应」请求日志到 database 通道
    │
    ▼
 database 通道（Monolog 3）
    ├─ DatabaseLogTap（仅 Web 挂载）→ RequestContextProcessor
-   │     把 LogContext 的请求 / 响应上下文注入每条日志的 extra
+   │     轻量上下文注入每条日志；大体积载荷 + 响应上下文只注入请求日志那一行
    ▼
 DatabaseLogHandler::write(LogRecord)
-   ├─ ① 去重：相同「level|message|exception」单次请求内只落库一次
+   ├─ ① 分流：请求日志 → claimRequestLog()（每请求一条）
+   │        业务日志 → 相同「level|message|exception」单次请求内只落库一次
    │        （去重集合存于 LogContext，随每次请求 reset，避免 Octane 跨请求串味）
    ├─ ② 归一化：buildAttributes() 把 LogRecord 映射为 logs 表字段数组
+   │        - 预脱敏键（PRE_REDACTED_KEYS）跳过二次 sanitizeContext，且不重复写入 extra 列
    ├─ ③ 脱敏：Redactor（全模块唯一事实来源）统一处理
    │        - 键名脱敏（password / token / secret … → ***）
    │        - 自由文本脱敏（"key":"value" 形态）
@@ -312,5 +377,21 @@ DatabaseLogHandler::write(LogRecord)
 - **健壮性**：任何写库 / 序列化异常都被捕获；数据库不可用时仍有 stack 文件通道兜底，绝不反向影响主流程。
 - **常驻进程安全**：所有请求级状态集中在 `LogContext`，由中间件在每次请求开始时 `reset()`，
   在 Laravel Octane / Swoole 下不会跨请求串味。
-- **可检索性**：`logs` 表已为 `level_name`、`channel`、`created_at` 及其组合建立索引；
-  检索时直接使用 `zxf\Modules\Logging\Models\Log` 模型或接入 ELK / Grafana 等外部系统。
+- **可检索性**：`logs` 表已为 `level`、`channel`、`created_at`、`module_name`、`request_path`、
+  `response_code`、`user_id`、`exception_class`、`bot_type` 及「等值列 + 时间」的高频组合
+  建立索引（含迁移 `0001_01_01_000002`）；检索时直接使用
+  `zxf\Modules\Logging\Models\Log` 模型或接入 ELK / Grafana 等外部系统。
+- **每请求一条请求日志 + 业务日志逐条落库**：请求日志承载完整的 request/response 上下文，
+  业务日志只带轻量请求上下文；大体积的入参 / 请求头 / 响应体只存在于请求日志那一行。
+  这样既保证「一次访问一条记录」的审计完整性，又不会让每条业务日志都拖着一份大 payload。
+- **预脱敏片段 + 预脱敏键跳过**：中间件在请求开始时就把已脱敏的上下文压平为两组数组片段，
+  `RequestContextProcessor` 只做数组合并（不做任何重复脱敏或上下文解析）；
+  `DatabaseLogHandler` 再把预脱敏键从 `sanitizeContext` 的输入中摘出。
+  两级优化叠加后，单条业务日志的上下文注入开销几乎可忽略。
+- **CLI / 队列下 headers_sent() 必须豁免**：PHP 的 CLI SAPI 在任何输出之后都会让
+  `headers_sent()` 返回 true。若不加区分地判断，artisan 命令、队列 worker、测试脚本
+  一旦打印过内容，日志就会被这个守卫静默丢弃 —— 表现为「跑得越久日志越少」且无任何报错。
+  故两处守卫统一改为 `! LogContext::isCliSapi() && headers_sent()`。
+- **耗时列的溢出防护**：`response_duration_ms` 是整型列（上限 4294967295）。
+  当拿不到请求开始时间时必须写 0，而不是 `microtime(true) * 1000`（那会得到 ~1.7e12，
+  PostgreSQL / MySQL 会直接拒绝写入，导致该条日志整体丢失）。

@@ -61,7 +61,7 @@ class TestMakeCommand extends AbstractMakeCommand
 
         if ($result === Command::SUCCESS) {
             $testType = $isFeature ? '功能测试' : '单元测试';
-            $this->info("✓ 成功在模块 [{$module->getName()}] 中创建{$testType} [{$testName}]");
+            $this->info("✓ 成功在模块 [{$this->esc($module->getName())}] 中创建{$testType} [{$this->esc($testName)}]");
         }
 
         return $result;

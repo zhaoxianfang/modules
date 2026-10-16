@@ -47,33 +47,50 @@ class RouteMakeCommand extends AbstractMakeCommand
         $type = $this->option('type');
         $force = $this->option('force');
 
+        // 路由名会被 strtolower 后拼进 'Routes/{name}.php'，
+        // 因此必须做实体名校验，防 "../../config/app" 造成路径穿越。
+        if (! $this->isValidEntityName($routeName)) {
+            $this->error("路由名称格式不合法: [{$this->esc($routeName)}]");
+            $this->line('提示：只允许字母、数字、下划线与中划线');
+
+            return Command::FAILURE;
+        }
+
         // 类型不再限制，允许任意自定义类型
 
         $routePath = $this->targetPath('Routes/'.$routeName.'.php');
 
         if (File::exists($routePath) && ! $force) {
-            $this->error("模块 [{$moduleName}] 中已存在路由文件 [{$routeName}]");
+            $this->error("模块 [{$this->esc($moduleName)}] 中已存在路由文件 [{$this->esc($routeName)}]");
             $this->line('提示：使用 --force 选项覆盖已存在的文件');
 
             return Command::FAILURE;
         }
 
         if (File::exists($routePath) && $force) {
-            $this->warn("正在覆盖已存在的路由文件 [{$routeName}]");
+            $this->warn("正在覆盖已存在的路由文件 [{$this->esc($routeName)}]");
         }
 
         // 使用不同的 stub 模板
         $stubFile = "route/{$type}.stub";
 
-        // 安全校验文件名（防止路径遍历）
-        if (! preg_match('/^[a-zA-Z0-9_\/\-]+\.stub$/', $stubFile)) {
-            $this->error("路由类型格式不合法: [{$type}]");
+        // 安全校验模板类型
+        //
+        // 必须直接校验 $type 而非拼好的 $stubFile：
+        // StubGenerator::getStubPath() 不做 '..' 校验
+        // （它只保证**目标文件**不越界，不保证 **stub 读取路径**不越界），
+        // 若 $type 允许 '/'，--type=../../foo 就能读到模块目录之外的 .stub 文件。
+        // 故只允许字母、数字、下划线与中划线，不允许斜杠、点号与空值。
+        if (! is_string($type) || preg_match('/^[a-zA-Z0-9_-]+$/', $type) !== 1) {
+            $this->error("路由类型格式不合法: [{$this->esc($type)}]");
+            $this->line('提示：只允许字母、数字、下划线与中划线（内置类型：web / api / admin）');
 
             return Command::FAILURE;
         }
 
         // 检查是否有对应的 stub
-        $stubPath = __DIR__.'/stubs/'.$stubFile;
+        // 走 StubGenerator 以支持项目自定义 stub（自定义 → 包内 的逐级回退）
+        $stubPath = (new StubGenerator($moduleName))->getStubPath($stubFile);
         if (! file_exists($stubPath)) {
             // 使用通用模板
             $content = $this->getGenericRouteContent($moduleName, $routeName, $type);
@@ -100,12 +117,12 @@ class RouteMakeCommand extends AbstractMakeCommand
         $result = File::put($routePath, $content);
 
         if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建路由文件 [{$routeName}]");
+            $this->info("成功在模块 [{$this->esc($moduleName)}] 中创建路由文件 [{$this->esc($routeName)}]");
 
             return Command::SUCCESS;
         }
 
-        $this->error("创建路由文件 [{$routeName}] 失败");
+        $this->error("创建路由文件 [{$this->esc($routeName)}] 失败");
 
         return Command::FAILURE;
     }

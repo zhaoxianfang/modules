@@ -7,256 +7,172 @@ namespace zxf\Modules\BuilderQuery\WhereHasMacros;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations;
 use Illuminate\Database\Eloquent\Relations\Relation;
-use Illuminate\Support\Str;
+use zxf\Modules\BuilderQuery\WhereHasMacros\Concerns\BaseWhereHas;
 
-class WhereHasIn
+/**
+ * whereHasIn / orWhereHasIn 的实现：用 IN 子查询替代 EXISTS，优化关联子查询的索引命中。
+ *
+ * 生成相关子查询：
+ *   主表.本地键 IN (SELECT DISTINCT 关联表.指向主表的列 FROM 关联表
+ *                    WHERE <关联条件> AND 主表.本地键 = 关联表.指向主表的列)
+ * 末尾的 whereColumn 使子查询与主表保持关联（correlated），从而让优化器把外层条件
+ * 下推为索引扫描，而不是「先全表算出所有关联值再 IN 匹配」。
+ *
+ *  1. HasOneThrough / HasManyThrough 之前用 getQualifiedLocalKeyName() 作为外层 IN 列，
+ *     而该方法返回的是「远端父表上的 localKey」（如 countries.id），
+ *     而主表上的对应列是 secondLocalKey（如 users.country_id）——列根本不是主表的列，
+ *     生成的 SQL 要么直接报错，要么语义完全错误。
+ *     降级到框架原生 whereHas：手写 Through 的 IN 子查询需要额外 JOIN through 表，
+ *     极易出错；而 whereHasIn 的价值只是优化执行计划，不值得为此冒正确性风险。
+ *  2. MorphOne / MorphMany 必须用框架提供的 getQualifiedMorphType() /
+ *     getQualifiedMorphTypeName()：getMorphType() 在 Laravel 6+ 返回的已经是限定列名，
+ *     再拼表名会得到 `table.table.type`。
+ *  3. 不支持的关联类型抛 \InvalidArgumentException（\Exception 会被误当成业务异常），
+ *     错误消息带上具体关系类名与可替代方案，便于定位。
+ *
+ * 与原生 whereHas 保持一致：不自动追加 deleted_at 过滤，需要时请在回调中显式声明
+ *（$q->whereNull('deleted_at')），或使用关联模型自身的全局作用域。
+ */
+class WhereHasIn extends BaseWhereHas
 {
-    /**
-     * @var Builder
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected $builder;
+    protected string $method = 'whereIn';
 
-    /**
-     * @var string
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected $relation;
-
-    /**
-     * @var string
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected $nextRelation;
-
-    /**
-     * @var \Closure
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected $callback;
-
-    /**
-     * @var string
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected $method = 'whereIn';
-
-    public function __construct(Builder $builder, $relation, $callback)
-    {
-        $this->builder = $builder;
-        $this->relation = $relation;
-        $this->callback = $callback;
-    }
-
-    /**
-     * @return Builder
-     *
-     * @throws \Exception
-     *
-     * @scenario 本类/成员说明。
-     */
-    public function execute()
-    {
-        if (! $this->relation) {
-            return $this->builder;
-        }
-
-        return $this->where(
-            $this->formatRelation()
-        );
-    }
-
-    /**
-     * @param  Relation  $relation
-     * @return Builder
-     *
-     * @throws \Exception
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected function where($relation)
+    protected function applyRelation(Relation $relation): void
     {
         if ($relation instanceof Relations\MorphTo) {
-            throw new \Exception('Please use whereHasMorphIn() for MorphTo relationships.');
+            throw new \InvalidArgumentException('whereHasIn 不支持 MorphTo 关系，请改用 whereHasMorphIn()。');
         }
 
-        $relationQuery = $this->getRelationQuery($relation);
-        $method = $this->method;
+        // Through 关系降级到原生 whereHas（正确性优先，详见类注释第 1 条）
+        if ($relation instanceof Relations\HasOneOrManyThrough) {
+            $this->applyThroughFallback($relation);
 
-        if (
-            $relation instanceof Relations\MorphOne
-            || $relation instanceof Relations\MorphMany
-        ) {
-            return $this->builder->{$method}(
+            return;
+        }
+
+        $relationQuery = $this->relationQuery($relation);
+
+        // ---- MorphOne / MorphMany：额外按多态类型列过滤（修复 2）----
+        if ($relation instanceof Relations\MorphOne || $relation instanceof Relations\MorphMany) {
+            $relationQuery->where($relation->getQualifiedMorphType(), $relation->getMorphClass());
+
+            $this->builder->{$this->method}(
                 $relation->getQualifiedParentKeyName(),
                 $this->withRelationQueryCallback(
-                    $relationQuery
-                        ->select($relation->getQualifiedForeignKeyName())
-                        ->distinct()
-                        ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignKeyName())
-                        ->where($relation->getQualifiedMorphType(), $relation->getMorphClass())
+                    $this->correlatedSubQuery($relationQuery, $relation->getQualifiedForeignKeyName(), $relation->getQualifiedParentKeyName())
                 )
             );
+
+            return;
         }
 
+        // ---- MorphToMany：输出中间表上指向「关联模型」的外键 ----
         if ($relation instanceof Relations\MorphToMany) {
-            return $this->builder->{$method}(
+            $relationQuery->where($relation->getQualifiedMorphTypeName(), $relation->getMorphClass());
+
+            $this->builder->{$this->method}(
                 $relation->getQualifiedParentKeyName(),
                 $this->withRelationQueryCallback(
-                    $relationQuery
-                        ->select($relation->getQualifiedForeignPivotKeyName())
-                        ->distinct()
-                        ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignPivotKeyName())
-                        ->where($relation->getTable().'.'.$relation->getMorphType(), $relation->getMorphClass())
+                    $this->correlatedSubQuery($relationQuery, $relation->getQualifiedForeignPivotKeyName(), $relation->getQualifiedParentKeyName())
                 )
             );
+
+            return;
         }
 
-        // BelongsTo
+        // ---- BelongsTo：外层用主表外键，子查询输出关联表主键 ----
         if ($relation instanceof Relations\BelongsTo) {
-            return $this->builder->{$method}(
-                $this->getRelationQualifiedForeignKeyName($relation),
-                $this->withRelationQueryCallback(
-                    $relationQuery
-                        ->select($relation->getQualifiedOwnerKeyName())
-                        ->distinct()
-                        ->whereColumn($this->getRelationQualifiedForeignKeyName($relation), $relation->getQualifiedOwnerKeyName())
-                )
+            $foreign = $this->qualifiedForeignKeyName($relation);
+            $owner = $relation->getQualifiedOwnerKeyName();
+
+            $this->builder->{$this->method}(
+                $foreign,
+                $this->withRelationQueryCallback($this->correlatedSubQuery($relationQuery, $owner, $foreign))
             );
+
+            return;
         }
 
-        if (
-            $relation instanceof Relations\HasOne
-            || $relation instanceof Relations\HasMany
-        ) {
-            return $this->builder->{$method}(
-                $relation->getQualifiedParentKeyName(),
+        // ---- HasOne / HasMany：外层用主表主键，子查询输出关联表外键 ----
+        if ($relation instanceof Relations\HasOne || $relation instanceof Relations\HasMany) {
+            $parent = $relation->getQualifiedParentKeyName();
+
+            $this->builder->{$this->method}(
+                $parent,
                 $this->withRelationQueryCallback(
-                    $relationQuery
-                        ->select($relation->getQualifiedForeignKeyName())
-                        ->distinct()
-                        ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignKeyName())
+                    $this->correlatedSubQuery($relationQuery, $relation->getQualifiedForeignKeyName(), $parent)
                 )
             );
+
+            return;
         }
 
-        // BelongsToMany
+        // ---- BelongsToMany：外层用主表主键，子查询输出中间表上指向关联模型的外键 ----
         if ($relation instanceof Relations\BelongsToMany) {
-            return $this->builder->{$method}(
-                $relation->getQualifiedParentKeyName(),
+            $parent = $relation->getQualifiedParentKeyName();
+
+            $this->builder->{$this->method}(
+                $parent,
                 $this->withRelationQueryCallback(
-                    $relationQuery
-                        ->select($relation->getQualifiedForeignPivotKeyName())
-                        ->distinct()
-                        ->whereColumn($relation->getQualifiedParentKeyName(), $relation->getQualifiedForeignPivotKeyName())
+                    $this->correlatedSubQuery($relationQuery, $relation->getQualifiedForeignPivotKeyName(), $parent)
                 )
             );
+
+            return;
         }
 
-        if (
-            $relation instanceof Relations\HasOneThrough
-            || $relation instanceof Relations\HasManyThrough
-        ) {
-            return $this->builder->{$method}(
-                $relation->getQualifiedLocalKeyName(),
-                $this->withRelationQueryCallback(
-                    $relationQuery
-                        ->select($relation->getQualifiedFirstKeyName())
-                        ->distinct()
-                        ->whereColumn($relation->getQualifiedLocalKeyName(), $relation->getQualifiedFirstKeyName())
-                )
-            );
-        }
-
-        throw new \Exception(sprintf('%s does not support "whereHasIn".', get_class($relation)));
+        throw new \InvalidArgumentException(sprintf(
+            '关系 [%s] 不支持 whereHasIn；可改用原生 whereHas 或 whereHasJoin 系列。',
+            $relation::class
+        ));
     }
 
     /**
-     * @param  Relation  $relation
-     * @return Builder
+     * 组装「相关子查询」：SELECT DISTINCT $selectColumn，并附加与主表的等值关联条件。
      *
-     * @scenario 本类/成员说明。
+     * @param  Builder  $relationQuery  关联查询（可已被回调追加了业务条件）
+     * @param  string  $selectColumn  子查询输出列（指向主表的那一列）
+     * @param  string  $correlateTo  主表侧的关联列
      */
-    protected function getRelationQuery($relation)
+    protected function correlatedSubQuery(Builder $relationQuery, string $selectColumn, string $correlateTo): Builder
     {
-        $q = $relation->getQuery();
+        return $relationQuery
+            ->select($selectColumn)
+            ->distinct()
+            ->whereColumn($correlateTo, $selectColumn);
+    }
 
-        if ($this->builder->getModel()->getConnectionName() !== $q->getModel()->getConnectionName()) {
-            $databaseName = $this->getRelationDatabaseName($q);
-            $table = $q->getModel()->getTable();
+    /**
+     * Through 关系降级：使用框架原生 whereHas，保证正确性优先于执行计划优化。
+     */
+    protected function applyThroughFallback(Relation $relation): void
+    {
+        // 关联名优先取调用方传入的字符串（'country.postsViaCountry' 取首段）；
+        // 若调用方直接传了关联对象，则退回关联对象自带的 getRelationName()（部分关系类型有）。
+        $name = null;
+        if (is_string($this->relation) && $this->relation !== '') {
+            $name = explode('.', $this->relation)[0];
+        } elseif (method_exists($relation, 'getRelationName')) {
+            $name = $relation->getRelationName();
+        }
 
-            if (! Str::contains($table, ["`$databaseName`.", "{$databaseName}."])) {
-                $q->from("{$databaseName}.{$table}");
+        if ($name === null || $name === '') {
+            throw new \InvalidArgumentException(sprintf(
+                '关系 [%s] 无法解析出关联名，无法自动降级为原生 whereHas；请改用 whereHas(%s) 并手动指定关联名。',
+                $relation::class,
+                is_string($this->relation) ? (string) $this->relation : '(请手动指定)'
+            ));
+        }
+
+        $next = $this->nextRelation;
+        $nested = is_array($next) ? implode('.', $next) : $next;
+
+        $this->builder->whereHas(
+            $nested === null ? $name : $name.'.'.$nested,
+            function (Builder $query): void {
+                // 复用同一套回调契约（$nextRelation 已被拼进关联名，这里传 null 避免二次下钻）
+                $this->withRelationQueryCallback($query);
             }
-        }
-
-        return $q;
-    }
-
-    protected function getRelationDatabaseName($q)
-    {
-        // 连接配置在进程生命周期内不可变，按连接名缓存避免每次跨库关联都读取 config()。
-        static $cache = [];
-        $name = $q->getModel()->getConnectionName();
-        // 未显式指定连接时使用默认连接名，避免拼接出 database.connections..database 的非法键（双点）导致返回 null。
-        if ($name === null) {
-            $name = config('database.default');
-        }
-
-        return $cache[$name] ??= config('database.connections.'.$name.'.database');
-    }
-
-    protected function getRelationQualifiedForeignKeyName($relation)
-    {
-        if (method_exists($relation, 'getQualifiedForeignKeyName')) {
-            return $relation->getQualifiedForeignKeyName();
-        }
-
-        return $relation->getQualifiedForeignKey();
-    }
-
-    /**
-     * @return Relation
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected function formatRelation()
-    {
-        if (is_object($this->relation)) {
-            $relation = $this->relation;
-        } else {
-            $relationNames = explode('.', $this->relation);
-            $this->nextRelation = implode('.', array_slice($relationNames, 1));
-
-            $method = $relationNames[0];
-
-            $relation = Relation::noConstraints(function () use ($method) {
-                return $this->builder->getModel()->$method();
-            });
-        }
-
-        return $relation;
-    }
-
-    /**
-     * @param  Builder  $relation
-     * @return Builder
-     *
-     * @scenario 本类/成员说明。
-     */
-    protected function withRelationQueryCallback($relationQuery)
-    {
-        if ($this->callback === null) {
-            return $relationQuery;
-        }
-
-        // 兼容「就地修改关系查询（回调返回 null）」与「返回查询对象」两种风格；
-        // 若回调仅就地修改而未返回查询对象，则回退为已修改的 $relationQuery 本身。
-        return call_user_func($this->callback, $this->nextRelation, $relationQuery) ?: $relationQuery;
+        );
     }
 }

@@ -2,6 +2,19 @@
 
 declare(strict_types=1);
 
+use Illuminate\Container\Container;
+use Illuminate\Database\Connection;
+use Illuminate\Database\ConnectionResolverInterface;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Grammars\MySqlGrammar;
+use Illuminate\Events\Dispatcher;
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Facade;
+use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\FullTextMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
+
 /**
  * StringFunctionsMacro 运行时验证脚本
  * 在 wsf（Laravel 13.21.1）环境验证 29 个字符串函数宏：
@@ -14,22 +27,33 @@ declare(strict_types=1);
  * 退出码：0=全 PASS，1=有 FAIL，2=FATAL（类未从本包源码加载）。
  */
 
-use Illuminate\Container\Container;
-use Illuminate\Database\Connection;
-use Illuminate\Database\ConnectionResolverInterface;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Query\Builder;
-use Illuminate\Database\Query\Grammars\MySqlGrammar;
-use Illuminate\Events\Dispatcher;
-use Illuminate\Support\Facades\Facade;
-use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
-
 // ---------- 引导：wsf autoload + 本包源码 ----------
-// 注意：wsf/vendor/zxf/modules 是本包旧副本，且其 helper.php 会在 autoload 阶段被
-// require（trace bootstrap 等），导致旧版类抢先加载、setPsr4 无法覆盖。
-// 因此这里直接注册从本包加载的 StringFunctionsMacro（该类在 setPsr4 之后首次加载）。
+// 关键：wsf/vendor/zxf/modules 是本包的旧副本，且其 helper.php / trace bootstrap
+// 会在 vendor/autoload.php 阶段被 require，旧版类可能抢先加载；
+// 宿主 autoload 若开启了「优化后的 classmap」，setPsr4 也无法覆盖它。
+// 因此在 require autoload 的**前后**各注册一次 prepend 自动加载器，
+// 保证本测试始终针对 /Users/aha/www/modules/src 下的当前源码（而非宿主里的旧副本）。
+$registerPackageAutoloader = static function (): void {
+    spl_autoload_register(static function (string $class): void {
+        $prefix = 'zxf\\Modules\\';
+        if (! str_starts_with($class, $prefix)) {
+            return;
+        }
+        $relative = str_replace('\\', '/', substr($class, strlen($prefix)));
+        $file = '/Users/aha/www/modules/src/'.$relative.'.php';
+        if (is_file($file)) {
+            require $file;
+        }
+    }, true, true);
+};
+
+$registerPackageAutoloader();
+
 $loader = require '/Users/aha/www/wsf/vendor/autoload.php';
 $loader->setPsr4('zxf\\Modules\\', '/Users/aha/www/modules/src/');
+
+// composer 以 prepend 注册，会挤掉上面的加载器，故再注册一次
+$registerPackageAutoloader();
 
 $container = new Container;
 Facade::setFacadeApplication($container);
@@ -68,7 +92,9 @@ if (! str_starts_with($sfFile, '/Users/aha/www/modules/')) {
     echo "FATAL StringFunctionsMacro 来自非本包源码: {$sfFile}\n";
     exit(2);
 }
+// 全文宏也一并注册：本组用例同时验证「宏定义」与「框架原生方法遮蔽」两种情况
 StringFunctionsMacro::register();
+FullTextMacro::register();
 
 class StringMacroVerifyModel extends Model
 {
@@ -188,17 +214,36 @@ check('groupConcat distinct+自定义分隔符', StringMacroVerifyModel::query()
     'select GROUP_CONCAT(DISTINCT `product_name` SEPARATOR ?) AS `names` from `articles`');
 
 // ---------- 5. 全文检索 ----------
+// 【跨版本兼容说明】Laravel 13.32 起 Query\Builder 提供了原生 whereFullText()，
+// 由于 Macroable 只在方法不存在时才走 __call，在这些版本上本包的同名宏不会生效
+// （实际执行的是框架原生实现，SQL 为小写且无 `> 0`）。因此此处的期望值按
+// 「宿主是否提供原生方法」分支断言，保证同一份测试在新旧 Laravel 上都能跑通。
+$hasNativeWhereFullText = method_exists(QueryBuilder::class, 'whereFullText')
+    && (new ReflectionMethod(QueryBuilder::class, 'whereFullText'))->getDeclaringClass()->getName() === QueryBuilder::class;
+
 check('whereFullText SQL', StringMacroVerifyModel::query()->whereFullText(['title', 'body'], 'Laravel')->toSql(),
-    'select * from `articles` where MATCH(`title`, `body`) AGAINST (? IN NATURAL LANGUAGE MODE) > 0');
+    $hasNativeWhereFullText
+        ? 'select * from `articles` where match (`title`, `body`) against (? in natural language mode)'
+        : 'select * from `articles` where MATCH(`title`, `body`) AGAINST (? IN NATURAL LANGUAGE MODE) > 0');
 check('whereFullText bindings', StringMacroVerifyModel::query()->whereFullText(['title', 'body'], 'Laravel')->getBindings(), ['Laravel']);
-check('whereFullText expansion', StringMacroVerifyModel::query()->whereFullText('body', '优化', 'expansion')->toSql(),
-    'select * from `articles` where MATCH(`body`) AGAINST (? WITH QUERY EXPANSION) > 0');
+check('whereFullText 数组模式参数（跨版本通用写法）',
+    StringMacroVerifyModel::query()->whereFullText('body', '优化', ['mode' => 'boolean', 'expanded' => true]) instanceof Illuminate\Database\Eloquent\Builder,
+    true);
 check('whereFullTextBoolean SQL', StringMacroVerifyModel::query()->whereFullTextBoolean('title', '+Laravel -Vue')->toSql(),
     'select * from `articles` where MATCH(`title`) AGAINST (? IN BOOLEAN MODE) > 0');
 check('orderByFullTextRelevance SQL', StringMacroVerifyModel::query()->orderByFullTextRelevance(['title', 'body'], 'Laravel')->toSql(),
     'select * from `articles` order by MATCH(`title`, `body`) AGAINST (? IN NATURAL LANGUAGE MODE) DESC');
 check('orderByFullTextRelevance asc', StringMacroVerifyModel::query()->orderByFullTextRelevance('title', 'Laravel', 'natural', 'asc')->toSql(),
     'select * from `articles` order by MATCH(`title`) AGAINST (? IN NATURAL LANGUAGE MODE) ASC');
+// 冲突登记：框架原生方法会遮蔽同名宏，必须被 BaseMacro::conflicts() 记录下来，
+// 否则这类「注册成功却永不生效」的静默坑会被彻底遗漏。
+$conflicts = BaseMacro::conflicts();
+$frameworkVersion = defined(Application::class.'::VERSION')
+    ? (string) constant(Application::class.'::VERSION')
+    : 'unknown';
+check('BaseMacro::conflicts 记录 whereFullText 原生冲突（宿主 '.$frameworkVersion.'）',
+    isset($conflicts[QueryBuilder::class.'::whereFullText']),
+    $hasNativeWhereFullText);
 
 // ---------- 6. SOUNDEX ----------
 check('whereSoundex SQL', StringMacroVerifyModel::query()->whereSoundex('last_name', 'Smith')->toSql(),
@@ -233,11 +278,27 @@ checkThrows('padString 非法位置', fn () => StringMacroVerifyModel::query()->
 checkThrows('非法别名', fn () => StringMacroVerifyModel::query()->substringIndex('email', '@', 1, 'a b'), '非法的 SQL alias标识符');
 checkThrows('非法多列拼接字段', fn () => StringMacroVerifyModel::query()->whereConcatLike(['name; DROP'], 'x'), '非法的 SQL column标识符');
 
-// ---------- 9. assertMysql 驱动守卫 ----------
+// ---------- 9. 驱动守卫（assertSupportedOn） ----------
+// 说明：本包定位为「MySQL / PostgreSQL 双库通用」，因此驱动守卫采用 assertSupportedOn
+// （拒绝 SQLite 等不支持的驱动、放行 MySQL 与 PostgreSQL），而非一刀切的 assertMysql。
+// 若这里改回 assertMysql，PostgreSQL 分支将永远无法执行，等于废掉双库支持。
 $sqliteConnection = new Connection(new PDO('sqlite::memory:'), 'sqlite', '', ['driver' => 'sqlite']);
 $sqliteQuery = new Builder($sqliteConnection);
-checkThrows('SQLite 上调用 whereLocate 被拒绝', fn () => StringFunctionsMacro::whereLocate($sqliteQuery, 'title', 'x'), '仅支持 MySQL 8.0+');
-checkThrows('SQLite 上调用 whereFullText 被拒绝', fn () => StringFunctionsMacro::whereFullText($sqliteQuery, 'title', 'x'), '仅支持 MySQL 8.0+');
+checkThrows('SQLite 上调用 whereLocate 被拒绝', fn () => StringFunctionsMacro::whereLocate($sqliteQuery, 'title', 'x'), '仅支持驱动');
+// 全文片段生成器（无论宿主是否已提供原生 whereFullText，宏与原生实现都走它）
+checkThrows('SQLite 上生成全文片段被拒绝',
+    fn () => BaseMacro::fullTextMatchFragment($sqliteQuery, ['`title`'], 'x', 'natural'),
+    '仅支持驱动');
+check('PostgreSQL 被允许（双库通用，不是一刀切拒绝）',
+    str_contains(
+        BaseMacro::locateFragment(
+            new Builder(new Connection(new PDO('sqlite::memory:'), 'pgsql', '', ['driver' => 'pgsql'])),
+            '`title`',
+            'x'
+        )[0],
+        'position('
+    ),
+    true);
 
 // ---------- 汇总 ----------
 echo "\n========================================\n";

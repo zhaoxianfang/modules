@@ -67,7 +67,7 @@ class ObserverMakeCommand extends AbstractMakeCommand
             $modelPath = $this->targetPath('Models/'.$modelName.'.php');
             if (! File::exists($modelPath)) {
                 $this->warn("提示：对应的模型 [{$modelName}] 尚未创建");
-                $this->line("      可使用 php artisan module:make-model {$module->getName()} {$modelName} 创建");
+                $this->line("      可使用 php artisan module:make-model {$this->esc($module->getName())} {$modelName} 创建");
             }
         }
 

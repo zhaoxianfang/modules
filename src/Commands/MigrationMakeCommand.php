@@ -42,9 +42,28 @@ class MigrationMakeCommand extends AbstractMakeCommand
      */
     public function handle(): int
     {
-        $migrationName = $this->argument('name');
+        $migrationName = (string) $this->argument('name');
         $createTable = $this->option('create');
         $updateTable = $this->option('update');
+
+        // 迁移名称会被拼进文件名，按 Laravel 对迁移名的约定收紧：
+        // 只允许字母、数字、下划线、中划线，防止 "../../../../evil" 造成路径穿越。
+        if (! $this->isValidMigrationName($migrationName)) {
+            $this->error("迁移名称 [{$this->esc($migrationName)}] 格式不合法");
+            $this->line('提示：只能包含字母、数字、下划线与中划线（例如 create_posts_table）');
+
+            return Command::FAILURE;
+        }
+
+        // --create / --update 指定的表名同样需要校验（会进入文件名与建表语句）
+        foreach (['--create' => $createTable, '--update' => $updateTable] as $optName => $table) {
+            if ($table !== null && $table !== '' && ! $this->isValidMigrationName((string) $table)) {
+                $this->error("{$optName} 指定的表名 [{$this->esc($table)}] 格式不合法");
+                $this->line('提示：只能包含字母、数字与下划线');
+
+                return Command::FAILURE;
+            }
+        }
 
         $module = $this->resolveModule();
         if (! $module) {
@@ -58,6 +77,10 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
         // 确保迁移目录存在
         $migrationDir = $this->getMigrationPath($module);
+        if ($migrationDir === null) {
+            return Command::FAILURE;
+        }
+
         if (! is_dir($migrationDir)) {
             File::makeDirectory($migrationDir, 0755, true);
         }
@@ -68,7 +91,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
         // 检查迁移文件是否已存在
         if (File::exists($migrationPath)) {
-            $this->error("模块 [{$moduleName}] 中已存在迁移文件 [{$filename}]");
+            $this->error("模块 [{$this->esc($moduleName)}] 中已存在迁移文件 [{$filename}]");
             $this->line('提示：请使用不同的迁移名称，或手动删除现有的迁移文件');
 
             return Command::FAILURE;
@@ -81,7 +104,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
         $result = File::put($migrationPath, $migrationStub);
 
         if ($result) {
-            $this->info("成功在模块 [{$moduleName}] 中创建迁移文件 [{$filename}]");
+            $this->info("成功在模块 [{$this->esc($moduleName)}] 中创建迁移文件 [{$filename}]");
 
             // 显示迁移类型信息
             $this->line('');
@@ -303,8 +326,6 @@ class MigrationMakeCommand extends AbstractMakeCommand
      */
     protected function getStubPath(string $stubType): string
     {
-        $stubsPath = __DIR__.'/stubs/migration';
-
         $stubFiles = [
             'create' => 'create.stub',
             'update' => 'update.stub',
@@ -313,30 +334,92 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
         $stubFile = $stubFiles[$stubType] ?? 'migration.stub';
 
-        return $stubsPath.DIRECTORY_SEPARATOR.$stubFile;
+        // 走 StubGenerator::getStubPath() 以复用「自定义 stub 目录 → 包内目录」回退链，
+        // 使 config/modules.php 里的 stubs.path / stubs.override 对迁移模板同样生效，
+        // 与其它生成器命令保持一致。
+        return $this->makeStubGenerator()->getStubPath('migration/'.$stubFile);
     }
 
     /**
-     * 获取迁移文件的存储路径
-     * 根据命令选项确定迁移文件应该保存的路径
+     * 获取迁移文件的存储目录
+     *
+     * 三个选项的语义与 Laravel 原生 make:migration 对齐：
+     * - --fullpath：不在模块 Database/Migrations 下生成，改用 --path（相对模块根）
+     * - --realpath：--path 已是绝对路径，直接使用
+     * - --path（默认）：相对**模块根目录**的子目录
+     *
+     * 返回 ?string，选项组合非法时返回 null 由调用方给出明确报错：
+     * 1) `--realpath` 未给 `--path`（$path 为 null）属于非法组合；
+     * 2) `--fullpath --path=xxx` 的 $path 始终相对**模块根目录**，
+     *    不能原样返回（否则写入位置变成「相对于当前工作目录」，
+     *    文件会落到 Modules/ 之外，模块根本加载不到）。
      *
      * @param  mixed  $module  模块实例
-     * @return string 迁移文件保存的路径
+     * @return string|null 目录绝对路径；选项组合非法时返回 null
      */
-    protected function getMigrationPath($module): string
+    protected function getMigrationPath($module): ?string
     {
         $path = $this->option('path');
         $realPath = $this->option('realpath');
         $fullPath = $this->option('fullpath');
 
-        if ($fullPath) {
-            return $path ?: $module->getPath('Database/Migrations');
+        // --realpath 声明「--path 是绝对路径」，却没有给 --path：
+        // 属于自相矛盾的用法，直接报错而不是让 null 撞上返回类型。
+        if ($realPath && ($path === null || $path === '')) {
+            $this->error('--realpath 需要与 --path 一起使用（--path 必须是绝对路径）');
+
+            return null;
         }
 
+        $path = $path === null ? '' : (string) $path;
+
         if ($realPath) {
+            // 绝对路径：仅做路径穿越防护
+            if ($this->containsParentSegment($path)) {
+                $this->error("--path [{$this->esc($path)}] 非法：不允许包含 ..");
+
+                return null;
+            }
+
             return $path;
         }
 
-        return $module->getPath('Database/Migrations');
+        $default = $module->getPath('Database/Migrations');
+
+        // --path 始终相对模块根目录；--fullpath 只表示「不在默认 Migrations 目录下」
+        if ($path !== '') {
+            if ($this->containsParentSegment($path)) {
+                $this->error("--path [{$this->esc($path)}] 非法：不允许包含 ..");
+
+                return null;
+            }
+
+            return $module->getPath(ltrim($path, '/'));
+        }
+
+        // --fullpath 单独使用（未指定 --path）时，仍回退到模块默认迁移目录，
+        // 避免落到项目根目录导致模块无法加载自己的迁移。
+        return $default;
+    }
+
+    /**
+     * 判断路径中是否存在 ".." 路径段
+     */
+    protected function containsParentSegment(string $path): bool
+    {
+        if (str_contains($path, "\0")) {
+            return true;
+        }
+
+        return in_array('..', explode('/', str_replace('\\', '/', $path)), true);
+    }
+
+    /**
+     * 校验迁移 / 表名是否合法
+     * 仅允许字母、数字、下划线与中划线。
+     */
+    protected function isValidMigrationName(string $name): bool
+    {
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9_\-]*$/', $name) === 1;
     }
 }

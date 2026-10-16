@@ -83,6 +83,10 @@ run_php_test() {
 
 run_php_test "字符串函数宏" "verify_string_macros.php"
 run_php_test "递归 CTE / JSON 宏" "verify_recursive_macros.php"
+run_php_test "whereHas 关联查询宏" "verify_wherehas_macros.php"
+run_php_test "生成器命令与 Stub" "verify_make_commands.php"
+run_php_test "启动链路与核心加载" "verify_boot_chain.php"
+run_php_test "真实宿主集成验证" "verify_integration.php"
 run_php_test "模块缓存存储" "verify_cache_store.php"
 run_php_test "数据库日志模块" "verify_logging.php"
 

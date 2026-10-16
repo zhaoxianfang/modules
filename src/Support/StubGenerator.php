@@ -79,7 +79,22 @@ class StubGenerator
     protected bool $strictMode = true;
 
     /**
+     * 包内置 stub 目录（始终作为自定义 stub 缺失时的兜底）
+     */
+    protected string $defaultStubPath;
+
+    /**
+     * 是否优先使用项目自定义 stub（对应 config('modules.stubs.override')）
+     */
+    protected bool $allowOverride;
+
+    /**
      * 创建新实例
+     *
+     * 按 config/modules.php 的两个配置项语义决定行为：
+     *  - stubs.override：是否优先使用项目自定义 stub（false 可临时切回包内模板）；
+     *  - stubs.strict：严格模式，找不到 stub 直接报错。
+     * 并保留「自定义目录不存在时回退包内目录」的兜底。
      *
      * @param  string  $moduleName  模块名称或 ModuleInterface 实例
      * @param  string|null  $modulePath  模块路径（可选，默认从配置读取）
@@ -91,28 +106,73 @@ class StubGenerator
         ?string $namespace = null
     ) {
         $this->moduleName = Str::studly($moduleName);
-        $this->modulePath = $modulePath ?? config('modules.path', base_path('Modules')).'/'.$this->moduleName;
-        $this->namespace = $namespace ?? config('modules.namespace', 'Modules');
+        $this->modulePath = $modulePath ?? $this->config('modules.path', $this->defaultBasePath()).'/'.$this->moduleName;
+        $this->namespace = $namespace ?? $this->config('modules.namespace', 'Modules');
 
-        // 支持自定义 stub 路径
-        $customStubPath = config('modules.stubs.path', resource_path('stubs/modules'));
-        $defaultStubPath = __DIR__.'/../Commands/stubs';
+        $this->defaultStubPath = __DIR__.'/../Commands/stubs';
 
-        $this->stubPath = is_dir($customStubPath) ? $customStubPath : $defaultStubPath;
+        $customStubPath = (string) $this->config('modules.stubs.path', $this->defaultStubPath);
+        $this->allowOverride = (bool) $this->config('modules.stubs.override', true);
+
+        $this->stubPath = ($this->allowOverride && is_dir($customStubPath)) ? $customStubPath : $this->defaultStubPath;
+
+        // 严格模式：stub 中出现未定义变量时告警（默认开启，可用 stubs.strict 关闭）
+        $this->strictMode = (bool) $this->config('modules.stubs.strict', true);
 
         // 初始化默认替换变量
         $this->setReplacements();
     }
 
     /**
+     * 读取配置（本包强调「最小框架依赖」：未启动 Laravel 容器时安全回退默认值）
+     */
+    protected function config(string $key, mixed $default = null): mixed
+    {
+        try {
+            if (function_exists('config') && function_exists('app') && app()->bound('config')) {
+                return config($key, $default);
+            }
+        } catch (\Throwable) {
+            // 容器未就绪：按默认值处理
+        }
+
+        return $default;
+    }
+
+    /**
+     * base_path() 的安全封装（未启动容器时回退到当前工作目录）
+     */
+    protected function defaultBasePath(): string
+    {
+        try {
+            return function_exists('base_path') ? base_path('Modules') : (getcwd() ?: '.').'/Modules';
+        } catch (\Throwable) {
+            return (getcwd() ?: '.').'/Modules';
+        }
+    }
+
+    /**
      * 获取 Stub 路径
      *
+     * 逐级回退：自定义 stub 目录 → 包内置 stub 目录。
+     * 项目只发布部分 stub 时，其余类型仍回退到包内模板，
+     * 不会静默返回「生成失败」。
+     *
      * @param  string  $stub  stub文件名
-     * @return string 完整的 stub 文件路径
+     * @return string 完整的 stub 文件路径（不保证存在，由调用方判断）
      */
     public function getStubPath(string $stub): string
     {
-        return $this->stubPath.'/'.$stub;
+        $stub = ltrim(str_replace('\\', '/', $stub), '/');
+
+        if ($this->stubPath !== $this->defaultStubPath) {
+            $custom = $this->stubPath.'/'.$stub;
+            if (is_file($custom)) {
+                return $custom;
+            }
+        }
+
+        return $this->defaultStubPath.'/'.$stub;
     }
 
     /**
@@ -308,16 +368,18 @@ class StubGenerator
 
             // 写入文件内容
             return File::put($fullPath, $content) !== false;
+        } catch (\InvalidArgumentException $e) {
+            // 非法路径（如含 '..'）属于调用方错误，必须让异常冒泡以给出明确原因，
+            // 而不是被降级成一句含糊的「生成失败」
+            throw $e;
         } catch (\Throwable $e) {
-            // 记录错误但不抛出异常
-            if (app()->environment('local', 'testing')) {
-                logger()->error("生成文件失败: {$destination}", [
-                    'stub' => $stub,
-                    'error' => $e->getMessage(),
-                    'file' => $e->getFile(),
-                    'line' => $e->getLine(),
-                ]);
-            }
+            // 记录错误但不抛出异常（生成失败绝不应让整个命令流程崩溃）
+            $this->report("生成文件失败: {$destination}", [
+                'stub' => $stub,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
 
             return false;
         }
@@ -361,12 +423,24 @@ class StubGenerator
      */
     public function getFullPath(string $path): string
     {
-        // 如果已经是绝对路径，直接返回
-        if (str_starts_with($path, '/') || str_starts_with($path, 'C:') || str_starts_with($path, 'D:')) {
-            return $path;
+        // 归一化分隔符并压缩重复斜杠
+        $normalized = preg_replace('#/+#', '/', str_replace('\\', '/', $path)) ?? $path;
+
+        // 防御路径穿越：目标路径中若含 '..'，可能被用于写到模块目录之外
+        // （例如把实体名构造成 '../../config/app'）。这里直接拒绝并给出明确原因。
+        if (in_array('..', explode('/', $normalized), true)) {
+            throw new \InvalidArgumentException(sprintf(
+                '非法的目标路径 [%s]：不允许包含 ".."（防止写到模块目录之外）。',
+                $path
+            ));
         }
 
-        return $this->modulePath.'/'.$path;
+        // 已经是绝对路径则直接返回（保持与历史行为兼容：generateFiles() 内部依赖此能力）
+        if (str_starts_with($normalized, '/') || preg_match('#^[A-Za-z]:/#', $normalized) === 1) {
+            return $normalized;
+        }
+
+        return rtrim($this->modulePath, '/').'/'.$normalized;
     }
 
     /**
@@ -447,32 +521,42 @@ class StubGenerator
 
         // 检查是否有定义但未使用的变量
         // foreach ($this->replacements as $variable => $value) {
-        //     if (! isset($this->replacementStats[$variable])) {
-        //         $errors[] = "变量 {$variable} 已定义但stub中未使用";
         //     }
         // }
 
-        // 如果有错误，记录日志（或者可以抛出异常）
+        // 如果有错误，记录日志
         if (! empty($errors)) {
             $stubName = basename($stubPath);
             $message = "Stub [{$stubName}] 变量替换验证失败:\n".implode("\n", $errors);
 
-            // 始终记录错误日志
-            logger()->error($message, [
+            $this->report($message, [
                 'stub' => $stubName,
                 'module' => $this->moduleName,
                 'errors' => $errors,
                 'stats' => $this->replacementStats,
                 'replacements' => array_keys($this->replacements),
             ]);
+        }
+    }
 
-            // 开发环境/测试环境下通过错误日志记录（避免污染终端输出）
-            if (app()->environment('local', 'testing')) {
-                logger()->warning($message, [
-                    'stub' => $stubName,
-                    'module' => $this->moduleName,
-                ]);
+    /**
+     * 记录一条错误日志（容器不可用时静默跳过）。
+     *
+     * 本包支持脱离完整 Laravel 应用使用（最小框架依赖），
+     * 因此此处不能直接调用 logger()/app()：在未启动容器的场景下会抛二次异常，
+     * 把「生成失败」这个原本可忽略的问题升级为致命错误。
+     *
+     * @param  array<string, mixed>  $context
+     */
+    protected function report(string $message, array $context = []): void
+    {
+        try {
+            if (! function_exists('logger') || ! function_exists('app') || ! app()->bound('log')) {
+                return;
             }
+            logger()->error($message, $context);
+        } catch (\Throwable) {
+            // 日志系统不可用时静默忽略，绝不影响主流程
         }
     }
 
@@ -509,6 +593,8 @@ class StubGenerator
             return false;
         }
 
+        self::assertNoTraversal($destination);
+
         $content = File::get($stubPath);
 
         if ($replacements) {
@@ -538,9 +624,30 @@ class StubGenerator
     {
         foreach ($directories as $directory) {
             $path = $this->modulePath.'/'.$directory;
+            self::assertNoTraversal($path);
 
             if (! is_dir($path)) {
                 File::makeDirectory($path, 0755, true);
+            }
+        }
+    }
+
+    /**
+     * 拒绝含 `..` 路径段的目标
+     *
+     * 供所有「写文件 / 建目录」入口共用，避免每个入口各写一遍判断而漏掉。
+     *
+     * @throws \InvalidArgumentException
+     */
+    public static function assertNoTraversal(string $path): void
+    {
+        if (str_contains($path, "\0")) {
+            throw new \InvalidArgumentException("非法路径 [{$path}]：包含空字节。");
+        }
+
+        foreach (explode('/', str_replace('\\', '/', $path)) as $segment) {
+            if ($segment === '..') {
+                throw new \InvalidArgumentException("非法路径 [{$path}]：不允许包含 \"..\"。");
             }
         }
     }

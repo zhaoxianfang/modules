@@ -2,6 +2,24 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\View\View;
+use Illuminate\Http\Request;
+use Monolog\Level;
+use Monolog\LogRecord;
+use zxf\Modules\Logging\Config\LoggingConfig;
+use zxf\Modules\Logging\Contracts\LogWriter;
+use zxf\Modules\Logging\Contracts\RedactorContract;
+use zxf\Modules\Logging\Events\LogRecorded;
+use zxf\Modules\Logging\Handler\DatabaseLogHandler;
+use zxf\Modules\Logging\LogContext;
+use zxf\Modules\Logging\Middleware\LogContextMiddleware;
+use zxf\Modules\Logging\Processor\RequestContextProcessor;
+use zxf\Modules\Logging\Support\BotDetector;
+use zxf\Modules\Logging\Support\BotSignature;
+use zxf\Modules\Logging\Support\Redactor;
+use zxf\Modules\Logging\Writer\LogRecordFactory;
+use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
+
 /**
  * 数据库日志模块（zxf\Modules\Logging）运行时验证脚本。
  * 覆盖核心重构点：
@@ -34,17 +52,6 @@ spl_autoload_register(function (string $class): bool {
 
     return false;
 }, true, true);
-
-use Monolog\Level;
-use Monolog\LogRecord;
-use zxf\Modules\Logging\Config\LoggingConfig;
-use zxf\Modules\Logging\Contracts\LogWriter;
-use zxf\Modules\Logging\Contracts\RedactorContract;
-use zxf\Modules\Logging\Events\LogRecorded;
-use zxf\Modules\Logging\Handler\DatabaseLogHandler;
-use zxf\Modules\Logging\Middleware\LogContextMiddleware;
-use zxf\Modules\Logging\Support\Redactor;
-use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
 
 $pass = 0;
 $fail = 0;
@@ -151,7 +158,11 @@ check($attrs['response_content'] === '{"ok":1}', 'buildAttributes response_conte
 check($attrs['channel'] === 'test', 'buildAttributes channel');
 check($attrs['context']['token'] === Redactor::MASK, 'buildAttributes context 敏感键脱敏');
 check($attrs['extra']['password'] === Redactor::MASK, 'buildAttributes extra 敏感键脱敏');
-check($attrs['extra']['response_body'] === '{"token":"***"}', 'buildAttributes 响应体自由文本脱敏');
+// 预脱敏键（request_* / response_* 等）已有独立列，不再重复塞进 extra 列：
+// 既省一次递归脱敏，也让 logs 表体积减半。
+check(! array_key_exists('response_body', $attrs['extra']), 'extra 列不再重复存放 response_body');
+check(! array_key_exists('request_url', $attrs['extra']), 'extra 列不再重复存放 request_url');
+check($attrs['response_body'] === '{"token":"***"}', 'buildAttributes 响应体自由文本脱敏（独立列）');
 check($attrs['request_method'] === 'POST', 'buildAttributes 请求方法透传');
 check($attrs['exception_class'] === 'RuntimeException', 'buildAttributes 异常类名');
 check($attrs['exception_message'] === 'boom', 'buildAttributes 异常消息');
@@ -187,10 +198,6 @@ foreach ([Level::Info, Level::Warning, Level::Critical] as $lv) {
 }
 
 // ===================== 爬虫检测 =====================
-use Illuminate\Contracts\View\View;
-use Illuminate\Http\Request;
-use zxf\Modules\Logging\LogContext;
-
 $reqWithUa = static function (string $ua): Request {
     return Request::create('/', 'GET', [], [], [], $ua === '' ? [] : ['HTTP_USER_AGENT' => $ua]);
 };
@@ -337,6 +344,348 @@ check(new QueuedDatabaseLogWriter instanceof LogWriter, 'QueuedDatabaseLogWriter
 
 $evt = new LogRecorded(['message' => 'x']);
 check($evt->attributes === ['message' => 'x'] && $evt->model === null, 'LogRecorded 事件构建');
+
+// ===================== 新增：Redactor 高级脱敏形态 =====================
+check($r->maskText('user_password=abc123&remember=1') === 'user_password=***&remember=1', 'Redactor 无引号 key=value 且保留前缀');
+check($r->maskText('X-Api-Key: AKIAIOSFODNN7EXAMPLE') === 'X-Api-Key: ***', 'Redactor 连字符变体键名(X-Api-Key)');
+check($r->maskText('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig1234') === 'Authorization: Bearer ***', 'Redactor JWT 打码');
+check($r->maskText('normal log line, nothing secret here') === 'normal log line, nothing secret here', 'Redactor 普通文本不误伤');
+$mh2 = $r->maskHeaders(['X-Api-Key' => 'k', 'User-Agent' => 'curl/8.0', 'X-Custom' => 'v']);
+check($mh2['X-Api-Key'] === [Redactor::MASK], 'Redactor.maskHeaders X-Api-Key 脱敏');
+check($mh2['X-Custom'] === 'v', 'Redactor.maskHeaders 普通头不变');
+$deep = ['a' => 1];
+for ($i = 0; $i < 40; $i++) {
+    $deep = ['n' => $deep];
+}
+$deepOut = $r->sanitizeContext(['root' => $deep]);
+check(is_array($deepOut), 'Redactor 超深嵌套不崩溃（深度受限）');
+
+// ===================== 新增：BotDetector 爬虫 / 脚本 / 伪装检测 =====================
+$chromeUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+$chromeHeaders = [
+    'accept' => 'text/html,application/xhtml+xml,*/*;q=0.8',
+    'accept-language' => 'zh-CN,zh;q=0.9',
+    'accept-encoding' => 'gzip, deflate, br',
+    'sec-ch-ua' => '"Chromium";v="120", "Google Chrome";v="120"',
+    'sec-fetch-site' => 'none',
+];
+
+$sigHuman = BotDetector::detect($chromeUa, $chromeHeaders, '/');
+check($sigHuman->isCrawler === false && $sigHuman->type === BotSignature::TYPE_HUMAN, 'BotDetector 真实 Chrome 判定为 human');
+check(BotDetector::detect('', [], '/')->type === BotSignature::TYPE_NO_UA, 'BotDetector 空 UA 归类 no_ua');
+
+$search = BotDetector::detect('Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)', [], '/');
+check($search->isCrawler && $search->type === BotSignature::TYPE_SEARCH_ENGINE, 'BotDetector Googlebot → search_engine');
+
+$ai = BotDetector::detect('Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko); compatible; GPTBot/1.2', [], '/');
+check($ai->isCrawler && $ai->type === BotSignature::TYPE_AI_CRAWLER, 'BotDetector GPTBot → ai_crawler');
+
+$scan = BotDetector::detect('sqlmap/1.7.2#stable (https://sqlmap.org)', [], '/index.php?id=1');
+check($scan->isCrawler && $scan->type === BotSignature::TYPE_SECURITY_SCANNER, 'BotDetector sqlmap → security_scanner');
+
+// 各语言 HTTP 客户端
+foreach ([
+    'python-requests/2.31.0' => 'python-requests',
+    'axios/1.6.7' => 'axios',
+    'Go-http-client/2.0' => 'go-http-client',
+    'okhttp/4.9.3' => 'okhttp',
+    'GuzzleHttp/7.8' => 'guzzlehttp',
+    'Scrapy/2.11.0' => 'scrapy',
+    'python-urllib3/1.26' => 'python-urllib',
+] as $ua => $expectedClient) {
+    $s = BotDetector::detect($ua, [], '/api');
+    check($s->isCrawler && $s->type === BotSignature::TYPE_HTTP_LIBRARY, "BotDetector 识别 HTTP 客户端 [{$ua}]");
+    check($s->client === $expectedClient, "BotDetector 客户端标识 [{$ua}] → {$expectedClient}（实际 ".((string) $s->client).'）');
+}
+
+// 命令行 / 通用脚本客户端（归入 library_other）
+$wget = BotDetector::detect('Wget/1.21.3', [], '/api');
+check($wget->isCrawler && $wget->type === BotSignature::TYPE_LIBRARY_OTHER && $wget->client === 'wget', 'BotDetector Wget → library_other');
+
+$headless = BotDetector::detect('Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0.0.0 Safari/537.36', [], '/');
+check($headless->isCrawler && $headless->type === BotSignature::TYPE_HEADLESS, 'BotDetector HeadlessChrome → headless');
+
+// 高级「脱壳 / 伪装」识别
+$obfuscations = [
+    "G\u{200B}o-http-client/1.1" => '零宽字符拆分',
+    '%47%6f%2dhttp%2dclient%2f1.1' => 'URL 编码',
+    '%2547%256f%252dhttp%252dclient' => '双重 URL 编码',
+    '&#71;o-http-client/1.1' => 'HTML 实体编码',
+    "pyth\u{043E}n-rerequests/1.0" => '西里尔同形字',
+    "\u{FF50}\u{FF59}\u{FF54}\u{FF48}\u{FF4F}\u{FF4E}-requests/1.0" => '全角字符',
+];
+foreach ($obfuscations as $ua => $label) {
+    $s = BotDetector::detect($ua, [], '/api');
+    check($s->isCrawler && $s->type === BotSignature::TYPE_HTTP_LIBRARY, "BotDetector 脱壳识别：{$label}");
+}
+
+// CRLF 注入型伪装
+$crlf = BotDetector::detect("Mozilla/5.0\r\nX-Injected: 1", [], '/');
+check($crlf->isCrawler && $crlf->type === BotSignature::TYPE_SPOOFED_BROWSER, 'BotDetector CRLF 注入伪装 → spoofed_browser');
+
+// 请求头指纹矛盾（自称 Chrome 却送 Firefox Client Hints）
+$spoof = BotDetector::detect($chromeUa, ['accept' => 'text/html', 'accept-language' => 'zh-CN', 'accept-encoding' => 'gzip', 'sec-ch-ua' => '"Firefox";v="130"'], '/');
+check($spoof->isCrawler && $spoof->type === BotSignature::TYPE_SPOOFED_BROWSER, 'BotDetector Client Hints 与 UA 矛盾 → spoofed_browser');
+
+// 攻击探测（敏感文件路径 / 注入载荷）
+check(BotDetector::detect($chromeUa, $chromeHeaders, '/.env')->type === BotSignature::TYPE_ATTACK_PROBE, 'BotDetector 敏感文件探测 /.env → attack_probe');
+check(BotDetector::detect("' OR '1'='1", [], '/')->type === BotSignature::TYPE_ATTACK_PROBE, 'BotDetector SQL 注入载荷 → attack_probe');
+check(BotDetector::detect('python-requests/2.31', [], '/wp-login.php')->type === BotSignature::TYPE_ATTACK_PROBE, 'BotDetector 后台登录探测 → attack_probe');
+
+// 移动端 / 微信内置浏览器不应被误判
+$safariMobile = BotDetector::detect(
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+    ['accept' => 'text/html', 'accept-language' => 'zh-CN', 'accept-encoding' => 'gzip, deflate'],
+    '/'
+);
+check($safariMobile->isCrawler === false, 'BotDetector Safari 移动端不误判');
+$wechat = BotDetector::detect(
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.40 NetType/WIFI Language/zh_CN',
+    ['accept' => '*/*', 'accept-language' => 'zh-CN', 'accept-encoding' => 'gzip, deflate'],
+    '/'
+);
+check($wechat->isCrawler === false, 'BotDetector 微信内置浏览器不误判');
+
+// ===================== 请求日志幂等与跳过标记 =====================
+LogContext::reset();
+check(LogContext::claimRequestLog() === true, 'LogContext.claimRequestLog 首次抢占成功');
+check(LogContext::claimRequestLog() === false, 'LogContext.claimRequestLog 二次抢占失败（保证每请求仅一条请求日志）');
+check(LogContext::requestLogWritten() === true, 'LogContext.requestLogWritten 已标记');
+
+LogContext::setSkipped(true);
+check(LogContext::isSkipped() === true, 'LogContext.setSkipped 命中 skip_paths 生效');
+LogContext::setSkipped(false);
+
+LogContext::reset();
+check(LogContext::requestLogWritten() === false, 'LogContext.reset 清除请求日志标记');
+check(LogContext::isSkipped() === false, 'LogContext.reset 清除跳过标记');
+check(LogContext::baseExtra() === [] && LogContext::payloadExtra() === [], 'LogContext.reset 清除预计算片段');
+
+$botSig = BotDetector::detect('python-requests/2.31', [], '/api');
+LogContext::setBot($botSig);
+check(LogContext::bot() === $botSig, 'LogContext 机器人结果可缓存复用');
+LogContext::reset();
+check(LogContext::bot() === null, 'LogContext.reset 清除机器人缓存');
+
+// 表存在性缓存：进程级且带 TTL，reset() 不应清空它
+LogContext::setLogsTableExists(true, 60);
+LogContext::reset();
+check(LogContext::logsTableExists() === true, '表存在性缓存是进程级：reset() 不清空');
+check(LogContext::logsTableExists(60) === true, '表存在性缓存未过期时直接命中');
+check(LogContext::logsTableExists(-1) === true, 'maxAge<=0 表示不做过期判断');
+LogContext::setLogsTableExists(false, 1);
+sleep(2);
+check(LogContext::logsTableExists(1) === null, '表存在性缓存过期后返回 null（触发重新探测）');
+LogContext::flushLogsTableCache();
+check(LogContext::logsTableExists() === null, 'flushLogsTableCache 强制清空');
+
+// ===================== 预计算 extra 片段 =====================
+LogContext::setRequest(
+    ['method' => 'GET', 'path' => '/x'],
+    ['request_method' => 'GET', 'request_path' => '/x', 'is_crawler' => false],
+    ['request_input' => ['a' => 1], 'request_headers' => ['host' => ['t']]]
+);
+check(LogContext::baseExtra()['request_path'] === '/x', 'baseExtra 保存轻量片段');
+check(LogContext::payloadExtra()['request_input'] === ['a' => 1], 'payloadExtra 保存大体积载荷');
+check(LogContext::getRequest()['method'] === 'GET', 'getRequest 返回原始上下文');
+LogContext::reset();
+
+// 预脱敏键清单必须覆盖请求 / 响应两侧的全部列
+foreach (['module_name', 'request_input', 'request_headers', 'request_url', 'response_body', 'response_code'] as $key) {
+    check(in_array($key, LogContext::PRE_REDACTED_KEYS, true), "PRE_REDACTED_KEYS 覆盖 {$key}");
+}
+
+// ===================== RequestContextProcessor 注入策略 =====================
+$processor = new RequestContextProcessor;
+LogContext::setRequest(
+    ['method' => 'GET', 'path' => '/orders'],
+    ['request_method' => 'GET', 'request_path' => '/orders', 'request_ip' => '10.0.0.1'],
+    ['request_input' => ['q' => 'shoes'], 'request_headers' => ['cookie' => ['x=1']]]
+);
+LogContext::setResponse(['code' => 200, 'duration_ms' => 12, 'body' => 'ok']);
+
+$bizRecord = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: '业务日志',
+    context: [],
+    extra: ['biz_key' => 'v'],
+);
+$bizOut = $processor->inject($bizRecord);
+check($bizOut->extra['request_path'] === '/orders', '业务日志注入轻量请求上下文');
+check(($bizOut->extra['biz_key'] ?? null) === 'v', '业务日志保留业务自有 extra');
+check(! array_key_exists('request_input', $bizOut->extra), '业务日志不重复携带 request_input');
+check(! array_key_exists('request_headers', $bizOut->extra), '业务日志不重复携带 request_headers');
+check(! array_key_exists('response_body', $bizOut->extra), '业务日志不重复携带 response_body');
+check(! array_key_exists('response_code', $bizOut->extra), '业务日志不重复携带响应上下文');
+
+$reqRecord = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'GET /orders → 200',
+    context: [LogContext::REQUEST_LOG_FLAG => true],
+    extra: [],
+);
+$reqOut = $processor->inject($reqRecord);
+check(($reqOut->extra['request_input'] ?? null) === ['q' => 'shoes'], '请求日志携带 request_input');
+check(($reqOut->extra['response_code'] ?? null) === 200, '请求日志携带响应上下文');
+check(($reqOut->extra['response_body'] ?? null) === 'ok', '请求日志携带响应体');
+
+// 伪造的审计字段必须被 base 覆盖
+$fakeRecord = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: ['request_ip' => '6.6.6.6'],
+);
+check($processor->inject($fakeRecord)->extra['request_ip'] === '10.0.0.1', '业务伪造的 request_ip 被真实上下文覆盖');
+
+// CLI / 队列下 __invoke 必须保持原样（避免把上一个请求的数据串进队列日志）
+check($processor($bizRecord) === $bizRecord, 'CLI 下 RequestContextProcessor 不注入任何上下文');
+LogContext::reset();
+
+// ===================== 预脱敏键跳过二次脱敏 =====================
+$handlerSrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/Handler/DatabaseLogHandler.php');
+check(str_contains($handlerSrc, 'in_array($key, LogContext::PRE_REDACTED_KEYS, true)'),
+    '落库处理器对预脱敏键不再二次 sanitize');
+check(str_contains($handlerSrc, 'foreach ($preRedacted as $key => $value)'),
+    '落库处理器把摘出的键补回属性数组');
+check(str_contains($handlerSrc, 'if (! array_key_exists($key, $attributes))'),
+    '补回时不覆盖已完成脱敏的列（避免 response_body 白脱敏）');
+check(str_contains($handlerSrc, '$record->context[LogContext::REQUEST_LOG_FLAG]'),
+    '落库处理器按 __request__ 标记分流');
+check((bool) preg_match('/REQUEST_LOG_FLAG[\s\S]{0,200}?claimRequestLog\(\)/', $handlerSrc),
+    '落库处理器对请求日志使用 claimRequestLog 幂等守卫');
+check(str_contains($handlerSrc, 'if (LogContext::isSkipped())'),
+    '落库处理器对 skip_paths 请求直接跳过');
+check(! str_contains($handlerSrc, 'LogAggregator'), '落库处理器不再引用已删除的聚合器');
+
+// ===================== 模块内不得残留聚合语义 =====================
+$loggingFiles = [];
+$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('/Users/aha/www/modules/src/Logging'));
+foreach ($it as $f) {
+    if ($f->isFile() && $f->getExtension() === 'php') {
+        $loggingFiles[] = (string) $f->getPathname();
+    }
+}
+$aggLeftovers = [];
+foreach ($loggingFiles as $lf) {
+    $body = (string) file_get_contents($lf);
+    foreach (['LogAggregator', 'aggregate_per_request', 'aggregatePerRequest',
+        'max_aggregated_records', 'maxAggregatedRecords',
+        'max_aggregated_messages', 'maxAggregatedMessages',
+        'summaryWritten', 'claimSummary', '__summary__'] as $needle) {
+        if (str_contains($body, $needle)) {
+            $aggLeftovers[] = basename($lf).': '.$needle;
+        }
+    }
+}
+check($aggLeftovers === [], '日志模块内无任何聚合语义残留：'.implode('; ', array_slice($aggLeftovers, 0, 5)));
+check(! is_file('/Users/aha/www/modules/src/Logging/Support/LogAggregator.php'),
+    'LogAggregator 类文件已删除');
+check($cfg->burstThrottle === false, '聚合相关配置已移除，burst_throttle 默认关闭');
+check(! property_exists(LoggingConfig::class, 'aggregatePerRequest'), 'LoggingConfig 不再声明聚合开关');
+check(! property_exists(LoggingConfig::class, 'maxAggregatedRecords'), 'LoggingConfig 不再声明聚合缓冲上限');
+
+// ===================== 新增：LogRecordFactory 列过滤 =====================
+$factoryRef = new ReflectionClass(LogRecordFactory::class);
+check($factoryRef->hasMethod('make'), 'LogRecordFactory 提供统一模型构造入口');
+check($factoryRef->hasMethod('columns'), 'LogRecordFactory 提供列清单探测');
+LogRecordFactory::flushCache();
+check(LogRecordFactory::columns('') === null, 'LogRecordFactory 空表名不做探测');
+
+// ===================== 落库前的统一脱敏 =====================
+
+// A1 / A2：session id 与含 query string 的完整 URL 都必须在落库前脱敏
+$recUrl = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: [
+        'request_url' => 'https://app.test/pay?token=SECRETTOKEN123&password=p@ss',
+        'request_referer' => 'https://app.test/a?api_key=SECRETKEY456',
+        'request_session_id' => 'laravel_session=SECRETSID789; XSRF-TOKEN=SECRETTOKEN123',
+    ],
+);
+$attrsUrl = $ref->invoke($handler, $recUrl);
+check(! str_contains((string) $attrsUrl['request_url'], 'SECRETTOKEN123'), 'request_url 的 query 凭证已脱敏');
+check(! str_contains((string) $attrsUrl['request_url'], 'p@ss'), 'request_url 的 password 参数已脱敏');
+check(! str_contains((string) $attrsUrl['request_referer'], 'SECRETKEY456'), 'request_referer 已脱敏');
+check(! str_contains((string) $attrsUrl['request_session_id'], 'SECRETSID789'), 'request_session_id 已脱敏');
+check(! str_contains((string) $attrsUrl['request_session_id'], 'SECRETTOKEN123'), 'request_session_id 内嵌 XSRF 已脱敏');
+check($attrsUrl['request_url'] !== null && $attrsUrl['request_url'] !== '', '脱敏后 request_url 仍保留可排查的结构');
+
+// headers 走请求头专用名单：即使生产者未经中间件，落库前也要脱敏
+$recHdr = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: ['request_headers' => ['cookie' => ['laravel_session=SECRETHDR000'], 'x-api-key' => ['RAWKEY000']]],
+);
+$attrsHdr = $ref->invoke($handler, $recHdr);
+check(
+    ! str_contains(json_encode($attrsHdr['request_headers'] ?? [], JSON_UNESCAPED_UNICODE), 'SECRETHDR000'),
+    '落库前 request_headers 的 Cookie 二次脱敏'
+);
+check(
+    ! str_contains(json_encode($attrsHdr['request_headers'] ?? [], JSON_UNESCAPED_UNICODE), 'RAWKEY000'),
+    '落库前 request_headers 的 X-Api-Key 二次脱敏'
+);
+
+// 空串归一为 null，避免写入空字符串列
+$recEmpty = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: ['request_url' => '', 'request_session_id' => ''],
+);
+$attrsEmpty = $ref->invoke($handler, $recEmpty);
+check($attrsEmpty['request_url'] === null, '空 request_url 归一为 null');
+check($attrsEmpty['request_session_id'] === null, '空 request_session_id 归一为 null');
+
+// A5：默认脱敏名单必须覆盖常见 PII 键
+$pii = new Redactor;
+$piiMasked = $pii->maskArray([
+    'phone' => '13800000000',
+    'email' => 'a@b.test',
+    'id_no' => '310101199001011234',
+    'real_name' => '张三',
+    'bank_card' => '6222021234567890',
+]);
+$piiLeaked = array_filter($piiMasked, static fn ($v, $k) => $k !== 'x' && $v !== Redactor::MASK, ARRAY_FILTER_USE_BOTH);
+check($piiLeaked === [], 'Redactor 默认名单覆盖 phone/email/id_no/real_name/bank_card');
+
+// ===================== 时长列的整数契约 =====================
+
+// B4：duration_ms 落的是整型列（unsignedInteger），浮点字符串会让 PostgreSQL 拒绝写入
+$mwSrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/Middleware/LogContextMiddleware.php');
+check(
+    str_contains($mwSrc, "'duration_ms' => (int) round(\$duration)"),
+    'duration_ms 转为 int（PostgreSQL 整型列不接受 "12.34"）'
+);
+check(! preg_match("/'duration_ms'\s*=>\s*round\(/", $mwSrc), 'duration_ms 不再直接落 round() 的浮点值');
+
+// ===================== 去重与幂等守卫的相对顺序 =====================
+
+// 请求日志走 claimRequestLog()（每请求一条），业务日志走去重集合（逐条落库）；
+// 两条路径必须互不干扰：请求日志不得被业务去重集合误伤，业务日志不得被请求日志守卫吞掉。
+$dedupePos = strpos($handlerSrc, '$key = $this->dedupeKey($record);');
+$claimPos = strpos($handlerSrc, 'LogContext::claimRequestLog()');
+check($claimPos !== false && $dedupePos !== false && $claimPos < $dedupePos, '请求日志幂等守卫先于业务去重判断');
+check(
+    (bool) preg_match('/else \{\s*\/\/[^\n]*\n\s*\$key = \$this->dedupeKey/', $handlerSrc),
+    '业务日志走去重分支（与请求日志守卫互斥）'
+);
 
 // ===================== 汇总 =====================
 echo "\n结果: {$pass} PASS / {$fail} FAIL\n";

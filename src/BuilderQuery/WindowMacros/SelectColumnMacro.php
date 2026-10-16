@@ -18,7 +18,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - selectExcept：从当前显式列中剔除指定列（需先显式 select；MySQL 不支持 SELECT * EXCEPT）
  *  - selectPrimaryKey：只取主键列（用于「仅判断存在性 / 仅取 ID 列表」等轻量场景）
  *
- * @version 3.2.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

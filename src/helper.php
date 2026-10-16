@@ -12,7 +12,7 @@ declare(strict_types=1);
  * - 防御性编程：所有函数包含异常捕获
  * - 类型安全：严格类型声明和返回类型
  *
- * @version   4.0.0
+ * @version   1.13.9
  *
  * @requires  PHP 8.3+
  */
@@ -21,8 +21,101 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Route;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Contracts\RepositoryInterface;
+use zxf\Modules\Module;
 use zxf\Modules\Support\ModuleContext;
 use zxf\Modules\Support\StubGenerator;
+
+// ============================================================================
+//  零、安全路径助手
+//
+//  config/modules.php 必须保持「return [...] 之前只允许 use 语句」的纯粹形态，
+//  但它又需要 base_path() / storage_path() / resource_path() / public_path()。
+//
+//  这些全局助手内部是 `return app()->basePath($path)`，依赖
+//  Illuminate\Foundation\Application 的实例方法；在裸 Container / 精简容器下
+// 会抛「Call to undefined method Container::basePath()」，
+// 而配置文件是在 ModulesServiceProvider::register() 阶段被 mergeConfigFrom()
+// 加载的 → register 失败 = 整个包无法装载。
+//
+//  本文件由 composer autoload.files 加载，早于任何配置读取，
+//  因此 config/modules.php 可以安全地 `use function` 引用下列函数。
+// ============================================================================
+
+if (! function_exists('xmf_supports_foundation_paths')) {
+    /**
+     * 当前容器是否支持 Laravel 的 Foundation 路径助手
+     *
+     * 判据必须是「容器实例上有没有 basePath() 等方法」，
+     * 而**不能**用 function_exists('base_path') ——
+     * 助手函数本身总是已加载（恒返回 true），
+     * 崩的是它内部的 app()->basePath()。
+     */
+    function xmf_supports_foundation_paths(): bool
+    {
+        return ModuleContext::supportsFoundationPaths();
+    }
+}
+
+if (! function_exists('xmf_base_path')) {
+    /**
+     * 安全的 base_path()
+     *
+     * 有完整 Laravel 容器时与原生完全等价；
+     * 最小容器下退化为「当前工作目录 + 相对路径」，保证配置可被读取。
+     */
+    function xmf_base_path(string $path = ''): string
+    {
+        return ModuleContext::basePath($path);
+    }
+}
+
+if (! function_exists('xmf_storage_path')) {
+    /**
+     * 安全的 storage_path()
+     */
+    function xmf_storage_path(string $path = ''): string
+    {
+        return ModuleContext::storagePath($path);
+    }
+}
+
+if (! function_exists('xmf_config_path')) {
+    /**
+     * 安全的 config_path()
+     */
+    function xmf_config_path(string $path = ''): string
+    {
+        return ModuleContext::configPath($path);
+    }
+}
+
+if (! function_exists('xmf_resource_path')) {
+    /**
+     * 安全的 resource_path()
+     */
+    function xmf_resource_path(string $path = ''): string
+    {
+        return ModuleContext::resourcePath($path);
+    }
+}
+
+if (! function_exists('xmf_public_path')) {
+    /**
+     * 安全的 public_path()
+     */
+    function xmf_public_path(string $path = ''): string
+    {
+        if (xmf_supports_foundation_paths() && method_exists(app(), 'publicPath')) {
+            try {
+                return public_path($path);
+            } catch (Throwable) {
+                // 落到兜底
+            }
+        }
+
+        return xmf_base_path('public'.($path !== '' ? '/'.ltrim($path, '/') : ''));
+    }
+}
 
 // ============================================================================
 //  一、模块基本信息与检测
@@ -353,6 +446,19 @@ if (! function_exists('module_set_config')) {
         }
 
         ModuleContext::setConfig(strtolower($module).'.'.$configFile.'.'.$key, $value);
+
+        // ModuleContext 的静态缓存与 Module::config() 的实例级 configCache
+        // （Module.php:553）互不相通，必须两级同步清理，
+        // 否则同一份配置会读出两个答案。
+        try {
+            $instance = ModuleContext::getRepository()->find($module);
+
+            if ($instance instanceof Module) {
+                $instance->clearCache();
+            }
+        } catch (Throwable) {
+            // 仓库不可用时无实例缓存可清，不影响主流程
+        }
 
         // 使 module_config 静态缓存失效，保证后续读取能拿到新值
         ModuleContext::clearModuleConfigCache($module);

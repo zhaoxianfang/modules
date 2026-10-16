@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 
 /**
@@ -13,6 +14,8 @@ use zxf\Modules\Facades\Module;
  */
 class ModuleListCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *

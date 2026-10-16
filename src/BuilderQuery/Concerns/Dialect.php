@@ -29,7 +29,6 @@ use InvalidArgumentException;
  *  - JSON：提取（含类型转换）/ 路径存在 / 包含 / 长度 / 键 / 搜索 / 数组聚合 / 对象聚合 / 行聚合
  *          / 设值 / 删除键 / 合并 / 数组追加 / 数组移除
  *  - 字符串：LOCATE / CHAR_LENGTH / FIELD / FIND_IN_SET / CONCAT_WS / SUBSTRING_INDEX /
- *           GROUP_CONCAT(string_agg) / SOUNDEX / 自然排序 / 全文检索(MATCH vs tsvector)
  *  - 抽样 / 批量写（VALUES、UPSERT）/ 随机函数
  *
  * @internal 仅用于 BuilderQuery 内部宏实现；所有方法均声明为 public static 以便跨 Macroable 作用域调用
@@ -480,7 +479,7 @@ trait Dialect
     ): array {
         if (self::isPostgres($builder)) {
             // 使用 jsonpath 变量 $search 承载搜索值，避免把用户输入插值进 SQL 字面量
-            // （原先的手动单引号转义在含引号文本下会破坏 SQL 字符串边界，存在语法/注入隐患）。
+            // （手动单引号转义在含引号文本下会破坏 SQL 字符串边界，存在语法/注入隐患）。
             return [
                 "jsonb_path_query_first({$wrappedColumn}::jsonb, '\$.** ? (@ == \$search)', jsonb_build_object('search', ?))",
                 [$search],
@@ -723,6 +722,11 @@ trait Dialect
     /**
      * LOCATE 子串匹配片段（字段是否包含子串）。
      *
+     * 驱动守卫：MySQL 走 LOCATE()、PostgreSQL 走 position()，SQLite 等其它驱动
+     * 既无 LOCATE() 也无 position()，若不在此处拦截，运行期会抛出
+     * "no such function: LOCATE" 这类极难定位的数据库原始错误。
+     * 这里统一前置 assertSupportedOn，让调用方拿到明确的「仅支持驱动 mysql/pgsql」提示。
+     *
      * @return array{0: string, 1: array}
      */
     public static function locateFragment(
@@ -730,6 +734,8 @@ trait Dialect
         string $wrappedColumn,
         string $search
     ): array {
+        self::assertSupportedOn($builder, 'whereLocate');
+
         if (self::isPostgres($builder)) {
             return ["position(? in {$wrappedColumn}) > 0", [$search]];
         }
@@ -737,9 +743,16 @@ trait Dialect
         return ["LOCATE(?, {$wrappedColumn}) > 0", [$search]];
     }
 
-    /** CHAR_LENGTH 表达式（纯片段，无绑定）。 */
+    /**
+     * CHAR_LENGTH 表达式（纯片段，无绑定）。
+     *
+     * 驱动守卫：同 locateFragment —— SQLite 无 char_length() 函数，
+     * 不拦截就会在运行期报出难以定位的原始数据库错误。
+     */
     public static function charLengthExpr(EloquentBuilder|QueryBuilder $builder, string $wrappedColumn): string
     {
+        self::assertSupportedOn($builder, 'whereCharLength');
+
         return self::isPostgres($builder) ? "char_length({$wrappedColumn})" : "CHAR_LENGTH({$wrappedColumn})";
     }
 
@@ -857,16 +870,17 @@ trait Dialect
      *
      * @param  string[]  $wrappedColumns
      * @param  string  $keyword  检索关键词（走绑定，杜绝注入）
-     * @param  string  $mode  natural|boolean|expansion
+     * @param  array|string  $mode  模式：数组 ['mode' => 'boolean'|'natural', 'expanded' => bool]
+     *                              或字符串 'natural'|'boolean'|'expansion'
      * @return array{0: string, 1: array} [sql 片段, 绑定]
      */
     public static function fullTextMatchFragment(
         EloquentBuilder|QueryBuilder $builder,
         array $wrappedColumns,
         string $keyword,
-        string $mode
+        array|string $mode
     ): array {
-        $mode = strtolower(trim($mode));
+        $mode = self::normalizeFullTextMode($mode);
         if (! in_array($mode, ['natural', 'boolean', 'expansion'], true)) {
             throw new InvalidArgumentException(
                 sprintf('非法的全文检索模式: "%s"。仅允许 natural / boolean / expansion。', $mode)
@@ -888,17 +902,47 @@ trait Dialect
         };
         $columnsSql = implode(', ', $wrappedColumns);
 
-        return ["MATCH({$columnsSql}) AGAINST (? {$modeSql})", [$keyword]];
+        // 追加 `> 0`：MATCH...AGAINST 对「只含停用词」的记录会返回 0 相关度，
+        // 若不比较，这些零命中行会被一并返回，造成搜索结果里出现明显不相关的条目。
+        return ["MATCH({$columnsSql}) AGAINST (? {$modeSql}) > 0", [$keyword]];
+    }
+
+    /**
+     * 归一化全文检索模式入参。
+     *
+     * 同时兼容两种写法（Laravel 13.32 起原生 whereFullText 的第三参是
+     * array $options，本宏第三参是字符串 $mode）：
+     *  - 数组：['mode' => 'boolean', 'expanded' => true]
+     *  - 字符串：'boolean' / 'expansion' / 'natural'
+     *  - 空数组：等价于 'natural'
+     *
+     * @param  array<string, mixed>|string  $mode
+     */
+    public static function normalizeFullTextMode(array|string $mode): string
+    {
+        if (is_array($mode)) {
+            $inner = $mode['mode'] ?? 'natural';
+            $mode = (is_string($inner) && $inner !== '')
+                ? $inner
+                : (! empty($mode['expanded']) ? 'expansion' : 'natural');
+        }
+
+        return strtolower(trim($mode));
     }
 
     /** 全文检索相关度表达式（ORDER BY 用）。 */
     public static function fullTextRelevanceExpr(
         EloquentBuilder|QueryBuilder $builder,
         array $wrappedColumns,
-        string $mode,
+        array|string $mode,
         string $direction = 'desc'
     ): string {
-        $mode = strtolower(trim($mode));
+        $mode = self::normalizeFullTextMode($mode);
+        if (! in_array($mode, ['natural', 'boolean', 'expansion'], true)) {
+            throw new InvalidArgumentException(
+                sprintf('非法的全文检索模式: "%s"。仅允许 natural / boolean / expansion。', $mode)
+            );
+        }
         $direction = self::assertDirection($direction);
 
         if (self::isPostgres($builder)) {

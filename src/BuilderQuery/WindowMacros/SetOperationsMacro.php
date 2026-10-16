@@ -16,7 +16,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 安全性：子查询通过 grammar 编译，绑定参数沿用 Laravel 绑定合并机制，不存在字符串裸拼注入；
  * 衍生结果表别名（intersect_result / except_result）为固定字面量，非用户输入。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0.31+ / PostgreSQL 15+
  *
@@ -55,12 +55,9 @@ class SetOperationsMacro extends BaseMacro
          * // 查找既购买了A商品又购买了B商品的用户
          * User::query()
          *     ->whereExists(function ($q) {
-         *         $q->select('user_id')->from('orders')->where('product_id', 1);
          *     })
          *     ->intersect(function ($q) {
-         *         $q->select('id')->from('users')
          *           ->whereExists(function ($sq) {
-         *               $sq->select('user_id')->from('orders')->where('product_id', 2);
          *           });
          *     })
          *     ->get();
@@ -117,7 +114,6 @@ class SetOperationsMacro extends BaseMacro
          * // 查找活跃但未验证邮箱的用户
          * User::query()->select('id')->where('status', 'active')
          *     ->except(function ($q) {
-         *         $q->select('id')->from('users')->whereNotNull('email_verified_at');
          *     })
          *     ->get();
          * // 查找有订单但未评价的用户
@@ -171,7 +167,6 @@ class SetOperationsMacro extends BaseMacro
          * // 合并两个查询结果并去重
          * User::query()->where('role', 'admin')
          *     ->unionDistinct(function ($q) {
-         *         $q->select('users.*')->from('users')
          *           ->join('permissions', 'users.id', '=', 'permissions.user_id')
          *           ->where('permissions.level', '>=', 5);
          *     })

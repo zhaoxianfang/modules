@@ -7,10 +7,13 @@ namespace zxf\Modules\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 
 class ModuleDeleteCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -60,7 +63,7 @@ class ModuleDeleteCommand extends Command
         }
 
         if ($modulePath === null) {
-            $this->error("模块 [{$name}] 不存在");
+            $this->error("模块 [{$this->esc($name)}] 不存在");
             $this->line('提示：使用 php artisan module:list 查看所有可用模块');
 
             return Command::FAILURE;
@@ -70,14 +73,14 @@ class ModuleDeleteCommand extends Command
         // 受信任的模块目录（modules.path 及其 scan_paths）之下，防止路径穿越
         // （如传入含 ../ 的模块名）误删系统文件。
         if (! $this->isWithinTrustedPaths($modulePath)) {
-            $this->error("模块路径 [{$modulePath}] 不在受信任的模块目录内，已拒绝删除以防止误删。");
+            $this->error("模块路径 [{$this->esc($modulePath)}] 不在受信任的模块目录内，已拒绝删除以防止误删。");
             $this->line('受信任目录: '.implode(', ', $this->trustedPaths()));
 
             return Command::FAILURE;
         }
 
-        $this->warn("⚠️  警告：此操作将永久删除模块 [{$name}]");
-        $this->line("模块路径: {$modulePath}");
+        $this->warn("⚠️  警告：此操作将永久删除模块 [{$this->esc($name)}]");
+        $this->line("模块路径: {$this->esc($modulePath)}");
 
         if (! $fromRegistry) {
             $this->warn('该模块未被模块注册表识别，将直接按磁盘目录删除。');
@@ -95,7 +98,7 @@ class ModuleDeleteCommand extends Command
 
         // 删除模块目录
         if (! File::deleteDirectory($modulePath)) {
-            $this->error("删除模块 [{$name}] 失败");
+            $this->error("删除模块 [{$this->esc($name)}] 失败");
             $this->line('提示：检查文件权限');
 
             return Command::FAILURE;
@@ -108,10 +111,10 @@ class ModuleDeleteCommand extends Command
             // 忽略缓存清理失败
         }
 
-        $this->info("✓ 模块 [{$name}] 已成功删除");
-        $this->line("删除的路径: {$modulePath}");
+        $this->info("✓ 模块 [{$this->esc($name)}] 已成功删除");
+        $this->line("删除的路径: {$this->esc($modulePath)}");
         $this->line('');
-        $this->line("提示：如果该模块有数据库迁移，请手动执行数据库回滚（php artisan module:migrate:rollback {$name}）");
+        $this->line("提示：如果该模块有数据库迁移，请手动执行数据库回滚（php artisan module:migrate:rollback {$this->esc($name)}）");
 
         return Command::SUCCESS;
     }

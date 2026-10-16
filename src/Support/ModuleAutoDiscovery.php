@@ -6,7 +6,7 @@ namespace zxf\Modules\Support;
 
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
@@ -35,11 +35,10 @@ use zxf\Modules\Contracts\ModuleInterface;
  * - 当 modules.cache.enabled=true 时，扫描得到的「发现清单」会被持久化到
  *   storage/framework/cache/modules/discovery.json（JSON 格式，原子写入）。
  * - 后续每个请求/命令直接读取清单并「注册」，跳过 File::files() 目录扫描、
- *   class_exists() 自动加载探测与 ReflectionClass 反射，显著降低 IO 与 CPU 开销。
  * - 清单与模块元数据缓存同生命周期：module:cache 重建、module:clear 清除。
  * - 任何清单读取/解析失败都会安全回退到实时扫描，绝不阻断启动。
  *
- * @version 5.0.0
+ * @version 1.13.9
  */
 class ModuleAutoDiscovery
 {
@@ -58,7 +57,16 @@ class ModuleAutoDiscovery
     /**
      * 应用实例
      */
-    protected Application $app;
+    /**
+     * 容器实例
+     *
+     * 类型由 Foundation\Application 放宽为 Container 基类。
+     * 该契约只有 Illuminate\Foundation\Application 实现，裸容器赋值会直接抛
+     *     TypeError: Cannot assign Illuminate\Container\Container to property
+     *     ModuleAutoDiscovery::$app of type Illuminate\Contracts\Foundation\Application
+     * 本类只用到 alias() / make() / register() / singleton()，全部在基类上。
+     */
+    protected Container $app;
 
     /**
      * 发现缓存（调试/摘要用，键 => 值）
@@ -223,7 +231,7 @@ class ModuleAutoDiscovery
         $this->scanMigrations();
         $this->scanTranslations();
 
-        if ($this->app->runningInConsole()) {
+        if (ModuleContext::runningInConsole()) {
             $this->scanCommands();
         }
 
@@ -246,7 +254,7 @@ class ModuleAutoDiscovery
         $this->registerMigrations();
         $this->registerTranslations();
 
-        if ($this->app->runningInConsole()) {
+        if (ModuleContext::runningInConsole()) {
             $this->registerCommands();
         }
 
@@ -396,8 +404,26 @@ class ModuleAutoDiscovery
                 continue;
             }
 
-            // 合并配置：后加载的覆盖先加载的
-            config([$configKey => array_merge(config($configKey, []), $configValue)]);
+            // 本方法是整个类里**唯一没有 try/catch** 的注册方法。
+            // 而 config() 解析链路上任何一个键拿到非数组（例如某模块把
+            // `config/foo.php` 写成了返回字符串），
+            // array_merge() 就会抛 TypeError 并**直接冒泡出 boot()**，
+            // 导致整个站点 500 —— 一个模块的配置文件写错，
+            // 代价是全站不可用。
+            // 现在隔离到单个配置键：失败只记录，不影响其它模块与本次启动。
+            try {
+                $existing = config($configKey, []);
+
+                // 已有值不是数组时不能 merge（array_merge 会 TypeError），
+                // 直接以模块配置覆盖。
+                $merged = is_array($existing)
+                    ? array_merge($existing, $configValue)
+                    : $configValue;
+
+                config([$configKey => $merged]);
+            } catch (\Throwable $e) {
+                $this->log("Config [{$configKey}] merge failed: ".$e->getMessage());
+            }
         }
     }
 
@@ -487,14 +513,28 @@ class ModuleAutoDiscovery
             'api' => ['api'],
         ]);
 
-        try {
-            foreach ($this->discovered['routes'] as $filename) {
-                $file = $routesPath.DIRECTORY_SEPARATOR.$filename.'.php';
+        // 于是任意一个路由文件出错（语法错误 / 控制器不存在 / 路由名冲突），
+        // 循环立刻中断 —— **该模块后续所有路由文件都不会被加载**，
+        // 表现为一整片路由 404，而日志里只有一行笼统的
+        // 「Route discovery error」，完全看不出是哪个文件出的问题。
+        // 现在把 try/catch 下沉到循环内部：单个文件失败只跳过该文件。
+        foreach ($this->discovered['routes'] as $filename) {
+            // 路由文件名来自自动发现清单。
+            // 实时扫描路径下做了 basename + 过滤，但清单缓存可能是
+            // 旧版本/被篡改的 JSON，里面的 "../" 会直接拼成越界路径。
+            $filename = basename((string) $filename);
 
-                if (! file_exists($file)) {
-                    continue;
-                }
+            if ($filename === '' || $filename === '.' || $filename === '..') {
+                continue;
+            }
 
+            $file = $routesPath.DIRECTORY_SEPARATOR.$filename.'.php';
+
+            if (! is_file($file)) {
+                continue;
+            }
+
+            try {
                 $middleware = $middlewareGroups[$filename] ?? [];
                 $router = app('router');
                 $routeGroup = $router;
@@ -509,29 +549,55 @@ class ModuleAutoDiscovery
 
                 $this->log("Loaded route: {$filename}");
                 $this->cache["route.{$filename}"] = true;
+            } catch (\Throwable $e) {
+                // 单个路由文件失败不影响其它文件（隔离到文件级）
+                $this->log("Route file [{$filename}] load failed: ".$e->getMessage());
             }
+        }
 
-            // Laravel 13 属性路由支持（#[Get] / #[Post] / #[Middleware] 等 PHP 属性）
-            // 约定：模块 Routes/Attributes/ 目录下的控制器使用 PHP 属性声明路由
-            $attributesPath = $routesPath.DIRECTORY_SEPARATOR.'Attributes';
-            if (is_dir($attributesPath)) {
-                /** @var Router $router */
-                $router = app('router');
-                $prefix = Str::snake($this->module->getName());
+        //
+        //
+        // 三个事实让这段代码**在任何环境下都不可能成功**：
+        //  1. Illuminate\Routing\Router 上**没有** attribute() 方法，
+        //     该方法只存在于 RouteRegistrar（且签名是 attribute($key, $value)，
+        //     → BadMethodCallException。
+        //  2. 本宿主 Laravel 13 的 Illuminate\Routing\Attributes\ 目录下
+        //     **只有 Controllers/**（Middleware、WithoutMiddleware），
+        //     并不存在 Get / Post 这类「路由定义属性」。
+        //  3. 上述异常又被这段代码自己的 try/catch 吞掉，
+        //     只留一行 debug 日志 → 属性路由「静默失效」，
+        //     模块开发者写了 #[Get] 却发现路由 404，且没有任何报错线索。
+        //
+        // 不调用任何不存在的 API，直接用标准 Route::group()
+        // 带上模块前缀来 require 这些文件。
+        // 这样文件里若写了普通的 Route::get(...)，会**正确生效**并自动带上前缀；
+        // 同时把「属性路由」这一事实记录清楚，不再伪装成已支持。
+        $attributesPath = $routesPath.DIRECTORY_SEPARATOR.'Attributes';
+        if (is_dir($attributesPath)) {
+            /** @var Router $router */
+            $router = app('router');
+            $prefix = Str::snake($this->module->getName());
 
-                try {
-                    $router->attribute($prefix)->group(function () use ($attributesPath) {
-                        foreach (glob($attributesPath.DIRECTORY_SEPARATOR.'*.php') ?: [] as $attrFile) {
-                            require $attrFile;
-                        }
-                    });
-                    $this->log("Loaded attribute routes for module: {$this->module->getName()}");
-                } catch (\Throwable $e) {
-                    $this->log("Attribute route load failed: {$e->getMessage()}");
+            try {
+                $router->group(['prefix' => $prefix], function () use ($attributesPath) {
+                    foreach (glob($attributesPath.DIRECTORY_SEPARATOR.'*.php') ?: [] as $attrFile) {
+                        require $attrFile;
+                    }
+                });
+
+                $this->log("Loaded routes from Attributes/ for module: {$this->module->getName()}");
+
+                if (class_exists(\Illuminate\Routing\Attributes\Get::class)) {
+                    $this->log('Attribute routing is available; #[Get]/#[Post] routes are honored.');
+                } else {
+                    $this->log(
+                        '提示：当前 Laravel 版本未内置 #[Get]/#[Post] 路由定义属性，'
+                        .'Attributes/ 下请使用标准 Route::get(...) 声明路由（已按模块前缀 "'.$prefix.'" 注册）。'
+                    );
                 }
+            } catch (\Throwable $e) {
+                $this->log("Attribute route load failed: {$e->getMessage()}");
             }
-        } catch (\Throwable $e) {
-            $this->log("Route discovery error: {$e->getMessage()}");
         }
     }
 
@@ -696,7 +762,7 @@ class ModuleAutoDiscovery
      */
     public function discoverCommands(): void
     {
-        if (! $this->app->runningInConsole()) {
+        if (! ModuleContext::runningInConsole()) {
             return;
         }
 
@@ -710,7 +776,7 @@ class ModuleAutoDiscovery
 
     protected function scanCommands(): void
     {
-        if (! $this->app->runningInConsole()) {
+        if (! ModuleContext::runningInConsole()) {
             return;
         }
 
@@ -974,7 +1040,16 @@ class ModuleAutoDiscovery
      */
     protected static function getManifestPath(): string
     {
-        $dir = ModuleContext::getConfig('modules.cache.path', storage_path('framework/cache/modules'));
+        // 不能写成 getConfig('modules.cache.path', storage_path(...))：
+        // 默认参数在调用**前**求值，容器未就绪时 storage_path() 会先抛异常；
+        // 用 function_exists('storage_path') 兜底同样无效（助手已加载，
+        // 但内部调 app()->storagePath()，裸容器没有该方法）。
+        // 统一走「能力感知」的 storagePath()。
+        $dir = ModuleContext::getConfig('modules.cache.path');
+
+        if (! is_string($dir) || $dir === '') {
+            $dir = ModuleContext::storagePath('framework/cache/modules');
+        }
 
         return rtrim((string) $dir, '/\\').'/discovery.json';
     }

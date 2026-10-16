@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\MigrationPathHelper;
 
@@ -25,6 +26,7 @@ use zxf\Modules\Support\MigrationPathHelper;
  */
 class MigrateResetCommand extends Command
 {
+    use EscapesConsoleOutput;
     use MigrationPathHelper;
 
     /**
@@ -83,23 +85,23 @@ class MigrateResetCommand extends Command
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->components->error("模块 [{$moduleName}] 不存在。");
+            $this->components->error("模块 [{$this->esc($moduleName)}] 不存在。");
 
             return Command::FAILURE;
         }
 
         if (! $module->isEnabled()) {
-            $this->components->warn("模块 [{$moduleName}] 未启用，跳过。");
+            $this->components->warn("模块 [{$this->esc($moduleName)}] 未启用，跳过。");
 
             return Command::SUCCESS;
         }
 
-        $this->components->info("正在回滚模块 [{$moduleName}] 的迁移...");
+        $this->components->info("正在回滚模块 [{$this->esc($moduleName)}] 的迁移...");
 
         $migrationPath = $customPath ?: $module->getMigrationsPath();
 
         if (! is_dir($migrationPath)) {
-            $this->components->warn("模块 [{$moduleName}] 没有迁移文件。");
+            $this->components->warn("模块 [{$this->esc($moduleName)}] 没有迁移文件。");
 
             return Command::SUCCESS;
         }

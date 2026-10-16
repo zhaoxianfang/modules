@@ -10,10 +10,10 @@ use InvalidArgumentException;
 
 /**
  * SQL 片段安全编译工具
- * 解决 BuilderQuery 宏体系最初「字符串裸插值」导致的系统性问题：
- *  1. SQL 注入风险 —— 列名 / 别名 / 排序方向 / 正则模式 / 字面值此前直接拼进 SQL；
+ * 解决「字符串裸插值」带来的两个系统性问题：
+ *  1. SQL 注入风险 —— 列名 / 别名 / 排序方向 / 正则模式 / 字面值不可直接拼进 SQL；
  *     本工具提供标识符白名单校验与 grammar wrap，字面值一律走参数绑定。
- *  2. 硬编码 MySQL 反引号 —— 改用 {@see self::wrapIdentifier()} 用 grammar 生成适配
+ *  2. 硬编码 MySQL 反引号 —— 用 {@see self::wrapIdentifier()} 由 grammar 生成适配
  *     当前数据库连接（MySQL / PostgreSQL / SQLite）的标识符引用。
  *  3. 驱动未判断 —— {@see self::assertMysql()} 在依赖 MySQL 专属语法的宏入口统一拦截，
  *     给出清晰异常而非静默生成非法 SQL。
@@ -32,13 +32,51 @@ trait SqlSecurity
     /**
      * 合法 SQL 标识符（列名 / 别名 / 字段名）白名单。
      * 允许：字母、数字、下划线，以及受限的点（跨表引用如 a.b）。
+     *
+     * 本常量保留为 public 以维持向后兼容，
+     * 但**内部不再引用它**：
+     * PHP 8.2 起禁止从 trait 外部直接访问 trait 常量，
+     * 而当本 trait 被静态直接调用（如 SqlSecurity::assertValidIdentifier()）
+     * 时，方法体内的 `self::IDENTIFIER_PATTERN` 同样会被判定为
+     * 「直接访问 trait 常量」并抛：
+     *     Error: Cannot access trait constant
+     *     zxf\Modules\BuilderQuery\Concerns\SqlSecurity::IDENTIFIER_PATTERN directly
+     * 内部一律通过方法返回**字面量**，完全不触碰 trait 常量。
+     * public 常量仍保留，仅供外部读取与向后兼容。
      */
-    public const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/';
+    final public const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/';
+
+    /**
+     * 取标识符白名单正则
+     *
+     * PHP 8.2 起禁止从 trait 外部直接访问 trait 常量。当本 trait 被
+     * **静态直接调用**（如 SqlSecurity::assertValidIdentifier()）时，
+     * 方法体内的 `self::任意常量`（含 private）同样会被判定为
+     * 「直接访问 trait 常量」并抛：
+     *     Error: Cannot access trait constant ...SqlSecurity::XXX directly
+     * 而当本 trait 被组合进类（BaseMacro）时，同一表达式又是合法的
+     * —— 两种调用方式错误行为不一致，极难排查。
+     *
+     * 因此内部一律返回字面量，彻底不触碰 trait 常量。
+     */
+    private static function identifierPattern(): string
+    {
+        return '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/';
+    }
+
+    /**
+     * 取别名白名单正则：单个标识符，**不允许**点号
+     * （SQL 里别名不是限定名，`AS t.col` 是语法错误）
+     */
+    private static function aliasPattern(): string
+    {
+        return '/^[A-Za-z_][A-Za-z0-9_]*$/';
+    }
 
     /**
      * 合法 JSON Path 表达式。
      */
-    public const JSON_PATH_PATTERN = '/^\$[A-Za-z0-9_\[\]\.\*"\x{4e00}-\x{9fa5}]*$/u';
+    final public const JSON_PATH_PATTERN = '/^\$[A-Za-z0-9_\[\]\.\*"\x{4e00}-\x{9fa5}]*$/u';
 
     /**
      * 合法聚合函数白名单（用于 SUM/AVG/LAG 等聚合列）。
@@ -70,13 +108,62 @@ trait SqlSecurity
     {
         $raw = trim($identifier, '`"[]');
 
-        if ($raw === '' || ! preg_match(self::IDENTIFIER_PATTERN, $raw)) {
+        // 别名必须用更严格的规则。
+        //
+        // IDENTIFIER_PATTERN 允许「受限的点分隔」，因为列名/表名确实需要
+        // `tbl.col` / `db.tbl` 这样的限定写法。但 SQL 的**别名**只是单个
+        // 标识符：`select foo(bar) AS t.col` 是语法错误。
+        // 而包内约 50 处别名校验都写成 assertValidIdentifier($alias, 'alias')，
+        // 于是 't.col' 这类别名会被放行，直到运行时才炸出驱动语法错误。
+        //
+        // 这里按 type 分派：alias 走 assertValidAlias() 的严格规则，
+        // 一次性修掉所有别名输出点（窗口函数 / 字符串 / JSON / 正则 / 数学 …）。
+        if ($type === 'alias') {
+            return self::assertValidAlias($identifier, $type);
+        }
+
+        if ($raw === '' || ! preg_match(self::identifierPattern(), $raw)) {
             throw new InvalidArgumentException(
                 sprintf('非法的 SQL %s标识符: "%s"。标识符仅允许字母、数字、下划线与受限的点分隔。', $type, $identifier)
             );
         }
 
         return $identifier;
+    }
+
+    /**
+     * 校验 SQL **别名**（AS 之后的标识符）
+     *
+     * assertValidIdentifier() 允许「受限的点分隔」，
+     * 因为列名/表名确实需要 `tbl.col` 这样的限定写法。
+     * 但别名**不允许**带点：SQL 里别名只是单个标识符，
+     * `select foo(bar) AS t.col` 是语法错误（部分驱动直接报错）。
+     * 而 assertValidIdentifier() 会放行 't.col'，
+     * 于是相关度排序、数值裁剪、日期截断等宏一旦被传入带点的别名，
+     * 就会生成非法 SQL —— 且只在运行时才炸。
+     *
+     * 这里提供独立校验：只允许单个标识符，不含点与跨库前缀。
+     *
+     * @throws InvalidArgumentException 别名非法
+     */
+    public static function assertValidAlias(string $alias, string $type = 'alias'): string
+    {
+        $raw = trim($alias, '`"[]');
+
+        // 允许传入已 wrap 的别名（`foo` → foo）
+        if (str_contains($raw, '.')) {
+            throw new InvalidArgumentException(
+                sprintf('非法的 SQL %s标识符: "%s"。别名不能包含点号（别名是单个标识符，不支持表限定）。', $type, $alias)
+            );
+        }
+
+        if ($raw === '' || ! preg_match(self::aliasPattern(), $raw)) {
+            throw new InvalidArgumentException(
+                sprintf('非法的 SQL %s标识符: "%s"。别名仅允许字母、数字与下划线，且必须以字母或下划线开头。', $type, $alias)
+            );
+        }
+
+        return $alias;
     }
 
     /**
@@ -233,8 +320,7 @@ trait SqlSecurity
 
     /**
      * 断言当前数据库连接受本扩展支持（MySQL 8.0+ 或 PostgreSQL 15+）。
-     * 历史上本方法名为 assertMysql，仅允许 MySQL；在「MySQL + PostgreSQL 双数据库通用」重构后，
-     * 它改为允许 mysql 与 pgsql 两种驱动，仅在遇到 SQLite 等未全面支持的驱动时抛出清晰异常。
+     * 允许 mysql 与 pgsql 两种驱动，仅在遇到 SQLite 等未全面支持的驱动时抛出清晰异常。
      * 新代码应优先使用 {@see Dialect::assertSupportedOn()} 以精确表达受支持驱动列表。
      * 注意：本方法仅做「驱动是否受支持」的粗粒度判断，不保证后续生成的 SQL 一定适配当前驱动；
      * 真正的方言差异由 {@see Dialect} 的各片段方法在调用点按驱动分别生成 SQL。
@@ -264,7 +350,6 @@ trait SqlSecurity
     /**
      * 用 grammar 安全转义标识符（列名 / 别名 / 表名）。
      * 自动适配当前数据库连接（MySQL 反引号、PostgreSQL/SQLite 双引号），
-     * 替代原先硬编码的 `{$column}` 反引号拼接。
      *
      * @param  string  $identifier  已通过 {@see self::assertValidIdentifier()} 的标识符
      * @return string grammar wrap 后的安全片段（如 `column` / "column"）

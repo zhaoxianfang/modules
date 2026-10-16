@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\ModuleAutoDiscovery;
 
@@ -14,6 +15,8 @@ use zxf\Modules\Support\ModuleAutoDiscovery;
  */
 class ModuleDebugCommandsCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -37,10 +40,14 @@ class ModuleDebugCommandsCommand extends Command
         $moduleName = $this->option('module');
 
         if ($moduleName) {
-            $this->debugModule($moduleName);
-        } else {
-            $this->debugAllModules();
+            // 于是 `module:debug-commands --module=NotExist` 打印一行红色错误后
+            // 仍然以退出码 0 结束 —— CI / 脚本会把它当成「检查通过」。
+            return $this->debugModule((string) $moduleName)
+                ? Command::SUCCESS
+                : Command::FAILURE;
         }
+
+        $this->debugAllModules();
 
         return Command::SUCCESS;
     }
@@ -64,19 +71,19 @@ class ModuleDebugCommandsCommand extends Command
     /**
      * 调试单个模块
      */
-    protected function debugModule(string $moduleName): void
+    protected function debugModule(string $moduleName): bool
     {
         $module = Module::find($moduleName);
 
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在");
+            $this->error("模块 [{$this->esc($moduleName)}] 不存在");
 
-            return;
+            return false;
         }
 
-        $this->info("模块: {$moduleName}");
+        $this->info("模块: {$this->esc($moduleName)}");
         $this->line('状态: '.($module->isEnabled() ? '<info>已启用</info>' : '<comment>已禁用</comment>'));
-        $this->line("路径: {$module->getPath()}");
+        $this->line("路径: {$this->esc($module->getPath())}");
         $this->newLine();
 
         // 检查 Console/Commands 目录
@@ -89,7 +96,7 @@ class ModuleDebugCommandsCommand extends Command
             if (! empty($commandFiles)) {
                 foreach ($commandFiles as $file) {
                     $className = basename($file, '.php');
-                    $this->line("    - {$className}");
+                    $this->line("    - {$this->esc($className)}");
                 }
             }
         } else {
@@ -106,7 +113,7 @@ class ModuleDebugCommandsCommand extends Command
             if (! empty($commandFiles)) {
                 foreach ($commandFiles as $file) {
                     $className = basename($file, '.php');
-                    $this->line("    - {$className}");
+                    $this->line("    - {$this->esc($className)}");
                 }
             }
         } else {
@@ -148,7 +155,7 @@ class ModuleDebugCommandsCommand extends Command
                                 $signatureProperty->setAccessible(true);
                                 $instance = app($commandClass);
                                 $signature = $signatureProperty->getValue($instance);
-                                $this->line("      签名: {$signature}");
+                                $this->line("      签名: {$this->esc($signature)}");
                             }
                         }
                     } catch (\Throwable $e) {
@@ -187,10 +194,12 @@ class ModuleDebugCommandsCommand extends Command
         if (! empty($moduleCommands)) {
             foreach ($moduleCommands as $name => $command) {
                 $description = $command->getDescription() ?? '无描述';
-                $this->line("  ✓ {$name} - {$description}");
+                $this->line("  ✓ {$this->esc($name)} - {$description}");
             }
         } else {
-            $this->line("  ✗ 未找到已注册的 {$moduleName} 命令");
+            $this->line("  ✗ 未找到已注册的 {$this->esc($moduleName)} 命令");
         }
+
+        return true;
     }
 }

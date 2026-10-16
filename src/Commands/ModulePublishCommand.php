@@ -6,6 +6,7 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 
 /**
  * 发布多模块资源命令
@@ -16,6 +17,8 @@ use Illuminate\Support\Facades\File;
  */
 class ModulePublishCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -59,10 +62,17 @@ class ModulePublishCommand extends Command
 
         // 发布用户指南
         if ($publishGuide) {
-            if ($this->publishUserGuide($force)) {
-                $this->info('✓ 用户指南发布成功');
-            } else {
-                $this->error('✗ 用户指南发布失败');
+            // publishUserGuide() 为三态返回：
+            // true=成功 / null=已存在跳过（幂等，非错误）/ false=真失败。
+            $guideStatus = $this->publishUserGuide($force);
+
+            match ($guideStatus) {
+                true => $this->info('✓ 用户指南发布成功'),
+                null => $this->line('· 用户指南已存在，已跳过（--force 可覆盖）'),
+                default => $this->error('✗ 用户指南发布失败'),
+            };
+
+            if ($guideStatus === false) {
                 $success = false;
             }
             $this->newLine();
@@ -70,10 +80,15 @@ class ModulePublishCommand extends Command
 
         // 发布配置文件
         if ($publishConfig) {
-            if ($this->publishConfigFile($force)) {
-                $this->info('✓ 配置文件发布成功');
-            } else {
-                $this->error('✗ 配置文件发布失败');
+            $configStatus = $this->publishConfigFile($force);
+
+            match ($configStatus) {
+                true => $this->info('✓ 配置文件发布成功'),
+                null => $this->line('· 配置文件已存在，已跳过（--force 可覆盖）'),
+                default => $this->error('✗ 配置文件发布失败'),
+            };
+
+            if ($configStatus === false) {
                 $success = false;
             }
             $this->newLine();
@@ -88,8 +103,9 @@ class ModulePublishCommand extends Command
      * 发布多模块用户指南
      *
      * @param  bool  $force  是否强制覆盖
+     * @return bool|null true=已发布；null=已存在而跳过（非失败）；false=真失败
      */
-    protected function publishUserGuide(bool $force): bool
+    protected function publishUserGuide(bool $force): ?bool
     {
         $modulesPath = config('modules.path', base_path('Modules'));
         $guidePath = $modulesPath.'/UserGuide.md';
@@ -97,11 +113,13 @@ class ModulePublishCommand extends Command
         $this->line('<comment>📖 发布用户指南...</comment>');
 
         // 检查是否已存在
+        //
+        // 返回 null 表示「已存在而跳过」：这是幂等操作而非错误，
+        // 由调用方输出中性提示，不计入失败退出码。
         if (file_exists($guidePath) && ! $force) {
-            // $this->warn("用户指南已存在: {$guidePath}");
-            $this->line('提示：使用 --force 选项覆盖已存在的文件');
+            $this->line("用户指南已存在: {$guidePath}");
 
-            return false;
+            return null;
         }
 
         // 确保目录存在
@@ -138,18 +156,18 @@ class ModulePublishCommand extends Command
      *
      * @param  bool  $force  是否强制覆盖
      */
-    protected function publishConfigFile(bool $force): bool
+    protected function publishConfigFile(bool $force): ?bool
     {
         $configPath = config_path('modules.php');
 
         $this->line('<comment>⚙️  发布配置文件...</comment>');
 
-        // 检查是否已存在
+        // 同 publishUserGuide()：已存在而跳过属于正常情况，
+        // 返回 null 交由调用方输出中性提示，而不是判定为失败。
         if (file_exists($configPath) && ! $force) {
-            $this->warn("配置文件已存在: {$configPath}");
-            $this->line('提示：使用 --force 选项覆盖已存在的文件');
+            $this->line("配置文件已存在: {$configPath}");
 
-            return false;
+            return null;
         }
 
         // 读取包中的配置文件

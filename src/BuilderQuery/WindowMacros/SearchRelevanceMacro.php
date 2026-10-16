@@ -20,7 +20,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - searchRank：组合「命中筛选 + 相关度排序」的一站式轻量搜索
  * 安全性：列名经白名单校验并由 grammar wrap；关键词一律参数绑定。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

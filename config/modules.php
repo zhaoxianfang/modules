@@ -14,7 +14,7 @@
  *   - 支持 'enabled'、'priority'、'aliases'、'providers'、'laravel_aliases'、
  *     'options' 等内置元数据键
  *
- * @version   5.0.0
+ * @version  1.13.9
  *
  * @requires  PHP 8.3+ / Laravel 11+ / 12+ / 13+
  */
@@ -61,7 +61,7 @@ return [
     |   - base_path('vendor/my-org/modules')← 第三方模块包路径
     |
     */
-    'path' => base_path('Modules'),
+    'path' => xmf_base_path('Modules'),
 
     /*
     |--------------------------------------------------------------------------
@@ -146,7 +146,7 @@ return [
     |   php artisan module:publish Blog
     |
     */
-    'assets' => public_path('modules'),
+    'assets' => xmf_public_path('modules'),
 
     /*
     |--------------------------------------------------------------------------
@@ -491,7 +491,7 @@ return [
         'enabled' => env('MODULES_CACHE_ENABLED', false),
         'key' => 'modules',
         'ttl' => 3600,
-        'path' => storage_path('framework/cache/modules'),
+        'path' => xmf_storage_path('framework/cache/modules'),
     ],
 
     /*
@@ -533,7 +533,7 @@ return [
     */
     'stubs' => [
         'override' => true,                                // 启用自定义 stub 覆盖
-        'path' => resource_path('stubs/modules'),      // 自定义 stub 路径
+        'path' => xmf_resource_path('stubs/modules'),      // 自定义 stub 路径
         'strict' => true,                                // 严格模式（变量未定义时报错）
     ],
 

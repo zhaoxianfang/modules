@@ -17,7 +17,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 通过 {@see BaseMacro::randomFunction()} 统一生成，因此同一套宏在两种数据库上均可直接使用。
  * 安全性：主键 / 分组列名经白名单校验并由 grammar wrap；随机函数由 Driver 决定，不拼接用户输入。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *
@@ -55,20 +55,6 @@ class RandomMacro extends BaseMacro
          */
         static::define('replicateQuery', function (QueryBuilder $source, QueryBuilder $dest) {
             // 复制基础属性
-            //    $dest->bindings = $source->bindings;
-            //    $dest->columns = $source->columns;
-            //    $dest->distinct = $source->distinct;
-            //    $dest->from = $source->from;
-            //    $dest->joins = $source->joins;
-            //    $dest->wheres = $source->wheres;
-            //    $dest->groups = $source->groups;
-            //    $dest->havings = $source->havings;
-            //    $dest->orders = $source->orders;
-            //    $dest->limit = $source->limit;
-            //    $dest->offset = $source->offset;
-            //    $dest->unions = $source->unions;
-            //    $dest->unionLimit = $source->unionLimit;
-            //    $dest->unionOrders = $source->unionOrders;
 
             // 定义需要复制的属性列表
             $properties = [
@@ -126,86 +112,57 @@ class RandomMacro extends BaseMacro
             $method = $where['type'] ?? 'Basic';
             $boolean = $where['boolean'] ?? 'and';
 
-            switch ($method) {
-                case 'Basic':
-                    $dest->where($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                case 'In':
-                    $dest->whereIn($where['column'], $where['values'], $boolean, $where['not'] ?? false);
-                    break;
-                case 'NotIn':
-                    $dest->whereNotIn($where['column'], $where['values'], $boolean);
-                    break;
-                case 'Null':
-                    $dest->whereNull($where['column'], $boolean, $where['not'] ?? false);
-                    break;
-                case 'NotNull':
-                    $dest->whereNotNull($where['column'], $boolean);
-                    break;
-                case 'Between':
-                    $dest->whereBetween($where['column'], $where['values'], $boolean, $where['not'] ?? false);
-                    break;
-                case 'NotBetween':
-                    $dest->whereNotBetween($where['column'], $where['values'], $boolean);
-                    break;
-                case 'Exists':
-                    $dest->whereExists($where['query'], $boolean, $where['not'] ?? false);
-                    break;
-                case 'NotExists':
-                    $dest->whereNotExists($where['query'], $boolean);
-                    break;
-                case 'Raw':
-                    $dest->whereRaw($where['sql'], (array) ($where['bindings'] ?? []), $boolean);
-                    break;
-                case 'Nested':
-                    $dest->whereNested(function ($query) use ($where) {
-                        RandomMacro::copyWheres($where['query'], $query);
-                    }, $boolean);
-                    break;
-                case 'Column':
-                    $dest->whereColumn(
-                        $where['first'],
-                        $where['operator'],
-                        $where['second'] ?? null,
-                        $boolean
-                    );
-                    break;
-                case 'Date':
-                    $dest->whereDate($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                case 'Time':
-                    $dest->whereTime($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                case 'Day':
-                    $dest->whereDay($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                case 'Month':
-                    $dest->whereMonth($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                case 'Year':
-                    $dest->whereYear($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                case 'JsonContains':
-                    $dest->whereJsonContains($where['column'], $where['value'], $boolean, $where['not'] ?? false);
-                    break;
-                case 'JsonLength':
-                    $dest->whereJsonLength($where['column'], $where['operator'], $where['value'], $boolean);
-                    break;
-                default:
-                    throw new \InvalidArgumentException("不支持的where类型: {$method}");
-            }
+            // switch → match 表达式（PHP 8.0+ 惯用法）。
+            // 行为等价性说明：
+            //  - 原 switch 的 default 抛 InvalidArgumentException，
+            //    这里保留同样语义（match 缺 default 会抛 UnhandledMatchError，
+            //    因此显式写 default => throw 保持对外错误类型不变）；
+            //  - match 采用严格比较（===），$method 均来自 Laravel 内部的
+            //    where 数组 type 字段，为稳定字符串，无行为差异；
+            //  - 去掉 break 后不再依赖「靠落空防串 case」的隐式控制流。
+            match ($method) {
+                'Basic' => $dest->where($where['column'], $where['operator'], $where['value'], $boolean),
+                'In' => $dest->whereIn($where['column'], $where['values'], $boolean, $where['not'] ?? false),
+                'NotIn' => $dest->whereNotIn($where['column'], $where['values'], $boolean),
+                'Null' => $dest->whereNull($where['column'], $boolean, $where['not'] ?? false),
+                'NotNull' => $dest->whereNotNull($where['column'], $boolean),
+                'Between' => $dest->whereBetween($where['column'], $where['values'], $boolean, $where['not'] ?? false),
+                'NotBetween' => $dest->whereNotBetween($where['column'], $where['values'], $boolean),
+                'Exists' => $dest->whereExists($where['query'], $boolean, $where['not'] ?? false),
+                'NotExists' => $dest->whereNotExists($where['query'], $boolean),
+                'Raw' => $dest->whereRaw($where['sql'], (array) ($where['bindings'] ?? []), $boolean),
+                'Nested' => $dest->whereNested(function ($query) use ($where): void {
+                    RandomMacro::copyWheres($where['query'], $query);
+                }, $boolean),
+                'Column' => $dest->whereColumn(
+                    $where['first'],
+                    $where['operator'],
+                    $where['second'] ?? null,
+                    $boolean
+                ),
+                'Date' => $dest->whereDate($where['column'], $where['operator'], $where['value'], $boolean),
+                'Time' => $dest->whereTime($where['column'], $where['operator'], $where['value'], $boolean),
+                'Day' => $dest->whereDay($where['column'], $where['operator'], $where['value'], $boolean),
+                'Month' => $dest->whereMonth($where['column'], $where['operator'], $where['value'], $boolean),
+                'Year' => $dest->whereYear($where['column'], $where['operator'], $where['value'], $boolean),
+                'JsonContains' => $dest->whereJsonContains($where['column'], $where['value'], $boolean, $where['not'] ?? false),
+                'JsonLength' => $dest->whereJsonLength($where['column'], $where['operator'], $where['value'], $boolean),
+                default => throw new InvalidArgumentException("不支持的where类型: {$method}"),
+            };
         }
     }
 
     /**
-     * 安全深拷贝查询构建器的属性值（替代原先的 unserialize(serialize()) 方案）。
-     * 原方案用 unserialize(serialize()) 做深拷贝，存在两个严重问题：
+     * 安全深拷贝查询构建器的属性值。
+     *
+     * 不使用 unserialize(serialize())，因为它有两个硬伤：
      *  1. 性能差：序列化/反序列化大型查询状态（含 bindings/wheres）开销高；
-     *  2. 致命错误：当 bindings 中含 Closure（如 whereExists 子查询闭包）时，serialize() 直接抛出
+     *  2. 致命错误：bindings 中含 Closure（如 whereExists 子查询闭包）时 serialize() 直接抛出
      *     "Serialization of closure is not allowed"，导致 random() / groupRandom() 在带存在子查询的
      *     查询上直接崩溃。
-     * 本方法对数组做递归拷贝（PHP 数组本身为值语义，递归即可安全分离），对对象仅在可克隆时 clone
-     * （Closure 等不可克隆资源型对象原样保留引用，与 Laravel 构建器自身的浅拷贝语义一致），无任何序列化。
+     *
+     * 数组做递归拷贝（PHP 数组本身为值语义，递归即可安全分离），对象仅在可克隆时 clone
+     * （Closure 等不可克隆资源型对象原样保留引用，与 Laravel 构建器自身的浅拷贝语义一致）。
      *
      * @scenario 1. 性能差：序列化/反序列化大型查询状态（含 bindings/wheres）开销高；
      */
@@ -250,8 +207,15 @@ class RandomMacro extends BaseMacro
              * @scenario 本类/成员说明。
              */
             $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
             $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
+
+            // 本宏同时注册到 Eloquent\Builder 与 Query\Builder，
+            // Query\Builder（DB::table()）路径下 modelOf() 返回 null。
+            if ($model === null) {
+                return DB::table(BaseMacro::resolveTable($this))->inRandomOrder()->limit($limit);
+            }
+
+            $table = $model->getTable();
             $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
             // 构建窗口函数子查询：使用 ROW_NUMBER() + 数据库随机函数实现高效随机
@@ -306,9 +270,17 @@ class RandomMacro extends BaseMacro
              * @scenario 本类/成员说明。
              */
             $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
             $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
             $groupColumn = BaseMacro::assertValidIdentifier($groupColumn, 'group');
+
+            // 同 random()：Query\Builder 路径没有模型，降级为分组随机排序。
+            if ($model === null) {
+                return DB::table(BaseMacro::resolveTable($this))
+                    ->inRandomOrder()
+                    ->limit($limit);
+            }
+
+            $table = $model->getTable();
             $wrappedGroup = BaseMacro::wrapIdentifier($this, $groupColumn);
 
             // 构建窗口函数子查询 - 按分组随机排序

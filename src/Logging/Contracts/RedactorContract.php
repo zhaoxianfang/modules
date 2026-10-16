@@ -38,7 +38,11 @@ interface RedactorContract
     public function maskHeaders(array $headers): array;
 
     /**
-     * 对自由文本中的 "key":"value" 形态做脱敏（双引号 / 单引号均处理）。
+     * 对自由文本中的敏感内容做脱敏，涵盖：
+     *  - "key":"value" / 'key':'value' / key=value / key: value 四种形态；
+     *  - JWT（xxx.yyy.zzz）与 Authorization: Bearer|Basic|Token 凭证。
+     *
+     * @param  bool  $truncate  是否同时按最大字段长度截断（可选参数，便于精细控制）
      */
-    public function maskText(string $text): string;
+    public function maskText(string $text, bool $truncate = false): string;
 }

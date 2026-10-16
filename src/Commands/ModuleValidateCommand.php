@@ -6,6 +6,7 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
 use zxf\Modules\Support\ModuleValidator;
 
@@ -16,6 +17,8 @@ use zxf\Modules\Support\ModuleValidator;
  */
 class ModuleValidateCommand extends Command
 {
+    use EscapesConsoleOutput;
+
     /**
      * 命令签名
      *
@@ -52,12 +55,12 @@ class ModuleValidateCommand extends Command
         $module = Module::find(Str::studly($moduleName));
 
         if (! $module) {
-            $this->error("模块 [{$moduleName}] 不存在。");
+            $this->error("模块 [{$this->esc($moduleName)}] 不存在。");
 
             return Command::FAILURE;
         }
 
-        $this->info("正在验证模块 [{$moduleName}]...");
+        $this->info("正在验证模块 [{$this->esc($moduleName)}]...");
 
         $validation = ModuleValidator::validate($module);
 

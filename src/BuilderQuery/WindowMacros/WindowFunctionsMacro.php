@@ -20,9 +20,9 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 仅标识符引用（引号风格）交由 Dialect 方言抽象层按驱动生成，杜绝硬编码反引号。
  * 安全性：所有列名 / 别名 / 排序方向 / 聚合函数 / 框架边界均经白名单校验，
  * 标识符由 grammar wrap 生成（适配 MySQL / PostgreSQL / SQLite），字面值走参数绑定，
- * 彻底消除原先 `{$column}` 裸插值导致的 SQL 注入风险。
+ * 杜绝 `{$column}` 裸插值造成的 SQL 注入风险。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

@@ -2,20 +2,6 @@
 
 declare(strict_types=1);
 
-/**
- * 递归 CTE 宏 / JSON 宏 运行时验证脚本
- * 覆盖本轮修复的三类 P0 缺陷：
- *  1. WithRecursiveMacro：newQuery() 丢弃调用方条件 + 手动追加不存在的 where 绑定
- *     → 断言：占位符数量 == 绑定数量，且调用方的 where 条件被保留。
- *  2. AdvancedJsonMacro / RegexMacro：where(DB::raw($sql)) 被 Laravel 降级为
- *     "IS NOT NULL" → 断言：SQL 中确实出现目标函数且不含 "is not null"。
- *  3. AdvancedJsonMacro：update()->addBinding(..., 'update') 双重致命
- *     （update 返回 int，且 'update' 非合法绑定键）
- *     → 断言：UPDATE 编译后 SET 段占位符先于 WHERE 段，且绑定顺序与之匹配。
- * 运行：php tests/verify_recursive_macros.php
- * 退出码：0=全 PASS，1=有 FAIL。
- */
-
 use Illuminate\Container\Container;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionResolverInterface;
@@ -30,6 +16,20 @@ use zxf\Modules\BuilderQuery\WindowMacros\AdvancedJsonMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\RegexMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
+
+/**
+ * 递归 CTE 宏 / JSON 宏 运行时验证脚本
+ * 覆盖三类 P0 缺陷：
+ *  1. WithRecursiveMacro：newQuery() 丢弃调用方条件 + 手动追加不存在的 where 绑定
+ *     → 断言：占位符数量 == 绑定数量，且调用方的 where 条件被保留。
+ *  2. AdvancedJsonMacro / RegexMacro：where(DB::raw($sql)) 被 Laravel 降级为
+ *     "IS NOT NULL" → 断言：SQL 中确实出现目标函数且不含 "is not null"。
+ *  3. AdvancedJsonMacro：update()->addBinding(..., 'update') 双重致命
+ *     （update 返回 int，且 'update' 非合法绑定键）
+ *     → 断言：UPDATE 编译后 SET 段占位符先于 WHERE 段，且绑定顺序与之匹配。
+ * 运行：php tests/verify_recursive_macros.php
+ * 退出码：0=全 PASS，1=有 FAIL。
+ */
 
 // ---- 关键：优先加载本包源码 ----
 // wsf/vendor/zxf/modules 是本包的旧副本，且其 helper.php / trace bootstrap 会在
@@ -247,7 +247,7 @@ assertConsistent('recursiveQuery + where', $q);
 
 echo "\n=== 二、JSON / 正则宏：whereRaw 语义修复 ===\n";
 
-// whereJsonArrayContainsAny / All：修复前生成 "is not null"，语义全错
+// whereJsonArrayContainsAny / All：不应生成 "is not null"（语义全错）
 $q = $M::query()->whereJsonArrayContainsAny('tags', ['php', 'mysql']);
 assertConsistent('whereJsonArrayContainsAny 绑定一致', $q);
 assertContains('whereJsonArrayContainsAny 使用 JSON_CONTAINS', $q->toSql(), 'JSON_CONTAINS(');

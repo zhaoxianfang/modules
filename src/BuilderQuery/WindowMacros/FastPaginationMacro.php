@@ -41,7 +41,7 @@ class FastLengthAwarePaginator extends LengthAwarePaginator
  * 不使用缓存机制，完全基于 SQL 优化。
  * 安全性：排序列名 / 主键 / 表名 / CTE 别名经白名单校验并由 grammar wrap；分页偏移量为整数。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

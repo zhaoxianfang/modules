@@ -19,7 +19,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - selectRound：四舍五入 / 截断到指定小数位（ROUND / TRUNCATE）
  * 安全性：列名 / 别名经白名单校验并由 grammar wrap；所有字面量一律参数绑定。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

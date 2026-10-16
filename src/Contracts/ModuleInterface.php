@@ -8,7 +8,7 @@ namespace zxf\Modules\Contracts;
  * 模块接口
  * 定义模块实体的核心契约，所有模块实现类必须遵循此接口。
  *
- * @version 4.0.0
+ * @version 1.13.9
  */
 interface ModuleInterface
 {

@@ -22,7 +22,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 注意：行锁 / 咨询锁须在事务内（DB::transaction）方才有效；跳过锁与立即失败行为在
  * MySQL 8.0.1+ 与 PostgreSQL 9.5+ 均支持。
  *
- * @version 3.1.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *
@@ -56,8 +56,6 @@ class LockingMacro extends BaseMacro
          * @example
          * // 队列消费：每次取 10 条未被其他 worker 锁定的任务
          * DB::transaction(function () {
-         *     $jobs = Job::query()->lockForUpdateSkipLocked()->orderBy('id')->limit(10)->get();
-         *     foreach ($jobs as $job) { /* 处理并删除 *\/ }
          * });
          *
          * @scenario 多进程 / 多实例队列消费、库存扣减、工单分配等「取锁即处理」的高并发场景；
@@ -81,7 +79,6 @@ class LockingMacro extends BaseMacro
          * @example
          * // 并发编辑场景：若记录已被他人锁定则立即抛异常，避免长时等待
          * try {
-         *     $row = Doc::query()->lockForUpdateNoWait()->find($id);
          * } catch (\Illuminate\Database\QueryException $e) { /* 已被锁定 *\/ }
          *
          * @scenario 编辑锁、秒杀下单等「不允许等待」的强一致场景。

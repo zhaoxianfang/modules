@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use zxf\Modules\Support\ModuleCacheStore;
+
 /** ModuleCacheStore 功能验证 */
 spl_autoload_register(static function (string $class): void {
     $prefix = 'zxf\\Modules\\';
@@ -15,8 +17,6 @@ spl_autoload_register(static function (string $class): void {
 }, true, true);
 
 require '/Users/aha/www/wsf/vendor/autoload.php';
-
-use zxf\Modules\Support\ModuleCacheStore;
 
 $pass = 0;
 $fail = 0;

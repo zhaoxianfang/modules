@@ -21,7 +21,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 安全性：所有表名 / 列名 / 别名均经白名单校验并由 grammar wrap（适配 MySQL 反引号
  * 与 PostgreSQL 双引号），字面值走参数绑定；递归 CTE 为双方言标准语法（WITH RECURSIVE）。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires PHP 8.3+, Laravel 11+ / 12+ / 13+, MySQL 8.0+ / PostgreSQL 15+
  *

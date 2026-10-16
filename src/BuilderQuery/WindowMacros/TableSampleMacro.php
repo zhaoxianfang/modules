@@ -18,7 +18,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 种子可重复的确定性随机序使用跨库通用的 md5(CONCAT(主键, 种子)) 实现，MySQL 与 PostgreSQL 行为一致。
  * 安全性：抽样列名 / 主键经白名单校验并由 grammar wrap；随机种子走参数绑定。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

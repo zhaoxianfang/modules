@@ -29,7 +29,7 @@ use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
  *  - 全程仅做数组与构建器条件拼装，**不触发任何 SQL 执行**，绝不会因数据量大而导致卡死。
  * 双构建器友好：全部通过 {@see BaseMacro::define()} 同时注册到 Eloquent\Builder 与 Query\Builder。
  *
- * @version 3.3.0
+ * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5），Laravel 11+ / 12+ / 13+，MySQL 8.0+ / PostgreSQL 15+
  *
@@ -213,6 +213,16 @@ class ChunkedListMacro extends BaseMacro
         // 白名单校验列标识符（防注入）；此处传原始列名给 whereIn/whereNotIn，由其内部统一 wrap。
         $column = BaseMacro::assertValidIdentifier($column, 'column');
 
+        // $boolean 在单块分支（数组长度 <= chunkSize，即绝大多数真实调用）与空集分支
+        // 也必须生效，否则 orWhereChunkedIn() 生成的仍是 AND 连接的 whereIn，
+        // 「或」语义被静默降级为「且」，结果集直接算错且不报错。
+        // 现在统一收敛并让所有分支都遵守它。
+        $boolean = strtolower(trim($boolean));
+        if (! in_array($boolean, ['and', 'or'], true)) {
+            throw new \InvalidArgumentException("Chunked 查询的连接符非法：[{$boolean}]，允许值：'and' / 'or'。");
+        }
+        $useOr = $boolean === 'or';
+
         // 去重并重置索引，减少无效占位符。
         $values = array_values(array_unique($values, SORT_REGULAR));
 
@@ -226,9 +236,10 @@ class ChunkedListMacro extends BaseMacro
 
         // 单块：直接委托原生方法，生成最优单条 SQL，避免多余嵌套。
         if (count($chunks) === 1) {
+            // 此处必须带上 $boolean，否则 orWhereChunkedIn 退化为 AND
             return $not
-                ? $builder->whereNotIn($column, $chunks[0])
-                : $builder->whereIn($column, $chunks[0]);
+                ? ($useOr ? $builder->orWhereNotIn($column, $chunks[0]) : $builder->whereNotIn($column, $chunks[0]))
+                : ($useOr ? $builder->orWhereIn($column, $chunks[0]) : $builder->whereIn($column, $chunks[0]));
         }
 
         // 多块：首块用 where/whereNotIn，后续块 IN 用 orWhereIn（OR 合并）、NOT IN 用 whereNotIn（AND 合并）。
@@ -243,7 +254,7 @@ class ChunkedListMacro extends BaseMacro
             }
         };
 
-        return $boolean === 'or'
+        return $useOr
             ? $builder->orWhere($callback)
             : $builder->where($callback);
     }

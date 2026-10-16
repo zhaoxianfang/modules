@@ -16,7 +16,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * - crossTab: 双维交叉表
  * 安全性：透视列 / 聚合列 / 分组列 / 别名经白名单校验并由 grammar wrap；透视值走参数绑定。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *
@@ -112,14 +112,51 @@ class PivotMacro extends BaseMacro
             }
 
             // 构建查询：复制原始查询的 WHERE 条件
-            $baseQuery = $this->clone();
-            $query = BaseMacro::freshQuery($this)
-                ->selectRaw(implode(', ', $selectColumns), $bindings);
+            //
+            // 但 pivot 场景的调用方几乎一定带 join / having / orderBy / limit，
+            // 这些全部被丢弃 → 透视结果与原查询语义不符（统计口径错了），
+            // 而且 where 绑定被搬运、join 的绑定却没有，会造成**绑定错位**。
+            // 现在把「结构」与「绑定」成对搬运。
+            $base = BaseMacro::queryOf($baseQuery);
+            $target = BaseMacro::queryOf($query);
 
-            // 复制原始 WHERE 条件到新查询
-            if (! empty(BaseMacro::queryOf($baseQuery)->wheres)) {
-                BaseMacro::queryOf($query)->wheres = BaseMacro::queryOf($baseQuery)->wheres;
-                $query->addBinding(BaseMacro::queryOf($baseQuery)->bindings['where'] ?? [], 'where');
+            // WHERE
+            if (! empty($base->wheres)) {
+                $target->wheres = $base->wheres;
+                $target->addBinding($base->bindings['where'] ?? [], 'where');
+            }
+
+            // JOIN（join 绑定顺序必须与 joins 一致）
+            if (! empty($base->joins)) {
+                $target->joins = $base->joins;
+                $target->addBinding($base->bindings['join'] ?? [], 'join');
+            }
+
+            // HAVING（依赖 where 绑定，须在 where 之后追加）
+            if (! empty($base->havings)) {
+                $target->havings = $base->havings;
+                $target->addBinding($base->bindings['having'] ?? [], 'having');
+            }
+
+            // ORDER BY
+            if (! empty($base->orders)) {
+                $target->orders = $base->orders;
+                $target->addBinding($base->bindings['order'] ?? [], 'order');
+            }
+
+            // GROUP BY / LIMIT / OFFSET / UNION —— 透视自带 groupBy，
+            // 但 limit / offset 属于原查询语义，应保留。
+            if (($base->limit ?? null) !== null) {
+                $target->limit = $base->limit;
+            }
+
+            if (($base->offset ?? null) !== null) {
+                $target->offset = $base->offset;
+            }
+
+            if (! empty($base->unions)) {
+                $target->unions = $base->unions;
+                $target->addBinding($base->bindings['union'] ?? [], 'union');
             }
 
             // 添加分组（使用 grammar wrap 生成适配驱动的标识符引用）
@@ -304,11 +341,33 @@ class PivotMacro extends BaseMacro
             $wrappedAgg = BaseMacro::wrapIdentifier($this, $aggregateColumn);
 
             // 如果没有指定列值，使用 DISTINCT 查询（需要额外查询，这里简化处理）
+            //
+            // 必须设上限，否则：
+            //  1) 列值基数大时（例如把 user_id / 订单号当维度透视）
+            //     一次把整列拉进 PHP 内存，几百万行直接 OOM；
+            //  2) 每个值都会拼一条 CASE WHEN 到 SELECT，
+            //     生成几十万列的巨型 SQL，数据库必然报「列数过多」甚至拖垮实例。
+            // 因此：
+            //  - 按 scanColValues() 加 limit 截断（默认 200，可在 pivot 配置里调大）；
+            //  - 超出上限时明确抛异常，而不是继续生成一条注定失败的巨型 SQL。
             if ($colValues === null) {
+                $limit = self::crossTabColumnLimit();
+
                 $colValues = $model->newQuery()
                     ->distinct()
                     ->pluck($colColumn)
+                    ->take($limit + 1)
                     ->toArray();
+
+                if (count($colValues) > $limit) {
+                    throw new \InvalidArgumentException(sprintf(
+                        'crossTab 自动推断的列值超过上限 %d 个（列 [%s] 基数过高）。'
+                        .'请改用 "新增列值过滤条件后再透视"，或显式传入 $colValues，'
+                        .'或调高 modules.builder_query.pivot_cross_tab_column_limit 配置。',
+                        $limit,
+                        $colColumn
+                    ));
+                }
             }
 
             $selectColumns = [$wrappedRow];
@@ -337,13 +396,61 @@ class PivotMacro extends BaseMacro
                 ->selectRaw(implode(', ', $selectColumns), $bindings)
                 ->groupByRaw(implode(', ', $groupByColumns));
 
-            // 复制原始 WHERE 条件到新查询
-            if (! empty(BaseMacro::queryOf($baseQuery)->wheres)) {
-                BaseMacro::queryOf($query)->wheres = BaseMacro::queryOf($baseQuery)->wheres;
-                $query->addBinding(BaseMacro::queryOf($baseQuery)->bindings['where'] ?? [], 'where');
+            // 复制原始查询的结构与绑定（详见 crossTab() 内的同名实现说明）
+            $base = BaseMacro::queryOf($baseQuery);
+            $target = BaseMacro::queryOf($query);
+
+            if (! empty($base->wheres)) {
+                $target->wheres = $base->wheres;
+                $target->addBinding($base->bindings['where'] ?? [], 'where');
+            }
+
+            if (! empty($base->joins)) {
+                $target->joins = $base->joins;
+                $target->addBinding($base->bindings['join'] ?? [], 'join');
+            }
+
+            if (! empty($base->havings)) {
+                $target->havings = $base->havings;
+                $target->addBinding($base->bindings['having'] ?? [], 'having');
+            }
+
+            if (! empty($base->orders)) {
+                $target->orders = $base->orders;
+                $target->addBinding($base->bindings['order'] ?? [], 'order');
+            }
+
+            if (($base->limit ?? null) !== null) {
+                $target->limit = $base->limit;
+            }
+
+            if (($base->offset ?? null) !== null) {
+                $target->offset = $base->offset;
             }
 
             return $query;
         });
+    }
+
+    /**
+     * crossTab 自动推断列值时的数量上限
+     *
+     * 用于给「无限 pluck」设一个硬边界，避免高基数列直接把内存和
+     * 数据库的列数上限一起打爆。缺省 200，可在
+     * config/modules.php 的 builder_query.pivot_cross_tab_column_limit 调整。
+     */
+    private static function crossTabColumnLimit(): int
+    {
+        try {
+            if (function_exists('config') && function_exists('app') && app()->bound('config')) {
+                $configured = (int) config('modules.builder_query.pivot_cross_tab_column_limit', 200);
+
+                return $configured > 0 ? $configured : 200;
+            }
+        } catch (\Throwable) {
+            // 容器不可用：使用默认值
+        }
+
+        return 200;
     }
 }

@@ -18,7 +18,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * 安全性：行数据的键名、表别名、关联键、唯一键、更新列均经白名单校验并由 grammar wrap，
  * 数值 / 字面值全部走参数绑定。
  *
- * @version 3.0.0
+ * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
  *

@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace zxf\Modules;
 
 use Composer\InstalledVersions;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Console\AboutCommand;
+use Illuminate\Queue\Events\JobProcessed;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\ServiceProvider;
 use zxf\Modules\BuilderQuery\MacrosBuilder;
 use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Support\ModuleAutoDiscovery;
+use zxf\Modules\Support\ModuleContext;
 use zxf\Modules\Support\ModuleLoader;
 
 /**
@@ -28,7 +33,7 @@ use zxf\Modules\Support\ModuleLoader;
  * - CSRF 中间件已使用新增的 PreventRequestForgery 命名约定
  * - 兼容 withScheduling() 的延迟注册时机与队列路由等 13.x 新特性
  *
- * @version 5.1.0
+ * @version 1.13.9
  */
 class ModulesServiceProvider extends ServiceProvider
 {
@@ -56,7 +61,7 @@ class ModulesServiceProvider extends ServiceProvider
         //   - 即使 boot() 中模块加载出现非致命异常，module:* 命令依然可用，
         //     从而规避「There are no commands defined in the 'module' namespace」。
         // ------------------------------------------------------------------
-        if ($this->app->runningInConsole()) {
+        if (ModuleContext::runningInConsole()) {
             $this->registerPackageCommands();
             $this->registerAboutInfo();
         }
@@ -91,8 +96,79 @@ class ModulesServiceProvider extends ServiceProvider
         // 注意：模块命令必须在 loadModules()（模块自动发现）之后注册，
         // 因此放在 boot() 而非 register()；包自带命令已在 register() 注册。
         // 浏览器（HTTP）环境下整体跳过，避免加载 src/Commands 下的命令类。
-        if ($this->app->runningInConsole()) {
+        if (ModuleContext::runningInConsole()) {
             $this->registerModuleCommands();
+        }
+
+        $this->registerTerminatingCleanup();
+        $this->registerQueueJobCleanup();
+    }
+
+    /**
+     * 注册「请求结束」清理钩子
+     *
+     * ModuleContext 用静态属性缓存「当前请求属于哪个模块」与「模块配置值」。
+     * 在 php-fpm 下每请求一个进程，静态天然重置；
+     * 但在 Octane / queue worker / supervisor 这类**长驻进程**里，
+     * 静态会跨请求存活，导致：
+     *  - 第二个请求直接复用上一个请求缓存的模块名；
+     *  - 模块配置值读到上一个请求留下的旧值。
+     * 表现是「偶发、只在长驻环境下出现」的模块识别/配置串台。
+     *
+     * 这里挂到 $app->terminating()，让每个 HTTP 请求结束后自动清掉
+     * 请求作用域的缓存。只清请求作用域的两项，
+     * 保留 repository（重新解析会丢掉已注册的模块，得不偿失）。
+     *
+     * 注意 terminating() **不覆盖队列**：queue worker 不调用
+     * Application::terminate()，因此队列场景由 registerQueueJobCleanup() 兜底。
+     */
+    protected function registerTerminatingCleanup(): void
+    {
+        if (! method_exists($this->app, 'terminating')) {
+            return;
+        }
+
+        try {
+            $this->app->terminating(static function (): void {
+                ModuleContext::flushRequestScopedCache();
+            });
+        } catch (\Throwable) {
+            // 最小容器可能没有 terminating 能力，忽略即可
+        }
+    }
+
+    /**
+     * 注册「每个队列任务前后」的请求作用域清理钩子
+     *
+     * queue worker 是长驻进程且**不会**触发 Application::terminate()，
+     * 只靠 terminating() 会让「当前模块」与「模块配置」跨 job 存活，
+     * 表现为「A 任务的日志/配置被打上 B 模块标签」。
+     * 这里挂到 JobProcessing / JobProcessed 两个事件做双向兜底：
+     * 处理前清一次（挡住上一个任务残留），处理后再清一次（挡住本次残留）。
+     *
+     * 队列组件不可用（未安装 illuminate/queue 或最小容器）时静默跳过。
+     */
+    protected function registerQueueJobCleanup(): void
+    {
+        try {
+            if (! class_exists(JobProcessing::class) || ! class_exists(JobProcessed::class)) {
+                return;
+            }
+
+            $events = $this->app['events'] ?? null;
+
+            if (! is_object($events) || ! method_exists($events, 'listen')) {
+                return;
+            }
+
+            $flush = static function (): void {
+                ModuleContext::flushRequestScopedCache();
+            };
+
+            $events->listen(JobProcessing::class, $flush);
+            $events->listen(JobProcessed::class, $flush);
+        } catch (\Throwable) {
+            // 队列子系统不可用时不影响包的正常装载
         }
     }
 
@@ -101,22 +177,50 @@ class ModulesServiceProvider extends ServiceProvider
      */
     protected function registerRepository(): void
     {
-        $this->app->singleton(RepositoryInterface::class, function (Application $app) {
+        // 形参类型由 `Application`（= Contracts\Foundation\Application）放宽为无类型。
+        // 原因同 registerModuleLoader()：容器把实际容器实例传进来，
+        // 裸 Container 不实现 Foundation\Application 契约 → TypeError，
+        // register() 失败 = 整个包无法装载。
+        $this->app->singleton(RepositoryInterface::class, function ($app) {
             // 收集所有扫描路径
-            $paths = [config('modules.path', base_path('Modules'))];
+            //
+            // 统一在这里做「收敛 + 兜底」，保证至少有一条合法路径：
+            //  - config('modules.path') 允许为 null（项目未发布配置时），
+            //    直接 array_filter 会把它整条剔除 → $paths 可能变成空数组，
+            //    后续 Repository 零模块且没有任何提示，极难排查；
+            //  - 若残留非字符串值，Repository::scanPath(string $path)
+            //    会抛未捕获 TypeError，直接把 boot() 打断；
+            //  - 还需保留「默认目录」这一兜底。
+            $paths = [];
+
+            $primary = config('modules.path');
+            if (is_string($primary) && $primary !== '') {
+                $paths[] = $primary;
+            }
 
             $extraPaths = config('modules.scan_paths', []);
             if (is_array($extraPaths)) {
-                $paths = array_merge($paths, $extraPaths);
+                foreach ($extraPaths as $extra) {
+                    if (is_string($extra) && $extra !== '') {
+                        $paths[] = $extra;
+                    }
+                }
             }
 
-            // 过滤无效路径
-            $paths = array_filter($paths, fn ($p) => is_string($p) && $p !== '');
+            // 去重并保留原始顺序（优先级由后续 sortByPriority 决定）
+            $paths = array_values(array_unique($paths));
+
+            if (empty($paths)) {
+                // 兜底：项目根 Modules 目录（能力感知，裸容器下退化为 cwd）
+                $paths[] = ModuleContext::basePath('Modules');
+            }
 
             return new Repository(
-                $app['files'],
+                $this->resolveFilesystem($app),
                 $paths,
-                config('modules.namespace', 'Modules')
+                // 显式收敛为 string，避免 config 返回 null/mixed 时
+                // Repository 的 `string $namespace` 形参在 strict_types 下抛 TypeError
+                (string) (config('modules.namespace') ?: 'Modules')
             );
         });
 
@@ -124,11 +228,61 @@ class ModulesServiceProvider extends ServiceProvider
     }
 
     /**
+     * 解析文件系统实例
+     *
+     * 只要 'files' 这个字符串绑定不在容器里就会抛：
+     *     Target class [files] does not exist.
+     *     Class "files" does not exist
+     * 而本包的设计原则是「最小化 Laravel 框架依赖」，并不保证运行容器一定
+     * 是完整的 Illuminate\Foundation\Application（测试用裸 Container、
+     * 精简容器、自建微内核等都可能出现该报错，且每次 boot 必现）。
+     *
+     * 现在按三级回退：已绑定 'files' → 已绑定 Filesystem 类名 → 直接 new。
+     * 第三级让本包在没有文件系统服务的容器里也能正常工作。
+     */
+    /**
+     * @param  Container  $app
+     *
+     * 形参类型由 Foundation\Application 放宽为 Container 基类。
+     * 本方法只用到 bound() / make()，两者都在 Container 基类上；
+     * 沿用 Foundation 契约会让裸容器直接抛 TypeError。
+     */
+    protected function resolveFilesystem($app): Filesystem
+    {
+        if ($app->bound('files')) {
+            $files = $app->make('files');
+
+            if ($files instanceof Filesystem) {
+                return $files;
+            }
+        }
+
+        if ($app->bound(Filesystem::class)) {
+            $files = $app->make(Filesystem::class);
+
+            if ($files instanceof Filesystem) {
+                return $files;
+            }
+        }
+
+        return new Filesystem;
+    }
+
+    /**
      * 注册模块加载器
      */
     protected function registerModuleLoader(): void
     {
-        $this->app->singleton(ModuleLoader::class, function (Application $app) {
+        // 容器解析 singleton 时会把**实际容器实例**传进来，
+        // 而在裸 Container 场景下那是 Illuminate\Container\Container，
+        // 它**并不实现** Foundation\Application 契约 →
+        //     TypeError: Argument #1 ($app) must be of type
+        //     Illuminate\Contracts\Foundation\Application, Container given
+        // boot() 直接崩，且报错信息完全指不到真正原因（模块加载器注册）。
+        //
+        // 这里去掉形参类型约束（模块加载器构造只要求容器契约 Container），
+        // 让它在任何容器实现下都能正常构建。
+        $this->app->singleton(ModuleLoader::class, static function ($app) {
             return new ModuleLoader(
                 $app->make(RepositoryInterface::class),
                 $app
@@ -153,6 +307,18 @@ class ModulesServiceProvider extends ServiceProvider
      */
     protected function publishConfig(): void
     {
+        // 这两个全局助手内部会调用 $app->configPath() / $app->resourcePath()，
+        // 而这些方法**只存在于 Illuminate\Foundation\Application**。
+        // 于是在裸 Container / 精简容器下 register() 会直接致命：
+        //     Call to undefined method Illuminate\Container\Container::configPath()
+        // 而 register() 失败 = 整个包无法装载（每次请求都崩）。
+        //
+        // publishes() 本身只是登记「vendor:publish 映射」，
+        // 在没有完整 Foundation 容器时本就无从执行，直接跳过即可。
+        if (! $this->hasFoundationPathHelpers()) {
+            return;
+        }
+
         $this->publishes([
             __DIR__.'/../config/modules.php' => config_path('modules.php'),
         ], 'modules-config');
@@ -164,11 +330,24 @@ class ModulesServiceProvider extends ServiceProvider
     }
 
     /**
+     * 当前容器是否支持 config_path() / resource_path() 这类 Foundation 路径助手
+     *
+     * 判据：Illuminate\Foundation\Application 提供了
+     * configPath() / resourcePath() / basePath() 等实例方法，
+     * 裸 Container 没有 → 助手函数调用必然抛 Error。
+     */
+    protected function hasFoundationPathHelpers(): bool
+    {
+        return method_exists($this->app, 'configPath')
+            && method_exists($this->app, 'resourcePath');
+    }
+
+    /**
      * 注册扩展包自身命令
      */
     protected function registerPackageCommands(): void
     {
-        if (! $this->app->runningInConsole()) {
+        if (! ModuleContext::runningInConsole()) {
             return;
         }
 
@@ -229,7 +408,7 @@ class ModulesServiceProvider extends ServiceProvider
      */
     protected function registerModuleCommands(): void
     {
-        if (! $this->app->runningInConsole()) {
+        if (! ModuleContext::runningInConsole()) {
             return;
         }
 

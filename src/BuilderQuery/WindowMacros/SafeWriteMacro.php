@@ -27,7 +27,7 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  *  - 全程内存占用与单批数据量成正比（O(分片大小)），与待删总量无关，稳定可控。
  * 双构建器友好：全部通过 {@see BaseMacro::define()} 同时注册到 Eloquent\Builder 与 Query\Builder。
  *
- * @version 3.3.0
+ * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5），Laravel 11+ / 12+ / 13+，MySQL 8.0+ / PostgreSQL 15+
  *
