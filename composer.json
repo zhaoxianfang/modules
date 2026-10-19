@@ -1,6 +1,5 @@
 {
   "name": "zxf/modules",
-  "version": "1.13.9",
   "description": "一个适用于Laravel 11+ / 12+ / 13+ 版本的现代化、多模块化扩展，最小化框架依赖",
   "license": "MIT",
   "keywords": ["laravel", "module", "modular", "package", "modules", "zxf", "multi-module"],
