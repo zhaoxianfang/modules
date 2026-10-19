@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 创建视图命令
@@ -66,21 +66,21 @@ class ViewMakeCommand extends AbstractMakeCommand
         $viewPath = 'Resources/views/'.str_replace('.', '/', $viewName).'.blade.php';
         $fullPath = $this->targetPath($viewPath);
 
-        if (File::exists($fullPath) && ! $force) {
+        if (SafeFilesystem::exists($fullPath) && ! $force) {
             $this->error("模块 [{$this->esc($moduleName)}] 中已存在视图 [{$this->esc($viewName)}]");
             $this->line('提示：使用 --force 选项覆盖已存在的视图');
 
             return Command::FAILURE;
         }
 
-        if (File::exists($fullPath) && $force) {
+        if (SafeFilesystem::exists($fullPath) && $force) {
             $this->warn("正在覆盖模块 [{$this->esc($moduleName)}] 中已存在的视图 [{$this->esc($viewName)}]");
         }
 
         // 确保目录存在
         $viewDir = dirname($fullPath);
         if (! is_dir($viewDir)) {
-            File::makeDirectory($viewDir, 0755, true);
+            SafeFilesystem::makeDirectory($viewDir, 0755, true);
         }
 
         // 生成视图内容
@@ -90,7 +90,7 @@ class ViewMakeCommand extends AbstractMakeCommand
 
         $content = $this->generateViewContent($moduleName, $viewName);
 
-        if (! File::put($fullPath, $content)) {
+        if (! SafeFilesystem::put($fullPath, $content)) {
             $this->error("创建视图 [{$this->esc($viewName)}] 失败");
 
             return Command::FAILURE;

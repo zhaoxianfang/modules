@@ -21,15 +21,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 数据抽样查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class TableSampleMacro extends BaseMacro
 {
     /**
      * 注册所有抽样宏
-     *
-     * @scenario 注册所有抽样宏
      */
     public static function register(): void
     {
@@ -41,8 +37,6 @@ class TableSampleMacro extends BaseMacro
 
     /**
      * 注册 TABLESAMPLE 方法
-     *
-     * @scenario 注册 TABLESAMPLE 方法
      */
     public static function registerTableSample(): void
     {
@@ -62,8 +56,6 @@ class TableSampleMacro extends BaseMacro
          * Log::query()->sample(5, 'system')->get();
          * // 快速估算统计值（基于样本）
          * $avgAge = User::query()->sample(1)->avg('age');
-         *
-         * @scenario TABLESAMPLE - 表级抽样
          */
         static::define('sample', function (
             float $percentage,
@@ -71,11 +63,8 @@ class TableSampleMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
 
             // 百分比需大于 0，否则 MOD(pk, ceil(100/0)) 会除零
             if ($percentage <= 0 || $percentage > 100) {
@@ -83,7 +72,7 @@ class TableSampleMacro extends BaseMacro
             }
             $percentage = max(0, min(100, $percentage));
 
-            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $primaryKey = BaseMacro::assertValidIdentifier(BaseMacro::keyName($this), 'primaryKey');
             $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
             [$sql, $bindings] = BaseMacro::tableSampleFragment($this, $wrappedPk, $percentage, $method);
@@ -94,8 +83,6 @@ class TableSampleMacro extends BaseMacro
 
     /**
      * 注册随机抽样方法
-     *
-     * @scenario 注册随机抽样方法
      */
     public static function registerRandomSample(): void
     {
@@ -114,8 +101,6 @@ class TableSampleMacro extends BaseMacro
          * Survey::query()->randomSample(500, 'seed_2024')->get();
          * // 带条件的随机抽样
          * Order::query()->where('status', 'completed')->randomSample(50)->get();
-         *
-         * @scenario randomSample - 精确随机抽样（指定样本量）
          */
         static::define('randomSample', function (
             int $sampleSize,
@@ -123,12 +108,9 @@ class TableSampleMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
-            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $table = BaseMacro::resolveTable($this);
+            $primaryKey = BaseMacro::assertValidIdentifier(BaseMacro::keyName($this), 'primaryKey');
             $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
             if ($seed !== null) {
@@ -143,11 +125,9 @@ class TableSampleMacro extends BaseMacro
             // 构建子查询：给每行分配随机排名。
             // 深拷贝当前查询（含全部 where/join 条件），但清空列选择、排序与分页，
             // 避免丢失调用者已添加的过滤条件，同时不影响 ROW_NUMBER 的随机顺序。
-            $subQuery = $model->newQuery()->setQuery(clone BaseMacro::queryOf($this));
-            BaseMacro::queryOf($subQuery)->columns = null;
-            BaseMacro::queryOf($subQuery)->limit = null;
-            BaseMacro::queryOf($subQuery)->offset = null;
-            BaseMacro::queryOf($subQuery)->orders = null;
+            $subQuery = BaseMacro::cloneForSubQuery($this);
+            // 清空列选择 / 排序 / 分页（cloneForSubQuery 已连同 select、order 绑定一起清）；
+            // where / wheres 保留 —— 抽样必须继承调用方已加的过滤条件。
             $subQuery->select("{$table}.*")
                 ->selectRaw("{$randExpr} AS __sample_rank", $randBindings);
 
@@ -155,7 +135,7 @@ class TableSampleMacro extends BaseMacro
             $bindings = $subQuery->getBindings();
 
             // 包装并限制样本量
-            return $model->newQuery()
+            return BaseMacro::freshQuery($this)
                 ->fromRaw("({$subSql}) AS sampled", $bindings)
                 ->where('__sample_rank', '<=', $sampleSize);
         });
@@ -163,8 +143,6 @@ class TableSampleMacro extends BaseMacro
 
     /**
      * 注册分层抽样方法
-     *
-     * @scenario 注册分层抽样方法
      */
     public static function registerStratifiedSample(): void
     {
@@ -182,8 +160,6 @@ class TableSampleMacro extends BaseMacro
          * User::query()->stratifiedSample('gender', 50)->get();
          * // 按地区分层抽样（保证各地区代表性）
          * Customer::query()->stratifiedSample('region', 100, 'audit_2024')->get();
-         *
-         * @scenario stratifiedSample - 分层抽样
          */
         static::define('stratifiedSample', function (
             string $stratumColumn,
@@ -192,12 +168,9 @@ class TableSampleMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
-            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $table = BaseMacro::resolveTable($this);
+            $primaryKey = BaseMacro::assertValidIdentifier(BaseMacro::keyName($this), 'primaryKey');
             $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
             $stratumColumn = BaseMacro::assertValidIdentifier($stratumColumn, 'stratum');
             $wrappedStratum = BaseMacro::wrapIdentifier($this, $stratumColumn);
@@ -212,18 +185,16 @@ class TableSampleMacro extends BaseMacro
             }
 
             // 构建分层抽样子查询（深拷贝当前查询条件，并清空列选择、排序与分页）
-            $subQuery = $model->newQuery()->setQuery(clone BaseMacro::queryOf($this));
-            BaseMacro::queryOf($subQuery)->columns = null;
-            BaseMacro::queryOf($subQuery)->limit = null;
-            BaseMacro::queryOf($subQuery)->offset = null;
-            BaseMacro::queryOf($subQuery)->orders = null;
+            $subQuery = BaseMacro::cloneForSubQuery($this);
+            // 同 sampleRandom：清结构必须连同 select / order 绑定一起清，否则绑定错位。
+            // where / wheres 保留（抽样必须继承调用方的过滤条件）。
             $subQuery->select("{$table}.*")
                 ->selectRaw("{$randExpr} AS __stratum_rank", $randBindings);
 
             $subSql = $subQuery->toSql();
             $bindings = $subQuery->getBindings();
 
-            return $model->newQuery()
+            return BaseMacro::freshQuery($this)
                 ->fromRaw("({$subSql}) AS stratified", $bindings)
                 ->where('__stratum_rank', '<=', $samplesPerStratum);
         });
@@ -231,8 +202,6 @@ class TableSampleMacro extends BaseMacro
 
     /**
      * 注册系统抽样方法
-     *
-     * @scenario 注册系统抽样方法
      */
     public static function registerSystematicSample(): void
     {
@@ -251,8 +220,6 @@ class TableSampleMacro extends BaseMacro
          * Order::query()->systematicSample(20, 5)->get();
          * // 按时间顺序的系统抽样
          * Event::query()->orderBy('created_at')->systematicSample(100)->get();
-         *
-         * @scenario systematicSample - 系统抽样（等距抽样）
          */
         static::define('systematicSample', function (
             int $interval,
@@ -260,17 +227,14 @@ class TableSampleMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
 
             // 抽样间隔必须大于 0，否则取模运算会除零、rand 区间非法
             if ($interval <= 0) {
                 throw new \InvalidArgumentException('systematicSample 抽样间隔必须大于 0');
             }
 
-            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $primaryKey = BaseMacro::assertValidIdentifier(BaseMacro::keyName($this), 'primaryKey');
             $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
 
             $offset = $startOffset ?? rand(0, $interval - 1);

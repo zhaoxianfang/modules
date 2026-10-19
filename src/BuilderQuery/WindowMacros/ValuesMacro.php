@@ -21,15 +21,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario VALUES 行构造函数与批量操作宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class ValuesMacro extends BaseMacro
 {
     /**
      * 注册所有 VALUES 宏
-     *
-     * @scenario 注册所有 VALUES 宏
      */
     public static function register(): void
     {
@@ -43,8 +39,6 @@ class ValuesMacro extends BaseMacro
      * 校验行数据键名并返回安全标识符列表
      *
      * @return array 已校验的列名
-     *
-     * @scenario 校验行数据键名并返回安全标识符列表
      */
 
     /**
@@ -55,8 +49,6 @@ class ValuesMacro extends BaseMacro
      *
      * @param  array<int, array<string, mixed>>  $rows
      * @return array 已校验的列名
-     *
-     * @scenario 校验批量行数据的列名合法性
      */
     public static function assertRowColumns(array $rows): array
     {
@@ -71,8 +63,6 @@ class ValuesMacro extends BaseMacro
 
     /**
      * 注册 VALUES 查询方法
-     *
-     * @scenario 注册 VALUES 查询方法
      */
     public static function registerValuesQuery(): void
     {
@@ -99,8 +89,6 @@ class ValuesMacro extends BaseMacro
          * User::query()->valuesQuery($ids, 'target_ids')
          *     ->join('target_ids', 'users.id', '=', 'target_ids.id')
          *     ->get();
-         *
-         * @scenario valuesQuery - 使用 VALUES ROW 构建内存表查询
          */
         static::define('valuesQuery', function (
             array $rows,
@@ -108,8 +96,6 @@ class ValuesMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
             if (empty($rows)) {
@@ -140,8 +126,6 @@ class ValuesMacro extends BaseMacro
 
     /**
      * 注册 VALUES JOIN 方法
-     *
-     * @scenario 注册 VALUES JOIN 方法
      */
     public static function registerValuesJoin(): void
     {
@@ -166,8 +150,6 @@ class ValuesMacro extends BaseMacro
          *     ->valuesJoin($updates, 'updates', 'id', 'order_id')
          *     ->select('orders.*', 'updates.new_status')
          *     ->get();
-         *
-         * @scenario valuesJoin - 使用 VALUES 作为 JOIN 表
          */
         static::define('valuesJoin', function (
             array $rows,
@@ -178,12 +160,9 @@ class ValuesMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
 
             if (empty($rows)) {
                 return $this;
@@ -208,9 +187,6 @@ class ValuesMacro extends BaseMacro
             $valuesKey = BaseMacro::assertValidIdentifier($valuesKey, 'valuesKey');
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
             $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
-            $wrappedTable = BaseMacro::wrapIdentifier($this, $table);
-            $wrappedLocal = BaseMacro::wrapIdentifier($this, $localKey);
-            $wrappedValues = BaseMacro::wrapIdentifier($this, $valuesKey);
 
             // 构建 JOIN
             $joinMethod = match (strtolower($joinType)) {
@@ -221,16 +197,18 @@ class ValuesMacro extends BaseMacro
 
             $joinSql = "({$valuesSql}) AS {$wrappedAlias} ({$columnList})";
 
-            return $this->{$joinMethod}(DB::raw($joinSql), function ($join) use ($wrappedTable, $wrappedLocal, $wrappedAlias, $wrappedValues) {
-                $join->on("{$wrappedTable}.{$wrappedLocal}", '=', "{$wrappedAlias}.{$wrappedValues}");
+            // 注意：on() 的两侧必须传【未 wrap】的 "表.列"。
+            // JoinClause::on() 会自己调 grammar wrap，而 Grammar::wrap() 不是幂等的，
+            // 把已 wrap 的 "users`.`id" 再传进去会被二次引用成 ``users``.`id`` → 语法错误，
+            // valuesJoin 必然失败。wrap 结果仅用于上面手写的 joinSql 原始片段。
+            return $this->{$joinMethod}(DB::raw($joinSql), function ($join) use ($table, $localKey, $alias, $valuesKey) {
+                $join->on("{$table}.{$localKey}", '=', "{$alias}.{$valuesKey}");
             })->addBinding($bindings, 'join');
         });
     }
 
     /**
      * 注册 VALUES 批量插入方法
-     *
-     * @scenario 注册 VALUES 批量插入方法
      */
     public static function registerValuesInsert(): void
     {
@@ -252,8 +230,6 @@ class ValuesMacro extends BaseMacro
          * // 大批量插入（自动分块）
          * $data = array_map(fn ($i) => ['name' => "Item {$i}", 'sort' => $i], range(1, 10000));
          * Item::query()->valuesInsert($data, 1000);
-         *
-         * @scenario valuesInsert - 使用 VALUES ROW 语法进行高效批量插入
          */
         static::define('valuesInsert', function (
             array $rows,
@@ -261,12 +237,9 @@ class ValuesMacro extends BaseMacro
         ): int {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
 
             if (empty($rows)) {
                 return 0;
@@ -301,8 +274,6 @@ class ValuesMacro extends BaseMacro
 
     /**
      * 注册批量 Upsert 方法
-     *
-     * @scenario 注册批量 Upsert 方法
      */
     public static function registerBatchUpsert(): void
     {
@@ -326,8 +297,6 @@ class ValuesMacro extends BaseMacro
          *     ['date' => '2024-01-01', 'metric' => 'pv', 'value' => 1000],
          *     ['date' => '2024-01-01', 'metric' => 'uv', 'value' => 500],
          * ], ['date', 'metric'], ['value']);
-         *
-         * @scenario batchUpsert - 批量插入或更新（INSERT ... ON DUPLICATE KEY UPDATE）
          */
         static::define('batchUpsert', function (
             array $rows,
@@ -337,12 +306,9 @@ class ValuesMacro extends BaseMacro
         ): int {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
 
             if (empty($rows)) {
                 return 0;

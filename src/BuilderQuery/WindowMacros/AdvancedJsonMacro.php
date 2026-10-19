@@ -32,15 +32,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario JSON 高级操作宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class AdvancedJsonMacro extends BaseMacro
 {
     /**
      * 注册所有 JSON 宏
-     *
-     * @scenario 注册所有 JSON 宏
      */
     public static function register(): void
     {
@@ -53,8 +49,6 @@ class AdvancedJsonMacro extends BaseMacro
 
     /**
      * 注册 JSON 路径查询
-     *
-     * @scenario 注册 JSON 路径查询
      */
     public static function registerJsonPathQueries(): void
     {
@@ -74,8 +68,6 @@ class AdvancedJsonMacro extends BaseMacro
          * Order::query()->jsonPath('items', '$[0].product_name', 'first_product')->get();
          * // 提取多级嵌套
          * Config::query()->jsonPath('data', '$.database.connections.mysql.host', 'db_host')->get();
-         *
-         * @scenario 使用 JSON Path 提取嵌套 JSON 值（字符串形式）
          */
         static::define('jsonPath', function (
             string $column,
@@ -85,8 +77,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $column = BaseMacro::assertValidIdentifier($column, 'column');
             $path = BaseMacro::assertJsonPath($path);
@@ -119,8 +109,6 @@ class AdvancedJsonMacro extends BaseMacro
          * Product::query()->jsonExtract('metadata', '$.stock', 'int', 'stock_qty', 0)->get();
          * // 提取日期时间
          * Event::query()->jsonExtract('schedule', '$.start_time', 'datetime', 'starts_at')->get();
-         *
-         * @scenario 提取 JSON 值并转换为指定类型
          */
         static::define('jsonExtract', function (
             string $column,
@@ -131,8 +119,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $column = BaseMacro::assertValidIdentifier($column, 'column');
             $path = BaseMacro::assertJsonPath($path);
@@ -165,8 +151,6 @@ class AdvancedJsonMacro extends BaseMacro
          * User::query()->whereJsonPathExists('settings', '$.email')->get();
          * // 查找有嵌套配置的记录
          * Config::query()->whereJsonPathExists('data', '$.database.connections.mysql')->get();
-         *
-         * @scenario 检查 JSON Path 是否存在
          */
         static::define('whereJsonPathExists', function (
             string $column,
@@ -175,8 +159,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = BaseMacro::assertJsonPath($path);
@@ -200,8 +182,6 @@ class AdvancedJsonMacro extends BaseMacro
          * User::query()->whereJsonPathNotExists('settings', '$.email')->get();
          * // 排除已设置嵌套数据库配置的记录
          * Config::query()->whereJsonPathNotExists('data', '$.database.connections.mysql')->get();
-         *
-         * @scenario 检查 JSON Path 是否不存在
          */
         static::define('whereJsonPathNotExists', function (
             string $column,
@@ -210,8 +190,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = BaseMacro::assertJsonPath($path);
@@ -225,8 +203,6 @@ class AdvancedJsonMacro extends BaseMacro
 
     /**
      * 注册 JSON 数组操作
-     *
-     * @scenario 注册 JSON 数组操作
      */
     public static function registerJsonArrayOperations(): void
     {
@@ -244,8 +220,6 @@ class AdvancedJsonMacro extends BaseMacro
          * Article::query()->whereJsonArrayContains('tags', 'php')->get();
          * // 查找嵌套数组
          * Data::query()->whereJsonArrayContains('items', 123, '$.product_ids')->get();
-         *
-         * @scenario 检查 JSON 数组是否包含指定值
          */
         static::define('whereJsonArrayContains', function (
             string $column,
@@ -255,8 +229,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = $path !== null ? BaseMacro::assertJsonPath($path) : null;
@@ -280,8 +252,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 查找包含指定标签组的文章（语义：数组整体包含该值集合）
          * Article::query()->whereJsonArrayContainsAny('tags', ['php', 'laravel', 'mysql'])->get();
-         *
-         * @scenario 检查 JSON 数组是否包含任意一个指定值
          */
         static::define('whereJsonArrayContainsAny', function (
             string $column,
@@ -291,8 +261,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return AdvancedJsonMacro::buildArrayContainsMacro($this, $column, $values, $path, $boolean);
@@ -310,8 +278,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 查找同时包含多个标签的文章
          * Article::query()->whereJsonArrayContainsAll('tags', ['php', 'mysql'])->get();
-         *
-         * @scenario 检查 JSON 数组是否包含所有指定值
          */
         static::define('whereJsonArrayContainsAll', function (
             string $column,
@@ -321,8 +287,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return AdvancedJsonMacro::buildArrayContainsMacro($this, $column, $values, $path, $boolean);
@@ -341,8 +305,6 @@ class AdvancedJsonMacro extends BaseMacro
          * Article::query()->jsonArrayLength('tags', null, 'tag_count')->get();
          * // 获取嵌套数组长度
          * Data::query()->jsonArrayLength('data', '$.items', 'item_count')->get();
-         *
-         * @scenario 获取 JSON 数组长度
          */
         static::define('jsonArrayLength', function (
             string $column,
@@ -351,8 +313,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = $path !== null ? BaseMacro::assertJsonPath($path) : null;
@@ -379,8 +339,6 @@ class AdvancedJsonMacro extends BaseMacro
          * Article::query()->whereJsonArrayLength('tags', 3)->get();
          * // 查找有多个标签的文章
          * Article::query()->whereJsonArrayLength('tags', 5, '>=')->get();
-         *
-         * @scenario 按 JSON 数组长度筛选
          */
         static::define('whereJsonArrayLength', function (
             string $column,
@@ -391,8 +349,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $operator = BaseMacro::assertOperator($operator);
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
@@ -415,8 +371,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 添加标签
          * Article::query()->where('id', 1)->appendToJsonArray('tags', 'new-tag')->update();
-         *
-         * @scenario 追加值到 JSON 数组
          */
         static::define('appendToJsonArray', function (
             string $column,
@@ -425,8 +379,6 @@ class AdvancedJsonMacro extends BaseMacro
         ) {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = $path !== null ? BaseMacro::assertJsonPath($path) : null;
@@ -452,8 +404,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 移除标签
          * Article::query()->where('id', 1)->removeFromJsonArray('tags', 'old-tag')->update();
-         *
-         * @scenario 从 JSON 数组中移除首个匹配值
          */
         static::define('removeFromJsonArray', function (
             string $column,
@@ -462,8 +412,6 @@ class AdvancedJsonMacro extends BaseMacro
         ) {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = $path !== null ? BaseMacro::assertJsonPath($path) : null;
@@ -488,8 +436,6 @@ class AdvancedJsonMacro extends BaseMacro
      * @return string JSON 编码后的字面量
      *
      * @throws \JsonException
-     *
-     * @scenario 将 PHP 值编码为 JSON 字面量，用于 JSON 函数的参数绑定
      */
     public static function toJsonLiteral(mixed $value): string
     {
@@ -500,8 +446,6 @@ class AdvancedJsonMacro extends BaseMacro
      * whereJsonArrayContainsAny / All 的共用实现：将值集合编码为 JSON 数组字面量后走 CONTAINS/@> 语义。
      * 本方法为类级静态辅助方法，在 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder::macro 闭包内需通过显式类名
      * {@see AdvancedJsonMacro::buildArrayContainsMacro()} 调用（宏闭包内 AdvancedJsonMacro:: 解析为 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder）。
-     *
-     * @scenario 本类/成员说明。
      */
     public static function buildArrayContainsMacro(
         Builder|\Illuminate\Database\Query\Builder $builder,
@@ -512,8 +456,6 @@ class AdvancedJsonMacro extends BaseMacro
     ): Builder|\Illuminate\Database\Query\Builder {
         /**
          * @var Builder|\Illuminate\Database\Query\Builder $builder
-         *
-         * @scenario 本类/成员说明。
          */
         $wrappedColumn = BaseMacro::wrapIdentifier($builder, BaseMacro::assertValidIdentifier($column, 'column'));
         $path = $path !== null ? BaseMacro::assertJsonPath($path) : null;
@@ -527,8 +469,6 @@ class AdvancedJsonMacro extends BaseMacro
 
     /**
      * 注册 JSON 对象操作
-     *
-     * @scenario 注册 JSON 对象操作
      */
     public static function registerJsonObjectOperations(): void
     {
@@ -546,8 +486,6 @@ class AdvancedJsonMacro extends BaseMacro
          * User::query()->where('id', 1)->setJsonValue('settings', '$.theme', 'dark')->update();
          * // 插入新键
          * User::query()->where('id', 1)->setJsonValue('settings', '$.notifications.push', true, true)->update();
-         *
-         * @scenario 设置 JSON 对象的键值
          */
         static::define('setJsonValue', function (
             string $column,
@@ -557,8 +495,6 @@ class AdvancedJsonMacro extends BaseMacro
         ) {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = BaseMacro::assertJsonPath($path);
@@ -585,8 +521,6 @@ class AdvancedJsonMacro extends BaseMacro
          * User::query()->where('id', 1)->removeJsonKey('settings', '$.temp_data')->update();
          * // 删除多个键
          * User::query()->where('id', 1)->removeJsonKey('settings', ['$.cache', '$.temp'])->update();
-         *
-         * @scenario 删除 JSON 对象的键
          */
         static::define('removeJsonKey', function (
             string $column,
@@ -594,8 +528,6 @@ class AdvancedJsonMacro extends BaseMacro
         ) {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $paths = is_array($paths) ? $paths : [$paths];
@@ -624,8 +556,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 合并设置
          * User::query()->where('id', 1)->mergeJson('settings', ['theme' => 'dark', 'lang' => 'zh'])->update();
-         *
-         * @scenario 合并 JSON 对象
          */
         static::define('mergeJson', function (
             string $column,
@@ -634,8 +564,6 @@ class AdvancedJsonMacro extends BaseMacro
         ) {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $jsonData = AdvancedJsonMacro::toJsonLiteral($data);
@@ -665,8 +593,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 获取所有设置键
          * User::query()->jsonKeys('settings', null, 'setting_keys')->get();
-         *
-         * @scenario 获取 JSON 对象的所有键
          */
         static::define('jsonKeys', function (
             string $column,
@@ -675,8 +601,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $path = $path !== null ? BaseMacro::assertJsonPath($path) : null;
@@ -691,8 +615,6 @@ class AdvancedJsonMacro extends BaseMacro
 
     /**
      * 注册 JSON 搜索操作
-     *
-     * @scenario 注册 JSON 搜索操作
      */
     public static function registerJsonSearchOperations(): void
     {
@@ -709,8 +631,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 搜索值的位置
          * Data::query()->jsonSearch('content', 'target_value', 'all', '$', 'found_paths')->get();
-         *
-         * @scenario 在 JSON 中搜索值并返回首个匹配的 JSON Path
          */
         static::define('jsonSearch', function (
             string $column,
@@ -721,8 +641,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             if (! in_array($mode, ['one', 'all'], true)) {
@@ -749,8 +667,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 搜索包含特定文本的 JSON
          * Article::query()->whereJsonLike('metadata', '%keyword%', '$.description')->get();
-         *
-         * @scenario 按 JSON 值模糊匹配（支持通配符）
          */
         static::define('whereJsonLike', function (
             string $column,
@@ -760,8 +676,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
@@ -784,8 +698,6 @@ class AdvancedJsonMacro extends BaseMacro
 
     /**
      * 注册 JSON 聚合
-     *
-     * @scenario 注册 JSON 聚合
      */
     public static function registerJsonAggregation(): void
     {
@@ -804,8 +716,6 @@ class AdvancedJsonMacro extends BaseMacro
          *     ->jsonArrayAgg('product_id', 'products')
          *     ->groupBy('user_id')
          *     ->get();
-         *
-         * @scenario 将多行聚合成 JSON 数组
          */
         static::define('jsonArrayAgg', function (
             string $column,
@@ -815,8 +725,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $column = BaseMacro::assertValidIdentifier($column, 'column');
             $wrappedColumn = BaseMacro::wrapIdentifier($this, $column);
@@ -840,8 +748,6 @@ class AdvancedJsonMacro extends BaseMacro
          * @example
          * // 将配置聚合成对象
          * Config::query()->jsonObjectAgg('key', 'value', 'config_object')->first();
-         *
-         * @scenario 将多行聚合成 JSON 对象
          */
         static::define('jsonObjectAgg', function (
             string $keyColumn,
@@ -850,8 +756,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $keyColumn = BaseMacro::assertValidIdentifier($keyColumn, 'key');
             $valueColumn = BaseMacro::assertValidIdentifier($valueColumn, 'value');
@@ -878,8 +782,6 @@ class AdvancedJsonMacro extends BaseMacro
          *     ->jsonRowAgg(['id', 'product_name', 'price'], 'items')
          *     ->groupBy('user_id')
          *     ->get();
-         *
-         * @scenario 将行聚合成 JSON 对象数组
          */
         static::define('jsonRowAgg', function (
             array $columns,
@@ -887,8 +789,6 @@ class AdvancedJsonMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $columnPairs = [];
             foreach ($columns as $col) {

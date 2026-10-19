@@ -49,9 +49,26 @@ class ControllerMakeCommand extends AbstractMakeCommand
         $plain = $this->option('plain');
         $useAttributes = $this->option('attributes');
 
-        // 类型不再限制，允许任意自定义类型（作为子命名空间目录）
+        // --type 允许任意「单段」自定义类型（作为子命名空间目录），
+        // 但必须是一段合法的 PHP 标识符：否则 --type=a/b 会生成
+        // namespace ...\A\B 与路径 Http/Controllers/A/B 两种不一致的形态，
+        // 产生非法类名（PSR-4 永久无法加载）或写到意料之外的目录。
+        if ($type !== '' && preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $type) !== 1) {
+            $this->error("控制器类型 [{$this->esc((string) $this->option('type'))}] 不合法");
+            $this->line('提示：--type 只能是单个标识符（如 Web / Api / Admin），不能包含 / \\ . - 等字符');
+
+            return Command::FAILURE;
+        }
+
         $subDir = $type !== 'Web' ? $type.'/' : '';
         $relativePath = 'Http/Controllers/'.$subDir.$controllerName.'.php';
+
+        // 统一取自生成器路径配置，避免与 module:make 各自硬编码而生成到不同目录
+        $configuredBase = rtrim((string) config('modules.paths.generator.controller.api.path', 'Http/Controllers/Api'), '/\\');
+
+        if ($type !== 'Web' && $configuredBase !== '' && $configuredBase !== 'Http/Controllers/Api') {
+            $relativePath = $configuredBase.'/'.$controllerName.'.php';
+        }
 
         $generator = $this->makeStubGenerator();
         $generator->addReplacement('{{CLASS}}', $controllerName);

@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
+use zxf\Modules\Support\PathGuard;
+use zxf\Modules\Support\SafeFilesystem;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -19,6 +20,14 @@ use zxf\Modules\Support\StubGenerator;
 class ModuleMakeCommand extends Command
 {
     use EscapesConsoleOutput;
+    use PathGuard;
+
+    /**
+     * 本次生成过程中失败的文件（空数组 = 全部成功）
+     *
+     * @var array<int, string>
+     */
+    protected array $generatedFailures = [];
 
     /**
      * 命令签名
@@ -60,7 +69,7 @@ class ModuleMakeCommand extends Command
             //     php artisan module:make ../../important --force
             // 会算出 $modulePath = '<base>/Modules/../../important'，
             // is_dir() 解析软链后为真 → 确认后执行
-            //     File::deleteDirectory('<base>/Modules/../../important')
+            //     SafeFilesystem::deleteDirectory('<base>/Modules/../../important')
             // 即**递归删除 Modules 目录之外**的目录树。
             // 因此先按模块名约定收紧（字母开头 + 字母数字），
             // 再对解析出的绝对路径做一次「必须位于 Modules 根目录内」的兜底校验。
@@ -79,17 +88,18 @@ class ModuleMakeCommand extends Command
             $modulePath = $stubGenerator->getModulePath();
 
             // 兜底：解析后的绝对路径必须仍位于模块根目录之内。
-            // 即便上面的名称校验被后续改动绕过，这一层仍能阻止越界删除。
-            $modulesRoot = rtrim(
-                (string) (config('modules.path') ?: (function_exists('base_path') ? base_path('Modules') : 'Modules')),
-                '/\\'
+            // 字面前缀校验挡不住**符号链接**：`<Modules>/Blog` 若是软链，
+            // is_dir() 为真、字面路径也在根目录下，但 deleteDirectory() 会
+            // `new FilesystemIterator()` 遍历**链接目标**，把根目录之外的整棵目录树删掉。
+            // 因此统一交给 PathGuard：归一化 + realpath 解链 + 顶层软链硬拒绝。
+            $guard = $this->guardAgainstEscape(
+                $modulePath,
+                $this->trustedModuleRoots(),
+                '模块目录'
             );
-            $normalizedModulePath = $this->normalizePath($modulePath);
 
-            if ($normalizedModulePath !== $modulesRoot
-                && ! str_starts_with($normalizedModulePath, $modulesRoot.'/')) {
-                $this->error("模块路径 [{$this->esc($modulePath)}] 超出了模块根目录 [{$modulesRoot}]，已拒绝操作");
-                $this->line('提示：模块名称不合法或 modules.path 配置有误');
+            if ($guard !== null) {
+                $this->error($guard);
 
                 return Command::FAILURE;
             }
@@ -102,15 +112,23 @@ class ModuleMakeCommand extends Command
             }
 
             if (is_dir($modulePath) && $force) {
-                $this->warn("正在覆盖已存在的模块 [{$this->esc($name)}]");
-                if (! $this->confirm("Are you sure you want to overwrite module [{$name}]? All files will be deleted.", true)) {
-                    $this->info('Operation cancelled.');
+                $this->warn("正在覆盖已存在的模块 [{$this->esc($name)}]（其下所有文件将被删除）");
+
+                // 默认 false：破坏性操作必须显式确认，回车应当是「取消」而不是「删」
+                if (! $this->confirm('确认删除并重建该模块目录？', false)) {
+                    $this->info('已取消操作');
 
                     return Command::SUCCESS;
                 }
 
-                // 删除现有模块目录
-                File::deleteDirectory($modulePath);
+                // 删除失败必须报错退出：否则后续会在「半残目录」上继续生成，
+                // 最后却打印「创建成功」，属于典型的假成功
+                if (! SafeFilesystem::deleteDirectory($modulePath)) {
+                    $this->error("删除已存在的模块目录 [{$this->esc($modulePath)}] 失败");
+                    $this->line('提示：请检查文件权限，或手动删除该目录后重试');
+
+                    return Command::FAILURE;
+                }
             }
 
             $this->info("Creating module [{$this->esc($name)}]...");
@@ -122,7 +140,17 @@ class ModuleMakeCommand extends Command
             $this->createModuleStructure($stubGenerator);
 
             // 根据 stub 映射生成所有文件
+            $this->generatedFailures = [];
             $this->generateFilesFromStubMapping($stubGenerator);
+
+            if ($this->generatedFailures !== []) {
+                // 已有失败明细在上面逐条输出过，这里只补一句结论并返回失败退出码，
+                // 避免出现「打印了失败列表但退出码是 0」的假成功。
+                $this->error("模块 [{$this->esc($name)}] 创建未完成：有 ".count($this->generatedFailures).' 个文件生成失败');
+                $this->line('提示：请检查上面的失败原因（权限 / 磁盘空间 / stub 配置），修复后用 --force 重建');
+
+                return Command::FAILURE;
+            }
 
             $this->info("模块 [{$this->esc($name)}] 创建成功");
             $this->line('用户指南位置: '.config('modules.path', base_path('Modules')).'/UserGuide.md');
@@ -196,7 +224,7 @@ class ModuleMakeCommand extends Command
 
         // 确保模块目录存在
         if (! is_dir($modulesPath)) {
-            File::makeDirectory($modulesPath, 0755, true);
+            SafeFilesystem::makeDirectory($modulesPath, 0755, true);
         }
 
         // 读取 stub 文件内容
@@ -210,7 +238,7 @@ class ModuleMakeCommand extends Command
         $content = file_get_contents($stubPath);
 
         // 写入用户指南
-        File::put($guidePath, $content);
+        SafeFilesystem::put($guidePath, $content);
         $this->info("多模块用户指南已发布: {$guidePath}");
     }
 
@@ -661,16 +689,16 @@ class ModuleMakeCommand extends Command
                     // 确保目录存在
                     $directory = dirname($fullPath);
                     if (! is_dir($directory)) {
-                        File::makeDirectory($directory, 0755, true);
+                        SafeFilesystem::makeDirectory($directory, 0755, true);
                     }
 
                     // 写入文件
                     //
-                    // 必须检查 File::put() 的返回值：磁盘满 / 权限不足时它返回 false，
+                    // 必须检查 SafeFilesystem::put() 的返回值：磁盘满 / 权限不足时它返回 false，
                     // 若忽略而照样 $generatedCount++，最终打印的「成功生成 N 个文件」
                     // 就是典型的假成功 —— 会让人以为模块已建好，实际缺文件，
                     // 后续报「类不存在」之类毫无关联的错误。
-                    if (File::put($fullPath, $content) === false) {
+                    if (SafeFilesystem::put($fullPath, $content) === false) {
                         $failedFiles[] = "写入文件失败（磁盘空间或权限）: {$mapping['destination']}";
 
                         continue;
@@ -693,7 +721,16 @@ class ModuleMakeCommand extends Command
                 foreach ($failedFiles as $error) {
                     $this->line("  - {$error}");
                 }
+
+                // 失败必须体现在退出码上：
+                // 只打印 warn 却让命令返回 SUCCESS，会让 CI / 部署脚本误判为构建成功，
+                // 随后在「缺文件」的状态下继续跑，报出与根因毫无关联的错误。
+                $this->generatedFailures = $failedFiles;
+
+                return;
             }
+
+            $this->generatedFailures = [];
         } catch (\Exception $e) {
             throw new \Exception("生成文件失败: {$e->getMessage()}", 0, $e);
         }

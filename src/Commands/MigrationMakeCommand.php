@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use zxf\Modules\Support\SafeFilesystem;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -82,7 +82,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
         }
 
         if (! is_dir($migrationDir)) {
-            File::makeDirectory($migrationDir, 0755, true);
+            SafeFilesystem::makeDirectory($migrationDir, 0755, true);
         }
 
         $timestamp = date('Y_m_d_His');
@@ -90,7 +90,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
         $migrationPath = $migrationDir.DIRECTORY_SEPARATOR.$filename;
 
         // 检查迁移文件是否已存在
-        if (File::exists($migrationPath)) {
+        if (SafeFilesystem::exists($migrationPath)) {
             $this->error("模块 [{$this->esc($moduleName)}] 中已存在迁移文件 [{$filename}]");
             $this->line('提示：请使用不同的迁移名称，或手动删除现有的迁移文件');
 
@@ -101,7 +101,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
         $stubGenerator = new StubGenerator($moduleName);
         $migrationStub = $this->generateMigrationStub($stubGenerator, $migrationInfo, $moduleName);
 
-        $result = File::put($migrationPath, $migrationStub);
+        $result = SafeFilesystem::put($migrationPath, $migrationStub);
 
         if ($result) {
             $this->info("成功在模块 [{$this->esc($moduleName)}] 中创建迁移文件 [{$filename}]");
@@ -287,7 +287,7 @@ class MigrationMakeCommand extends AbstractMakeCommand
 
         // 获取对应的 stub 模板文件
         $stubPath = $this->getStubPath($migrationInfo['stub_type']);
-        $stub = File::get($stubPath);
+        $stub = SafeFilesystem::get($stubPath);
 
         // 执行变量替换（按变量名长度降序排序，防止短变量名干扰长变量名替换）
         $replacements = $stubGenerator->getReplacements();

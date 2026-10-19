@@ -24,15 +24,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+（PG 索引/优化器提示需 pg_hint_plan）
- *
- * @scenario 索引提示与优化器提示宏（MySQL 8.0+ / PostgreSQL 15+）
  */
 class IndexHintMacro extends BaseMacro
 {
     /**
      *  注册所有索引/优化器提示宏。
-     *
-     * @scenario 注册所有索引/优化器提示宏。
      */
     public static function register(): void
     {
@@ -42,8 +38,6 @@ class IndexHintMacro extends BaseMacro
 
     /**
      * 注册索引提示宏（useIndex / forceIndex / ignoreIndex）。
-     *
-     * @scenario 注册索引提示宏（useIndex / forceIndex / ignoreIndex）。
      */
     public static function registerIndexHints(): void
     {
@@ -55,7 +49,6 @@ class IndexHintMacro extends BaseMacro
          * @param  string|array  $index  索引名（可多个）
          * @param  string  $for  作用范围（仅 MySQL）：''|join|order|group，留空表示全部
          * @param  string|null  $table  表名（默认取当前构建器表名）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 订单列表强制走 user_id + created_at 复合索引，避免优化器误判走全表
@@ -67,12 +60,10 @@ class IndexHintMacro extends BaseMacro
         static::define('useIndex', function (string|array $index, string $for = '', ?string $table = null): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return IndexHintMacro::applyIndexHint($this, (array) $index, 'use', $for, $table);
-        });
+        }, 'indexHint');
 
         /**
          * 强制优化器使用指定索引（FORCE INDEX），即使其认为全表扫描更快。
@@ -80,7 +71,6 @@ class IndexHintMacro extends BaseMacro
          * @param  string|array  $index  索引名（可多个）
          * @param  string  $for  作用范围（仅 MySQL）：''|join|order|group
          * @param  string|null  $table  表名（默认取当前构建器表名）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 明知 idx_status 选择性极高，强制使用以覆盖优化器的错误估计
@@ -91,12 +81,10 @@ class IndexHintMacro extends BaseMacro
         static::define('forceIndex', function (string|array $index, string $for = '', ?string $table = null): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return IndexHintMacro::applyIndexHint($this, (array) $index, 'force', $for, $table);
-        });
+        }, 'forceIndexHint');
 
         /**
          * 指示优化器忽略指定索引（IGNORE INDEX）。
@@ -104,7 +92,6 @@ class IndexHintMacro extends BaseMacro
          * @param  string|array  $index  索引名（可多个）
          * @param  string  $for  作用范围（仅 MySQL）：''|join|order|group
          * @param  string|null  $table  表名（默认取当前构建器表名）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 某索引因碎片严重反而更慢，临时忽略它
@@ -115,18 +102,14 @@ class IndexHintMacro extends BaseMacro
         static::define('ignoreIndex', function (string|array $index, string $for = '', ?string $table = null): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return IndexHintMacro::applyIndexHint($this, (array) $index, 'ignore', $for, $table);
-        });
+        }, 'ignoreIndexHint');
     }
 
     /**
      * 注册优化器 / 执行守卫宏（optimizerHints / maxExecutionTime / straightJoin）。
-     *
-     * @scenario 注册优化器 / 执行守卫宏（optimizerHints / maxExecutionTime / straightJoin）。
      */
     public static function registerOptimizerHints(): void
     {
@@ -138,7 +121,6 @@ class IndexHintMacro extends BaseMacro
          * PostgreSQL 侧若安装了 pg_hint_plan，可用等价语法（IndexScan/NoIndexScan/HashJoin 等）。
          *
          * @param  string|array  $hints  提示内容（不含 `/*+ *\/` 包裹符；可传数组自动空格拼接）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 强制连接顺序并限制单条查询 3 秒，避免拖垮整库
@@ -151,8 +133,6 @@ class IndexHintMacro extends BaseMacro
         static::define('optimizerHints', function (string|array $hints): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $hints = (array) $hints;
             foreach ($hints as $hint) {
@@ -169,7 +149,6 @@ class IndexHintMacro extends BaseMacro
          * 若需无扩展强约束，请改在连接层设置 `statement_timeout`。
          *
          * @param  int  $milliseconds  最大执行毫秒数（如 3000 = 3 秒）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 报表类重查询兜底 5 秒，超时即中断，避免拖垮连接池
@@ -180,8 +159,6 @@ class IndexHintMacro extends BaseMacro
         static::define('maxExecutionTime', function (int $milliseconds): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($milliseconds < 1) {
                 throw new \InvalidArgumentException('maxExecutionTime 必须大于 0（毫秒）。');
@@ -199,7 +176,6 @@ class IndexHintMacro extends BaseMacro
          * 仅 MySQL 有效；PostgreSQL 无等价关键字（会安全忽略并返回原构建器）。
          * 当大表驱动小表、或优化器连接顺序选择不佳导致慢查询时，可强制优化顺序。
          *
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 让大表 orders 作为驱动表先扫描，再关联小表
@@ -210,15 +186,13 @@ class IndexHintMacro extends BaseMacro
         static::define('straightJoin', function (): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if (BaseMacro::isMySql($this)) {
                 BaseMacro::addSelectPrefix($this, 'STRAIGHT_JOIN');
             }
 
             return $this;
-        });
+        }, 'straightJoinSelect');
     }
 
     /**
@@ -230,8 +204,6 @@ class IndexHintMacro extends BaseMacro
      * @param  string  $kind  use|force|ignore
      * @param  string  $for  ''|join|order|group
      * @param  string|null  $table  表名（默认取当前构建器表名）
-     *
-     * @scenario 应用索引提示（方言分支）。
      */
     public static function applyIndexHint(Builder|\Illuminate\Database\Query\Builder $builder, array $indexes, string $kind, string $for, ?string $table): Builder|\Illuminate\Database\Query\Builder
     {

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 创建模型观察者命令
@@ -65,7 +65,7 @@ class ObserverMakeCommand extends AbstractMakeCommand
         if ($result === Command::SUCCESS) {
             // 检查对应模型是否存在
             $modelPath = $this->targetPath('Models/'.$modelName.'.php');
-            if (! File::exists($modelPath)) {
+            if (! SafeFilesystem::exists($modelPath)) {
                 $this->warn("提示：对应的模型 [{$modelName}] 尚未创建");
                 $this->line("      可使用 php artisan module:make-model {$this->esc($module->getName())} {$modelName} 创建");
             }

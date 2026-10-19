@@ -56,7 +56,20 @@ class ListenerMakeCommand extends AbstractMakeCommand
             $eventStub->addReplacement('{{NAMESPACE}}', $namespace);
             $eventStub->addReplacement('{{NAME}}', $module->getName());
 
-            $this->generateFile($eventStub, 'event.stub', 'Events/'.$eventName.'.php', true);
+            // 覆盖与否必须交给 --force 决定：
+            // 原先这里硬编码 true，导致 module:make-listener 会**静默覆盖**用户
+            // 已经写好逻辑的同名 Event 类，且返回值被丢弃（失败也无感知）。
+            $eventRelative = 'Events/'.$eventName.'.php';
+
+            if (! $this->generateFile($eventStub, 'event.stub', $eventRelative, (bool) $force)) {
+                // 生成失败或目标已存在且未加 --force → 立即失败，
+                // 避免继续生成监听器却引用一个不存在/旧的 Event 类。
+                if (is_file($this->targetPath($eventRelative))) {
+                    $this->line('提示：加上 --force 可覆盖已存在的事件类');
+                }
+
+                return Command::FAILURE;
+            }
         } else {
             $eventName = Str::studly($eventName);
         }

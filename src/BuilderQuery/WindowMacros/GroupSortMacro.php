@@ -18,8 +18,6 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 分组排序宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class GroupSortMacro extends BaseMacro
 {
@@ -27,8 +25,6 @@ class GroupSortMacro extends BaseMacro
      * 注册 groupSort 宏函数
      *
      * @return void
-     *
-     * @scenario 注册 groupSort 宏函数
      */
     public static function register()
     {
@@ -49,12 +45,9 @@ class GroupSortMacro extends BaseMacro
         static::define('groupSort', function (string $groupBy, int|array $ranks, string $orderBy = 'read', string $direction = 'desc') {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
-            $primaryKey = $model->getKeyName();
+            $table = BaseMacro::resolveTable($this);
+            $primaryKey = BaseMacro::keyName($this);
 
             // 校验外部传入的字段名，防止 SQL 注入（表名/主键来自模型定义，视为可信）。
             $groupBy = BaseMacro::assertValidIdentifier($groupBy, 'group');
@@ -76,7 +69,7 @@ class GroupSortMacro extends BaseMacro
 
             // 包装子查询并合并绑定
             $subSql = $baseQuery->toSql();
-            $rankedSubQuery = DB::table(DB::raw("({$subSql}) as ranked"))
+            $rankedSubQuery = BaseMacro::connTable($this, DB::raw("({$subSql}) as ranked"))
                 ->mergeBindings(BaseMacro::queryOf($baseQuery));
 
             // 添加 row_rank 条件
@@ -94,7 +87,7 @@ class GroupSortMacro extends BaseMacro
             }
 
             // 查询主表数据
-            return $model->newQuery()->whereIn($primaryKey, $rankedSubQuery->select($primaryKey));
+            return BaseMacro::freshQuery($this)->whereIn($primaryKey, $rankedSubQuery->select($primaryKey));
         });
     }
 }

@@ -70,6 +70,31 @@ final class LogContext
         'response_body',
     ];
 
+    /**
+     * {@see self::PRE_REDACTED_KEYS} 的「键 → true」查表形式（惰性构建）。
+     *
+     * 处理器每条日志都要对 extra 的每个键做一次归属判断。用 in_array(..., PRE_REDACTED_KEYS, true)
+     * 是一次 O(27) 线性字符串扫描，业务日志的 extra 通常有 13~15 个键 → 每条日志几百次
+     * 字符串比较，纯属白烧 CPU。改成 isset() 查表后是 O(1)。
+     *
+     * @var array<string, bool>|null
+     */
+    private static ?array $preRedactedLookup = null;
+
+    /**
+     * 取得「预脱敏键」查表（首次调用时构建，之后复用）。
+     *
+     * @return array<string, bool>
+     */
+    public static function preRedactedKeyLookup(): array
+    {
+        if (self::$preRedactedLookup === null) {
+            self::$preRedactedLookup = array_fill_keys(self::PRE_REDACTED_KEYS, true);
+        }
+
+        return self::$preRedactedLookup;
+    }
+
     /** 预计算的 extra 片段（轻量标量：每条日志都注入） */
     private static array $baseExtra = [];
 

@@ -78,48 +78,79 @@ abstract class BaseMacro
      * 注意：闭包内 `$this` 在运行时会被重绑到被调用的构建器实例，
      * 因此闭包体必须兼容两种构建器（详见类注释第 2 点）。
      *
+     * 冲突处置：若某一侧的构建器已经自带同名**真实方法**（Laravel 13.32+ 的
+     * whereFullText / orWhereFullText、8.0 起的 cursorPaginate 等），
+     * Macroable 的 __call 根本不会被触发 —— 宏注册成功却**永远不会被调用**，
+     * 而调用方拿到的是签名完全不同的原生方法，静默给错结果。
+     *
+     * 这里对被遮蔽的一侧**跳过注册**（注册了也没用，只会掩盖问题），
+     * 并在提供了 $alias 时把别名注册上去，让功能真正可用且可发现。
+     *
      * @param  string  $name  宏名称（小驼峰，语义化、场景化）
      * @param  \Closure  $closure  宏实现闭包
+     * @param  string|null  $alias  宏名被原生方法遮蔽时改用的别名（如 whereFullTextMatch）
      */
-    public static function define(string $name, \Closure $closure): void
+    public static function define(string $name, \Closure $closure, ?string $alias = null): void
     {
-        self::recordNativeConflict(EloquentBuilder::class, $name);
-        self::recordNativeConflict(QueryBuilder::class, $name);
+        $targets = [EloquentBuilder::class, QueryBuilder::class];
 
-        EloquentBuilder::macro($name, $closure);
-        QueryBuilder::macro($name, $closure);
+        foreach ($targets as $class) {
+            if (! self::hasNativeMethod($class, $name)) {
+                $class::macro($name, $closure);
+
+                continue;
+            }
+
+            self::recordNativeConflict($class, $name);
+
+            // 原生方法优先：不在这一侧注册同名宏。
+            // 若调用方本意是本包的能力，提供的别名就是它们的出口。
+            if ($alias !== null && $alias !== '' && ! self::hasNativeMethod($class, $alias)) {
+                $class::macro($alias, $closure);
+            }
+        }
     }
 
     /**
-     * 探测宏名是否与框架原生方法冲突，冲突则登记到冲突表（不阻断注册）。
+     * 判断目标构建器是否自带该**真实方法**（排除宏与继承来的无关方法）。
      *
      * 注意判定方式必须是「反射查真实方法」而非 method_exists：
-     * method_exists 对 __call 之外的动态手段不敏感，而 method_exists 会把
-     * 通过 Macroable 动态混入的方法也算进来，导致自我误报。
+     * method_exists 会把通过 Macroable 动态混入的方法也算进来，导致自我误报。
+     *
+     * @param  class-string  $class  目标构建器类
+     */
+    private static function hasNativeMethod(string $class, string $name): bool
+    {
+        if (! method_exists($class, $name)) {
+            return false;
+        }
+
+        try {
+            $declaring = (new \ReflectionMethod($class, $name))->getDeclaringClass()->getName();
+        } catch (\ReflectionException) {
+            return false;
+        }
+
+        return $declaring === $class;
+    }
+
+    /**
+     * 把冲突登记到冲突表（供诊断接口查询）。
      *
      * @param  class-string  $class  目标构建器类
      * @param  string  $name  宏名
      */
     private static function recordNativeConflict(string $class, string $name): void
     {
-        if (! method_exists($class, $name) || isset(self::$nativeConflicts[$class.'::'.$name])) {
+        if (isset(self::$nativeConflicts[$class.'::'.$name])) {
             return;
         }
 
-        // 反射取「声明该方法的类」：若声明者就是目标构建器本身，说明是框架原生真实方法
-        try {
-            $declaring = (new \ReflectionMethod($class, $name))->getDeclaringClass()->getName();
-        } catch (\ReflectionException) {
-            return;
-        }
-
-        if ($declaring === $class) {
-            self::$nativeConflicts[$class.'::'.$name] = [
-                'class' => $class,
-                'method' => $name,
-                'since' => self::frameworkVersion(),
-            ];
-        }
+        self::$nativeConflicts[$class.'::'.$name] = [
+            'class' => $class,
+            'method' => $name,
+            'since' => self::frameworkVersion(),
+        ];
     }
 
     /**
@@ -257,6 +288,123 @@ abstract class BaseMacro
     }
 
     /**
+     * 在**当前构建器所用的连接**上开一个 table() 构建器。
+     *
+     * 不能直接用 DB::table()：那是 DatabaseManager 的【默认连接】。多库、读写分离、
+     * 多租户场景下，主查询在 from_db、而子查询却落到默认库 —— 结果是子查询查不到数据，
+     * 甚至让危险写操作作用到错误的库上。DB::raw() 则无此问题（只是构造表达式对象）。
+     *
+     * @param  EloquentBuilder|QueryBuilder  $builder
+     * @param  string|Expression|null  $table  缺省取当前构建器的表名
+     */
+    public static function connTable($builder, $table = null)
+    {
+        $connection = static::connOf($builder);
+        $table ??= static::resolveTable($builder);
+
+        return $connection !== null ? $connection->table($table) : DB::table($table);
+    }
+
+    /**
+     * 在当前构建器所用的连接上执行原生 SELECT（EXPLAIN / 估算行数等场景）。
+     *
+     * @param  EloquentBuilder|QueryBuilder  $builder
+     * @param  array<int, mixed>  $bindings
+     * @return array<int, mixed>
+     */
+    public static function connSelect($builder, string $sql, array $bindings = [])
+    {
+        $connection = static::connOf($builder);
+
+        return $connection !== null
+            ? $connection->select($sql, $bindings)
+            : DB::select($sql, $bindings);
+    }
+
+    /**
+     * 追加一个窗口函数表达式到 select 列。
+     *
+     * 不能直接用 `$builder->addSelect(DB::raw($expr))`：Laravel 的 addSelect 在
+     * `columns === null` 时执行 `$this->columns[] = $column`，也就是**只留下窗口列**，
+     * 把原本隐含的 `select *` 顶掉了。于是
+     *     DB::table('orders')->lastValue('amount', 'region')->get()
+     * 返回的对象里没有 id / region / amount 任何业务字段 —— 结果完全不可用，
+     * 而且不报错，属于最难发现的一类缺陷（只在 Eloquent 已 select 过的查询上"看起来正常"）。
+     *
+     * 这里先确保 columns 非空（补 '*'），再追加表达式。
+     *
+     * @param  EloquentBuilder|QueryBuilder  $builder
+     * @param  string  $expression  已由调用方构造好的窗口表达式文本
+     * @return EloquentBuilder|QueryBuilder
+     */
+    public static function addWindowSelect($builder, string $expression)
+    {
+        $query = static::queryOf($builder);
+
+        if (empty($query->columns)) {
+            $query->columns = ['*'];
+        }
+
+        return $builder->addSelect(DB::raw($expression));
+    }
+
+    /**
+     * 取得当前构建器已声明的 orderBy 列表（双构建器通用）。
+     *
+     * Eloquent 的 orders 在底层 query 上，Query 的就在自己身上；
+     * 直接写 `$builder->getQuery()->orders` 在 DB::table() 路径上会抛
+     * "Call to undefined method Query\Builder::getQuery()"。
+     *
+     * @param  EloquentBuilder|QueryBuilder  $builder
+     * @return array<int, mixed>
+     */
+    public static function ordersOf($builder): array
+    {
+        $query = static::queryOf($builder);
+
+        return is_array($query->orders ?? null) ? $query->orders : [];
+    }
+
+    /**
+     * 取得一个"继承了调用方全部过滤条件、但清空了列选择/排序/分页"的子构建器（双构建器通用）。
+     *
+     * 用途：抽样、延迟关联、窗口分页等需要"把 WHERE 条件搬进子查询"的场景。
+     *
+     * 原先这些位置写成两行：
+     *     $model = BaseMacro::modelOf($this);        // Query 构建器上返回 null
+     *     $subQuery = $model->newQuery()             // ← null->newQuery() 直接 Fatal
+     * 即便绕开 newQuery，`$model->getTable()` / `$model->getKeyName()` 在 DB::table() 路径上
+     * 同样是 null 解引用。宏对外承诺 Eloquent / Query 双构建器等价，这里统一收口。
+     *
+     * @param  EloquentBuilder|QueryBuilder  $builder
+     * @return EloquentBuilder|QueryBuilder
+     */
+    public static function cloneForSubQuery($builder)
+    {
+        $inner = static::queryOf($builder);
+        $copy = clone $inner;
+
+        $copy->columns = null;
+        $copy->limit = null;
+        $copy->offset = null;
+        $copy->orders = null;
+
+        // 结构与绑定成对清理，详见 resetSubQuery() 的说明。
+        foreach (['select', 'order'] as $group) {
+            if (isset($copy->bindings[$group])) {
+                $copy->bindings[$group] = [];
+            }
+        }
+
+        // where / joins / havings 及其绑定原样保留 —— 抽样与延迟关联必须继承调用方条件。
+        if ($builder instanceof EloquentBuilder) {
+            return (clone $builder)->setQuery($copy);
+        }
+
+        return $copy;
+    }
+
+    /**
      * 安全地重置子查询的 select / limit / offset / order / where 状态（双构建器通用）。
      * 直接对 Eloquent 子查询写 `$sub->getQuery()->columns = null` 在 Query 构建器上会失败，
      * 故统一经此方法处理，保证 ORM 与 DB 路径行为一致。
@@ -266,13 +414,23 @@ abstract class BaseMacro
     public static function resetSubQuery($subQuery): void
     {
         $query = static::queryOf($subQuery);
+
+        // 关键：**结构与绑定必须成对清理**。
+        // 只清 columns / orders 而留着 bindings['select'] / bindings['order']，
+        // 调用方此前用过 selectRaw('f(?,?)', [a,b]) / orderByRaw('? desc', [x]) 时，
+        // 残留绑定会排在 getBindings() 最前面，而新 SQL 里的 ? 数量已经变了 →
+        // 绑定错位（轻则结果错乱，重则 SQLSTATE 驱动错误）。
         $query->columns = null;
         $query->limit = null;
         $query->offset = null;
         $query->orders = null;
-        if (isset($query->bindings['where'])) {
-            $query->bindings['where'] = [];
+
+        foreach (['select', 'order', 'where'] as $group) {
+            if (isset($query->bindings[$group])) {
+                $query->bindings[$group] = [];
+            }
         }
+
         $query->wheres = [];
     }
 

@@ -29,15 +29,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 字符串高效处理宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class StringFunctionsMacro extends BaseMacro
 {
     /**
      * 注册所有字符串宏
-     *
-     * @scenario 注册所有字符串宏
      */
     public static function register(): void
     {
@@ -54,8 +50,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 LOCATE / position 分词查询匹配系列
-     *
-     * @scenario 注册 LOCATE / position 分词查询匹配系列
      */
     public static function registerLocateSearch(): void
     {
@@ -68,21 +62,16 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $column  查询字段名
          * @param  string  $search  要查找的子字符串（可为空格分隔的多词分词）
          * @param  string  $boolean  连接条件: and|or
-         * @return Builder|QueryBuilder
          *
          * @example
          * // 查找描述中包含 "Laravel" 的记录
          * Post::query()->whereLocate('description', 'Laravel')->get();
          * // 分词查询：包含 "高级" 或 "查询" 任意一词
          * Article::query()->whereLocate('content', '高级 查询')->get();
-         *
-         * @scenario whereLocate - 子字符串位置查找（分词查询匹配）
          */
         static::define('whereLocate', function (string $column, string $search, string $boolean = 'and'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             return StringFunctionsMacro::whereLocate($this, $column, $search, $boolean);
         });
@@ -92,14 +81,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->orWhereLocate('col', 'val')->get();
-         *
-         * @scenario orWhereLocate - OR 条件的子字符串位置查找
          */
         static::define('orWhereLocate', function (string $column, string $search): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             return StringFunctionsMacro::whereLocate($this, $column, $search, 'or');
         });
@@ -109,18 +94,13 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @param  string  $column  查询字段名
          * @param  array<int, string>  $keywords  关键词数组
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereLocateAll('col', 'kw')->get();
-         *
-         * @scenario whereLocateAll - 多关键词全命中查询（AND 连接）
          */
         static::define('whereLocateAll', function (string $column, array $keywords): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereLocateAll($this, $column, $keywords);
@@ -131,18 +111,13 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @param  string  $column  查询字段名
          * @param  array<int, string>  $keywords  关键词数组
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereLocateAny('col', 'kw')->get();
-         *
-         * @scenario whereLocateAny - 多关键词任一命中查询（OR 连接）
          */
         static::define('whereLocateAny', function (string $column, array $keywords): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereLocateAny($this, $column, $keywords);
@@ -151,8 +126,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 CHAR_LENGTH 排序/筛选与自然排序系列
-     *
-     * @scenario 注册 CHAR_LENGTH 排序/筛选与自然排序系列
      */
     public static function registerCharLengthSorting(): void
     {
@@ -163,18 +136,13 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @param  string  $column  排序字段名
          * @param  string  $direction  排序方向: asc|desc
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->orderByCharLength('col', 'desc')->get();
-         *
-         * @scenario orderByCharLength - 按字符长度排序
          */
         static::define('orderByCharLength', function (string $column, string $direction = 'asc'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::orderByCharLength($this, $column, $direction);
@@ -185,14 +153,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->orderByDescCharLength('col', 'val')->get();
-         *
-         * @scenario orderByDescCharLength - 按字符长度降序排序
          */
         static::define('orderByDescCharLength', function (string $column): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::orderByCharLength($this, $column, 'desc');
@@ -205,18 +169,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $operator  比较运算符: =|>|<|>=|<=|<>|!=
          * @param  int  $length  字符长度
          * @param  string  $boolean  连接条件: and|or
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereCharLength('col', $o, $l, 'and')->get();
-         *
-         * @scenario whereCharLength - 按字符长度筛选
          */
         static::define('whereCharLength', function (string $column, string $operator, int $length, string $boolean = 'and'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereCharLength($this, $column, $operator, $length, $boolean);
@@ -227,14 +186,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->orWhereCharLength('col', 'val')->get();
-         *
-         * @scenario orWhereCharLength - OR 条件的字符长度筛选
          */
         static::define('orWhereCharLength', function (string $column, string $operator, int $length): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereCharLength($this, $column, $operator, $length, 'or');
@@ -247,18 +202,13 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @param  string  $column  排序字段名
          * @param  string  $direction  排序方向: asc|desc
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->orderByNatural('col', 'desc')->get();
-         *
-         * @scenario orderByNatural - 自然排序（字符串中内嵌数字按数值大小排序）
          */
         static::define('orderByNatural', function (string $column, string $direction = 'asc'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::orderByNatural($this, $column, $direction);
@@ -267,8 +217,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 FIELD / array_position 自定义排序系列
-     *
-     * @scenario 注册 FIELD / array_position 自定义排序系列
      */
     public static function registerFieldOrdering(): void
     {
@@ -281,18 +229,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $column  排序字段名
          * @param  array<int, mixed>  $order  自定义顺序的值列表（按期望的排序顺序）
          * @param  string  $direction  排序方向: asc|desc（作用于下标）
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->fieldOrderBy('col', $o, 'desc')->get();
-         *
-         * @scenario fieldOrderBy - 按指定值顺序自定义排序
          */
         static::define('fieldOrderBy', function (string $column, array $order, string $direction = 'asc'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::fieldOrderBy($this, $column, $order, $direction);
@@ -301,8 +244,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 FIND_IN_SET / ANY(string_to_array) 列表查找系列
-     *
-     * @scenario 本类/成员说明。
      */
     public static function registerFindInSet(): void
     {
@@ -314,18 +255,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $column  查询字段名（逗号分隔的字符串列）
          * @param  mixed  $value  要查找的值
          * @param  string  $boolean  连接条件: and|or
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereFindInSet('col', 'val', 'and')->get();
-         *
-         * @scenario whereFindInSet - 逗号分隔列表成员查找
          */
         static::define('whereFindInSet', function (string $column, mixed $value, string $boolean = 'and'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereFindInSet($this, $column, $value, $boolean);
@@ -336,14 +272,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->orWhereFindInSet('col', 'val')->get();
-         *
-         * @scenario orWhereFindInSet - OR 条件的列表成员查找
          */
         static::define('orWhereFindInSet', function (string $column, mixed $value): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereFindInSet($this, $column, $value, 'or');
@@ -354,18 +286,13 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @param  string  $column  查询字段名
          * @param  array<int, mixed>  $values  候选值数组
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereFindInSetAny('col', 'val')->get();
-         *
-         * @scenario whereFindInSetAny - 列表字段包含任意指定值
          */
         static::define('whereFindInSetAny', function (string $column, array $values): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereFindInSetAny($this, $column, $values);
@@ -376,18 +303,13 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @param  string  $column  查询字段名
          * @param  array<int, mixed>  $values  必须全部包含的值数组
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereFindInSetAll('col', 'val')->get();
-         *
-         * @scenario whereFindInSetAll - 列表字段包含全部指定值
          */
         static::define('whereFindInSetAll', function (string $column, array $values): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereFindInSetAll($this, $column, $values);
@@ -396,8 +318,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 CONCAT_WS 多列拼接搜索系列
-     *
-     * @scenario 注册 CONCAT_WS 多列拼接搜索系列
      */
     public static function registerConcatSearch(): void
     {
@@ -409,18 +329,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  array<int, string>  $columns  参与拼接的字段数组
          * @param  string  $keyword  搜索关键词
          * @param  string  $boolean  连接条件: and|or
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereConcatLike('col', 'kw', 'and')->get();
-         *
-         * @scenario whereConcatLike - 多列拼接模糊搜索
          */
         static::define('whereConcatLike', function (array $columns, string $keyword, string $boolean = 'and'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereConcatLike($this, $columns, $keyword, $boolean);
@@ -431,14 +346,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->orWhereConcatLike('col', 'val')->get();
-         *
-         * @scenario orWhereConcatLike - OR 条件的多列拼接搜索
          */
         static::define('orWhereConcatLike', function (array $columns, string $keyword): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereConcatLike($this, $columns, $keyword, 'or');
@@ -447,8 +358,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 SUBSTRING_INDEX / split_part 提取系列
-     *
-     * @scenario 注册 SUBSTRING_INDEX / split_part 提取系列
      */
     public static function registerStringExtraction(): void
     {
@@ -461,18 +370,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $delimiter  分隔符
          * @param  int  $count  提取方向与个数（正数从左、负数从右）
          * @param  string  $alias  结果别名
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->substringIndex('col', 10, 10, $a)->get();
-         *
-         * @scenario substringIndex - 按分隔符提取子串（SELECT 场景）
          */
         static::define('substringIndex', function (string $column, string $delimiter, int $count, string $alias = 'part'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::substringIndex($this, $column, $delimiter, $count, $alias);
@@ -481,8 +385,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 GROUP_CONCAT / string_agg 聚合系列
-     *
-     * @scenario 注册 GROUP_CONCAT / string_agg 聚合系列
      */
     public static function registerStringAggregation(): void
     {
@@ -495,18 +397,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $alias  结果别名
          * @param  string  $separator  分隔符（默认英文逗号）
          * @param  bool  $distinct  是否去重
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->groupConcat('col', $a, $s, $d)->get();
-         *
-         * @scenario groupConcat - 行转字符串聚合
          */
         static::define('groupConcat', function (string $column, string $alias = 'items', string $separator = ',', bool $distinct = false): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::groupConcat($this, $column, $alias, $separator, $distinct);
@@ -515,8 +412,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册 SOUNDEX 发音匹配系列
-     *
-     * @scenario 注册 SOUNDEX 发音匹配系列
      */
     public static function registerSoundexSearch(): void
     {
@@ -528,18 +423,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $column  查询字段名
          * @param  string  $value  要匹配发音的值
          * @param  string  $boolean  连接条件: and|or
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->whereSoundex('col', 'val', 'and')->get();
-         *
-         * @scenario whereSoundex - 发音相似匹配
          */
         static::define('whereSoundex', function (string $column, string $value, string $boolean = 'and'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereSoundex($this, $column, $value, $boolean);
@@ -550,14 +440,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->orWhereSoundex('col', 'val')->get();
-         *
-         * @scenario orWhereSoundex - OR 条件的发音相似匹配
          */
         static::define('orWhereSoundex', function (string $column, string $value): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::whereSoundex($this, $column, $value, 'or');
@@ -566,8 +452,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 注册字符串变换系列
-     *
-     * @scenario 注册字符串变换系列
      */
     public static function registerStringTransform(): void
     {
@@ -577,14 +461,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->replaceString('col', 'val')->get();
-         *
-         * @scenario replaceString - 字符串替换（SELECT 场景）
          */
         static::define('replaceString', function (string $column, string $search, string $replace, string $alias = 'replaced'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::replaceString($this, $column, $search, $replace, $alias);
@@ -595,14 +475,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->trimString('col', 'val')->get();
-         *
-         * @scenario trimString - 去除首尾空格（SELECT 场景）
          */
         static::define('trimString', function (string $column, string $alias = 'trimmed'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::trimString($this, $column, $alias);
@@ -613,14 +489,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->lowerString('col', 'val')->get();
-         *
-         * @scenario lowerString - 转小写（SELECT 场景）
          */
         static::define('lowerString', function (string $column, string $alias = 'lower_val'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::lowerString($this, $column, $alias);
@@ -631,14 +503,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->upperString('col', 'val')->get();
-         *
-         * @scenario upperString - 转大写（SELECT 场景）
          */
         static::define('upperString', function (string $column, string $alias = 'upper_val'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::upperString($this, $column, $alias);
@@ -649,14 +517,10 @@ class StringFunctionsMacro extends BaseMacro
          *
          * @example
          * Model::query()->reverseString('col', 'val')->get();
-         *
-         * @scenario reverseString - 字符串反转（SELECT 场景）
          */
         static::define('reverseString', function (string $column, string $alias = 'reversed'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::reverseString($this, $column, $alias);
@@ -671,18 +535,13 @@ class StringFunctionsMacro extends BaseMacro
          * @param  string  $padString  用于填充的字符串
          * @param  string  $position  填充位置: left|right
          * @param  string  $alias  结果别名
-         * @return Builder|QueryBuilder
          *
          * @example
          * Model::query()->padString('col', $l, $p, $p, $a)->get();
-         *
-         * @scenario padString - 填充字符串到指定长度（SELECT 场景）
          */
         static::define('padString', function (string $column, int $length, string $padString, string $position = 'left', string $alias = 'padded'): Builder|QueryBuilder {
             /**
              * @var EloquentBuilder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return StringFunctionsMacro::padString($this, $column, $length, $padString, $position, $alias);
@@ -697,8 +556,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereLocate / orWhereLocate
-     *
-     * @scenario 实现 whereLocate / orWhereLocate
      */
     public static function whereLocate(EloquentBuilder|QueryBuilder $builder, string $column, string $search, string $boolean = 'and'): EloquentBuilder|QueryBuilder
     {
@@ -710,8 +567,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereLocateAll（AND 全命中）
-     *
-     * @scenario 实现 whereLocateAll（AND 全命中）
      */
     public static function whereLocateAll(EloquentBuilder|QueryBuilder $builder, string $column, array $keywords): EloquentBuilder|QueryBuilder
     {
@@ -727,8 +582,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereLocateAny（OR 任一命中，嵌套分组避免布尔优先级陷阱）
-     *
-     * @scenario 实现 whereLocateAny（OR 任一命中，嵌套分组避免布尔优先级陷阱）
      */
     public static function whereLocateAny(EloquentBuilder|QueryBuilder $builder, string $column, array $keywords): EloquentBuilder|QueryBuilder
     {
@@ -744,8 +597,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 orderByCharLength / orderByDescCharLength
-     *
-     * @scenario 实现 orderByCharLength / orderByDescCharLength
      */
     public static function orderByCharLength(EloquentBuilder|QueryBuilder $builder, string $column, string $direction = 'asc'): EloquentBuilder|QueryBuilder
     {
@@ -757,8 +608,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereCharLength / orWhereCharLength
-     *
-     * @scenario 实现 whereCharLength / orWhereCharLength
      */
     public static function whereCharLength(EloquentBuilder|QueryBuilder $builder, string $column, string $operator, int $length, string $boolean = 'and'): EloquentBuilder|QueryBuilder
     {
@@ -770,8 +619,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 orderByNatural（提取数字的自然排序，双库通用）
-     *
-     * @scenario 实现 orderByNatural（提取数字的自然排序，双库通用）
      */
     public static function orderByNatural(EloquentBuilder|QueryBuilder $builder, string $column, string $direction = 'asc'): EloquentBuilder|QueryBuilder
     {
@@ -783,8 +630,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 fieldOrderBy（FIELD / array_position 自定义排序）
-     *
-     * @scenario 实现 fieldOrderBy（FIELD / array_position 自定义排序）
      */
     public static function fieldOrderBy(EloquentBuilder|QueryBuilder $builder, string $column, array $order, string $direction = 'asc'): EloquentBuilder|QueryBuilder
     {
@@ -798,8 +643,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereFindInSet / orWhereFindInSet
-     *
-     * @scenario 实现 whereFindInSet / orWhereFindInSet
      */
     public static function whereFindInSet(EloquentBuilder|QueryBuilder $builder, string $column, mixed $value, string $boolean = 'and'): EloquentBuilder|QueryBuilder
     {
@@ -811,8 +654,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereFindInSetAny（OR 任一命中）
-     *
-     * @scenario 实现 whereFindInSetAny（OR 任一命中）
      */
     public static function whereFindInSetAny(EloquentBuilder|QueryBuilder $builder, string $column, array $values): EloquentBuilder|QueryBuilder
     {
@@ -828,8 +669,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereFindInSetAll（AND 全命中）
-     *
-     * @scenario 实现 whereFindInSetAll（AND 全命中）
      */
     public static function whereFindInSetAll(EloquentBuilder|QueryBuilder $builder, string $column, array $values): EloquentBuilder|QueryBuilder
     {
@@ -845,8 +684,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereConcatLike / orWhereConcatLike
-     *
-     * @scenario 实现 whereConcatLike / orWhereConcatLike
      */
     public static function whereConcatLike(EloquentBuilder|QueryBuilder $builder, array $columns, string $keyword, string $boolean = 'and'): EloquentBuilder|QueryBuilder
     {
@@ -861,8 +698,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 substringIndex（SUBSTRING_INDEX / split_part 提取）
-     *
-     * @scenario 实现 substringIndex（SUBSTRING_INDEX / split_part 提取）
      */
     public static function substringIndex(EloquentBuilder|QueryBuilder $builder, string $column, string $delimiter, int $count, string $alias = 'part'): EloquentBuilder|QueryBuilder
     {
@@ -875,8 +710,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 groupConcat（GROUP_CONCAT / string_agg 聚合）
-     *
-     * @scenario 实现 groupConcat（GROUP_CONCAT / string_agg 聚合）
      */
     public static function groupConcat(EloquentBuilder|QueryBuilder $builder, string $column, string $alias = 'items', string $separator = ',', bool $distinct = false): EloquentBuilder|QueryBuilder
     {
@@ -889,8 +722,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 replaceString（REPLACE 两库通用）
-     *
-     * @scenario 实现 replaceString（REPLACE 两库通用）
      */
     public static function replaceString(EloquentBuilder|QueryBuilder $builder, string $column, string $search, string $replace, string $alias = 'replaced'): EloquentBuilder|QueryBuilder
     {
@@ -902,8 +733,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 trimString（TRIM 两库通用）
-     *
-     * @scenario 实现 trimString（TRIM 两库通用）
      */
     public static function trimString(EloquentBuilder|QueryBuilder $builder, string $column, string $alias = 'trimmed'): EloquentBuilder|QueryBuilder
     {
@@ -915,8 +744,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 lowerString（LOWER 两库通用）
-     *
-     * @scenario 实现 lowerString（LOWER 两库通用）
      */
     public static function lowerString(EloquentBuilder|QueryBuilder $builder, string $column, string $alias = 'lower_val'): EloquentBuilder|QueryBuilder
     {
@@ -928,8 +755,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 upperString（UPPER 两库通用）
-     *
-     * @scenario 实现 upperString（UPPER 两库通用）
      */
     public static function upperString(EloquentBuilder|QueryBuilder $builder, string $column, string $alias = 'upper_val'): EloquentBuilder|QueryBuilder
     {
@@ -941,8 +766,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 reverseString（REVERSE 两库通用）
-     *
-     * @scenario 实现 reverseString（REVERSE 两库通用）
      */
     public static function reverseString(EloquentBuilder|QueryBuilder $builder, string $column, string $alias = 'reversed'): EloquentBuilder|QueryBuilder
     {
@@ -954,8 +777,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 padString（LPAD / RPAD 两库通用）
-     *
-     * @scenario 实现 padString（LPAD / RPAD 两库通用）
      */
     public static function padString(EloquentBuilder|QueryBuilder $builder, string $column, int $length, string $padString, string $position = 'left', string $alias = 'padded'): EloquentBuilder|QueryBuilder
     {
@@ -973,8 +794,6 @@ class StringFunctionsMacro extends BaseMacro
 
     /**
      * 实现 whereSoundex / orWhereSoundex
-     *
-     * @scenario 实现 whereSoundex / orWhereSoundex
      */
     public static function whereSoundex(EloquentBuilder|QueryBuilder $builder, string $column, string $value, string $boolean = 'and'): EloquentBuilder|QueryBuilder
     {

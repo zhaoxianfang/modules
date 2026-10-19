@@ -658,9 +658,37 @@ $mkSrc = file_get_contents('/Users/aha/www/modules/src/Commands/ModuleMakeComman
 check('module:make 校验模块名（防 ../ 越界删除）',
     str_contains((string) $mkSrc, "preg_match('/^[A-Za-z][A-Za-z0-9]*$/', \$name)"));
 check('module:make 有「必须位于 Modules 根内」兜底校验',
-    str_contains((string) $mkSrc, '超出了模块根目录'));
+    str_contains((string) $mkSrc, 'guardAgainstEscape')
+    && str_contains((string) $mkSrc, 'trustedModuleRoots'));
 check('module:make 检查 File::put 返回值（不再假成功）',
-    str_contains((string) $mkSrc, 'File::put($fullPath, $content) === false'));
+    str_contains((string) $mkSrc, '::put($fullPath, $content) === false'));
+
+// Laravel 13 起 'files' 不再是容器别名（改为 FilesystemServiceProvider 注册的 singleton），
+// File:: 门面会在该绑定缺席时抛 `Target class [files] does not exist`，直接打断
+// `php artisan optimize`。全包必须改走 SafeFilesystem（files 缺席时自建兜底）。
+$fileFacadeUsers = [];
+$dir = new RecursiveIteratorIterator(new RecursiveDirectoryIterator('/Users/aha/www/modules/src'));
+foreach ($dir as $f) {
+    if (! $f->isFile() || $f->getExtension() !== 'php') {
+        continue;
+    }
+    $src = (string) file_get_contents($f->getPathname());
+    if (str_contains($src, 'use Illuminate\\Support\\Facades\\File;')) {
+        $fileFacadeUsers[] = $f->getPathname();
+    }
+}
+check('src/ 已不再使用 File 门面（规避 Laravel 13 的 files 绑定依赖）',
+    $fileFacadeUsers === [], '残留: '.implode(', ', $fileFacadeUsers));
+check('SafeFilesystem 存在且提供兜底解析',
+    class_exists('zxf\\Modules\\Support\\SafeFilesystem')
+    && method_exists('zxf\\Modules\\Support\\SafeFilesystem', 'instance')
+    && method_exists('zxf\\Modules\\Support\\SafeFilesystem', 'ensureBound'));
+$mspSrc = (string) file_get_contents('/Users/aha/www/modules/src/ModulesServiceProvider.php');
+check('ModulesServiceProvider::register() 首行兜底绑定 files',
+    str_contains($mspSrc, 'SafeFilesystem::ensureBound($this->app)'));
+check('resolveFilesystem 不再裸调 make(Filesystem::class)（Laravel 13 会抛）',
+    preg_match('/make\(Filesystem::class\)/', str_replace('//', '', $mspSrc)) === 1
+    && substr_count($mspSrc, 'try {') >= 2);
 
 $langSrc = codeOnly((string) file_get_contents('/Users/aha/www/modules/src/Commands/ModuleCheckLangCommand.php'));
 check('module:check-lang 拒绝 --path 中的 ..',

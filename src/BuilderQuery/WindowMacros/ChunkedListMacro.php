@@ -32,22 +32,16 @@ use zxf\Modules\BuilderQuery\Concerns\SqlSecurity;
  * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5），Laravel 11+ / 12+ / 13+，MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 超大 IN / NOT IN 列表分块宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class ChunkedListMacro extends BaseMacro
 {
     /**
      *  默认分块大小（占位符数量上限内的安全值）。
-     *
-     * @scenario 默认分块大小（占位符数量上限内的安全值）。
      */
     public const DEFAULT_CHUNK_SIZE = 1000;
 
     /**
      *  注册所有分块 IN/NOT IN 宏。
-     *
-     * @scenario 注册所有分块 IN/NOT IN 宏。
      */
     public static function register(): void
     {
@@ -57,8 +51,6 @@ class ChunkedListMacro extends BaseMacro
 
     /**
      * 注册 whereInChunked / orWhereInChunked（IN 场景，多块以 OR 合并）。
-     *
-     * @scenario 注册 whereInChunked / orWhereInChunked（IN 场景，多块以 OR 合并）。
      */
     public static function registerInChunked(): void
     {
@@ -85,8 +77,6 @@ class ChunkedListMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ChunkedListMacro::applyChunked($this, $column, $values, $chunkSize, false, 'and');
@@ -113,8 +103,6 @@ class ChunkedListMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ChunkedListMacro::applyChunked($this, $column, $values, $chunkSize, false, 'or');
@@ -123,8 +111,6 @@ class ChunkedListMacro extends BaseMacro
 
     /**
      * 注册 whereNotInChunked / orWhereNotInChunked（NOT IN 场景，多块以 AND 合并）。
-     *
-     * @scenario 注册 whereNotInChunked / orWhereNotInChunked（NOT IN 场景，多块以 AND 合并）。
      */
     public static function registerNotInChunked(): void
     {
@@ -149,8 +135,6 @@ class ChunkedListMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ChunkedListMacro::applyChunked($this, $column, $values, $chunkSize, true, 'and');
@@ -177,8 +161,6 @@ class ChunkedListMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ChunkedListMacro::applyChunked($this, $column, $values, $chunkSize, true, 'or');
@@ -199,8 +181,6 @@ class ChunkedListMacro extends BaseMacro
      * @param  int  $chunkSize  每块大小（内部取 max(1, ...)）
      * @param  bool  $not  true=NOT IN，false=IN
      * @param  string  $boolean  'and'|'or' 外层连接符
-     *
-     * @scenario 分块 IN/NOT IN 的统一实现（宏闭包外部，可安全使用显式类名调用）。
      */
     public static function applyChunked(
         Builder|\Illuminate\Database\Query\Builder $builder,

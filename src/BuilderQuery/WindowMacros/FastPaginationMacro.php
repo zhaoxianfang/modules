@@ -7,25 +7,24 @@ namespace zxf\Modules\BuilderQuery\WindowMacros;
 use Illuminate\Contracts\Pagination\CursorPaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Pagination\Cursor as FrameworkCursor;
+use Illuminate\Pagination\CursorPaginator as FrameworkCursorPaginator;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
 /**
  * 带可声明 bookmarks 属性的分页器。
  * 用于规避 PHP 8.2+ 在「非 stdClass 类上设置未声明动态属性」的弃用告警（PHP 9.0 将变为致命错误）。
  * 对外访问 $paginator->bookmarks 与 instanceof LengthAwarePaginator 行为完全兼容。
- *
- * @scenario 带可声明 bookmarks 属性的分页器。
  */
 class FastLengthAwarePaginator extends LengthAwarePaginator
 {
     /**
      * @var array<string, mixed>|null 寻址分页书签
-     *
-     * @scenario 本类/成员说明。
      */
     public ?array $bookmarks = null;
 }
@@ -44,29 +43,21 @@ class FastLengthAwarePaginator extends LengthAwarePaginator
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 超大表快速分页查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class FastPaginationMacro extends BaseMacro
 {
     /**
      * 大表阈值（行数超过此值视为大表）
-     *
-     * @scenario 大表阈值（行数超过此值视为大表）
      */
     public const LARGE_TABLE_THRESHOLD = 100000;
 
     /**
      * 深度分页阈值（页码超过此值视为深度分页）
-     *
-     * @scenario 深度分页阈值（页码超过此值视为深度分页）
      */
     public const DEEP_PAGE_THRESHOLD = 100;
 
     /**
      * 注册所有快速分页宏
-     *
-     * @scenario 注册所有快速分页宏
      */
     public static function register(): void
     {
@@ -82,8 +73,6 @@ class FastPaginationMacro extends BaseMacro
      * 自动根据数据量和页码深度选择最优分页策略：
      * - 小表/浅分页：使用传统 OFFSET LIMIT
      * - 大表/深分页：使用延迟关联或窗口函数
-     *
-     * @scenario 注册智能快速分页（推荐）
      */
     public static function registerFastPaginate(): void
     {
@@ -118,8 +107,6 @@ class FastPaginationMacro extends BaseMacro
          * ]);
          * // 深度分页场景
          * $records = BigTable::query()->fastPaginate(30, 5000);
-         *
-         * @scenario 智能快速分页 - 自动选择最优策略
          */
         static::define('fastPaginate', function (
             int $perPage = 15,
@@ -129,8 +116,6 @@ class FastPaginationMacro extends BaseMacro
         ): LengthAwarePaginator {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
@@ -182,8 +167,6 @@ class FastPaginationMacro extends BaseMacro
     /**
      * 注册简单快速分页
      * 不计算总数，只判断是否有下一页（性能更好）
-     *
-     * @scenario 注册简单快速分页
      */
     public static function registerFastSimplePaginate(): void
     {
@@ -203,8 +186,6 @@ class FastPaginationMacro extends BaseMacro
          * @example
          * // 无限滚动加载
          * $posts = Post::query()->fastSimplePaginate(10);
-         *
-         * @scenario 简单快速分页 - 不计算总数
          */
         static::define('fastSimplePaginate', function (
             int $perPage = 15,
@@ -214,8 +195,6 @@ class FastPaginationMacro extends BaseMacro
         ): Paginator {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
@@ -256,8 +235,6 @@ class FastPaginationMacro extends BaseMacro
     /**
      * 注册游标分页（基于排序值的键集分页）
      * 性能最佳，但只能顺序访问
-     *
-     * @scenario 注册游标分页（基于排序值的键集分页）
      */
     public static function registerCursorBasedPaginate(): void
     {
@@ -287,12 +264,10 @@ class FastPaginationMacro extends BaseMacro
          * $posts = Post::query()->cursorPaginate(10, null, 'published_at', 'desc');
          * // 使用上一页的游标
          * $nextPage = Post::query()->cursorPaginate(10, $cursor, 'published_at');
-         *
-         * @scenario 游标分页 - 基于排序值的高效分页
          */
-        static::define('cursorPaginate', function (
+        static::define('seekCursorPaginate', function (
             int $perPage = 15,
-            ?string $cursor = null,
+            string|FrameworkCursor|null $cursor = null,
             string $sortColumn = '',
             string $direction = 'asc',
             ?string $primaryKey = null,
@@ -300,8 +275,6 @@ class FastPaginationMacro extends BaseMacro
         ): CursorPaginator {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = strtolower($direction);
             $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
@@ -311,10 +284,40 @@ class FastPaginationMacro extends BaseMacro
             // 克隆查询以避免修改原始查询
             $query = clone $this;
 
-            // 添加游标条件
-            if ($cursor !== null) {
+            // 解码游标。
+            //
+            // 对外统一使用【框架的游标对象】（与 nextCursor() / previousCursor() 同格式），
+            // 这样 $nextCursor 直接回传给下一次请求即可闭环。
+            // 同时兼容调用方直接传入"编码游标串"或"排序原始值"的旧用法。
+            $currentCursor = null;
+            if ($cursor instanceof FrameworkCursor) {
+                $currentCursor = $cursor;
+            } elseif (is_string($cursor) && $cursor !== '') {
+                $currentCursor = FastPaginationMacro::decodeCursor($cursor, $sortColumn, $primaryKey);
+            }
+
+            if ($currentCursor !== null) {
+                // Cursor 的参数以【列名】为键（框架 ensureOrderForCursorPagination 用
+                // Str::afterLast 去掉表前缀），因此必须用 $sortColumn / $primaryKey 取值。
+                $sortValue = FastPaginationMacro::cursorParameter($currentCursor, $sortColumn);
                 $operator = $direction === 'asc' ? '>' : '<';
-                $query->where($sortColumn, $operator, $cursor);
+
+                if ($sortValue !== null) {
+                    $pkValue = FastPaginationMacro::cursorParameter($currentCursor, $primaryKey);
+
+                    // 二级排序（$sortColumn, $primaryKey）→ 游标同时携带主键，
+                    // 否则排序值并列的行会在翻页时被跳过或重复。
+                    $query->where(function ($q) use ($sortColumn, $sortValue, $primaryKey, $pkValue, $operator): void {
+                        $q->where($sortColumn, $operator, $sortValue);
+
+                        if ($pkValue !== null) {
+                            $q->orWhere(function ($q2) use ($sortColumn, $sortValue, $primaryKey, $pkValue, $operator): void {
+                                $q2->where($sortColumn, '=', $sortValue)
+                                    ->where($primaryKey, $operator, $pkValue);
+                            });
+                        }
+                    });
+                }
             }
 
             // 添加排序
@@ -324,75 +327,79 @@ class FastPaginationMacro extends BaseMacro
             // 查询数据（多查一条判断是否有下一页）
             $results = $query->limit($perPage + 1)->get($columns);
 
-            // 判断是否有更多数据
-            $hasMore = $results->count() > $perPage;
-            if ($hasMore) {
-                $results = $results->slice(0, $perPage);
-            }
-
-            // 构建下一页游标
-            $nextCursor = null;
-            if ($hasMore && $results->isNotEmpty()) {
-                $lastItem = $results->last();
-                $nextCursor = $lastItem->{$sortColumn};
-            }
-
-            return new class($results, $perPage, $nextCursor, $hasMore) implements CursorPaginator
-            {
-                protected $items;
-
-                protected $perPage;
-
-                protected $nextCursor;
-
-                protected $hasMore;
-
-                public function __construct($items, $perPage, $nextCursor, $hasMore)
-                {
-                    $this->items = $items;
-                    $this->perPage = $perPage;
-                    $this->nextCursor = $nextCursor;
-                    $this->hasMore = $hasMore;
-                }
-
-                public function items(): array
-                {
-                    return $this->items->all();
-                }
-
-                public function perPage(): int
-                {
-                    return $this->perPage;
-                }
-
-                public function nextCursor(): ?string
-                {
-                    return $this->nextCursor;
-                }
-
-                public function hasMorePages(): bool
-                {
-                    return $this->hasMore;
-                }
-
-                public function toArray(): array
-                {
-                    return [
-                        'data' => $this->items->toArray(),
-                        'per_page' => $this->perPage,
-                        'next_cursor' => $this->nextCursor,
-                        'has_more' => $this->hasMore,
-                    ];
-                }
-            };
+            /**
+             * 交给框架自带的 Illuminate\Pagination\CursorPaginator（真实实现）。
+             *
+             * 原实现返回 `new class(...) implements CursorPaginator` 匿名类，但只实现了
+             * 4 个方法 —— 接口还要求 cursor() / previousCursor() / path() / url() /
+             * fragment() / appendQuery() / query() / currentPage() / getCollection() 等，
+             * 缺失的抽象方法会让【实例化那一行就抛
+             * "Class contains N abstract methods"】，整个方法 100% 不可用。
+             *
+             * 两个必须遵守的契约（与框架原生 cursorPaginate 一致）：
+             *  1) 传入的 items 必须是 perPage+1 条（多查一条），**不要自己 slice** ——
+             *     框架的 hasMore = items->count() > perPage 依赖它，先裁剪会让
+             *     hasMore 恒为 false，nextCursor() 永远返回 null（分页"到第二页就没了"）。
+             *  2) 传入的 cursor 是【当前】游标（即刚才用于查询的那个），
+             *     nextCursor()/previousCursor() 由框架按 hasMore + 末行/首行自动推导。
+             */
+            return new FrameworkCursorPaginator(
+                $results,
+                $perPage,
+                $currentCursor,
+                [
+                    'path' => $options['path'] ?? (optional(request())->url() ?? ''),
+                    // 游标参数列。框架的 AbstractCursorPaginator::getParametersForItem()
+                    // 直接用 $this->parameters 去行对象上取值，而 $this->parameters 只能由
+                    // options['parameters'] 提供（框架原生 cursorPaginate 也是这么传的，
+                    // 见 Illuminate\Database\Concerns\BuildsQueries::paginateUsingCursor）。
+                    // 漏传会得到"参数名为空"的游标：nextCursor() 变成一个不带任何值的对象，
+                    // 回传后翻不到下一页 —— 分页停在第一页，且不报错。
+                    'parameters' => array_values(array_unique([$sortColumn, $primaryKey])),
+                ]
+            );
         });
+    }
+
+    /**
+     * 读取游标中某个列参数的值（列名可能带表前缀，兼容两种形态）。
+     *
+     * Cursor::parameter() 对缺失的键会抛 UnexpectedValueException，
+     * 这里统一降级为 null，避免翻页时因游标形态差异直接 500。
+     */
+    public static function cursorParameter(FrameworkCursor $cursor, string $column): mixed
+    {
+        foreach ([$column, last(explode('.', $column))] as $key) {
+            try {
+                return $cursor->parameter($key);
+            } catch (Throwable) {
+                // 该键不存在，试下一个
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 把外部传入的游标串解析为框架 Cursor。
+     *
+     * 优先按框架的编码游标解析（nextCursor() 的输出格式）；解析失败时降级为
+     * 「裸排序值」游标，兼容手写 / 旧版调用方直接传排序值的用法。
+     */
+    public static function decodeCursor(string $cursor, string $sortColumn, string $primaryKey): ?FrameworkCursor
+    {
+        try {
+            return FrameworkCursor::fromEncoded($cursor);
+        } catch (Throwable) {
+            // 不是编码游标，按裸排序值处理
+        }
+
+        return new FrameworkCursor([$sortColumn => $cursor, $primaryKey => null], true);
     }
 
     /**
      * 注册寻址分页（Seek Method）
      * 适合深分页场景，基于书签定位
-     *
-     * @scenario 注册寻址分页（Seek Method）
      */
     public static function registerSeekPaginate(): void
     {
@@ -418,8 +425,6 @@ class FastPaginationMacro extends BaseMacro
          * $bookmarks = $result->bookmarks; // 保存书签供后续使用
          * // 使用书签快速跳转到第100页
          * $page100 = BigTable::query()->seekPaginate(100, $bookmarks, 100);
-         *
-         * @scenario 寻址分页 - 基于书签的深度分页方案
          */
         static::define('seekPaginate', function (
             int $perPage = 100,
@@ -432,8 +437,6 @@ class FastPaginationMacro extends BaseMacro
         ): \Illuminate\Contracts\Pagination\LengthAwarePaginator {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = strtolower($direction);
             $primaryKey = $primaryKey ?: BaseMacro::keyName($this);
@@ -446,11 +449,40 @@ class FastPaginationMacro extends BaseMacro
             // 如果有书签且目标页有书签，使用书签优化
             if ($bookmarks && isset($bookmarks[$page])) {
                 $bookmark = $bookmarks[$page];
-                $results = $this->clone()
-                    ->where($sortColumn, '>=', $bookmark['min'])
-                    ->where($sortColumn, '<=', $bookmark['max'])
-                    ->orderBy($sortColumn, $direction)
-                    ->get($columns);
+
+                $results = $this->clone();
+
+                if (isset($bookmark['min_pk'], $bookmark['max_pk'])) {
+                    // 复合书签：(排序列, 主键) 行值比较。
+                    //
+                    // 只按单列闭区间 `>= min AND <= max` 在并列值跨页时会把同一行
+                    // 返回两次（第 N 页的 max 值同时出现在第 N+1 页的 min 里）；
+                    // 而改成半开区间又会把「本页最后一个值」直接丢掉 —— 两者都不可接受。
+                    // 行值比较是键集分页的标准做法，一页恰好对应一个连续的
+                    // (排序列, 主键) 字典序区间，无重复无遗漏。
+                    //
+                    // 降序时运算符要互换：SQL 的 >= 是数值字典序"大于等于"，
+                    // 与 desc 展示顺序相反。
+                    [$loOp, $hiOp] = $direction === 'desc' ? ['<=', '>='] : ['>=', '<='];
+                    $wSort = BaseMacro::wrapIdentifier($this, $sortColumn);
+                    $wPk = BaseMacro::wrapIdentifier($this, $primaryKey);
+
+                    $results->where(function ($q) use ($wSort, $wPk, $bookmark, $loOp, $hiOp): void {
+                        $q->whereRaw("({$wSort}, {$wPk}) {$loOp} (?, ?)", [$bookmark['min'], $bookmark['min_pk']])
+                            ->whereRaw("({$wSort}, {$wPk}) {$hiOp} (?, ?)", [$bookmark['max'], $bookmark['max_pk']]);
+                    });
+                } else {
+                    // 兼容旧格式书签（只有 min/max）
+                    $results->where($sortColumn, '>=', $bookmark['min'])
+                        ->where($sortColumn, '<=', $bookmark['max']);
+                }
+
+                // 二级排序（排序值, 主键）保证并列值下的稳定顺序，
+                // 否则同一页内并列行的相对次序由数据库随意决定，两次请求可能顺序不同。
+                $results->orderBy($sortColumn, $direction)
+                    ->orderBy($primaryKey, $direction);
+
+                $results = $results->get($columns);
             } else {
                 // 使用窗口函数优化
                 $results = FastPaginationMacro::executeWindowPaginate(
@@ -474,7 +506,7 @@ class FastPaginationMacro extends BaseMacro
                 $total,
                 $perPage,
                 $page,
-                ['path' => request()->url()]
+                ['path' => optional(request())->url() ?? '']
             );
 
             // 添加书签到结果（供下次使用）
@@ -492,8 +524,6 @@ class FastPaginationMacro extends BaseMacro
     /**
      * 注册分区表分页
      * 针对 MySQL 8.0+ 分区表的优化分页
-     *
-     * @scenario 注册分区表分页
      */
     public static function registerPartitionPaginate(): void
     {
@@ -511,8 +541,6 @@ class FastPaginationMacro extends BaseMacro
          * @example
          * // 按日期分区的大表
          * $logs = Log::query()->partitionPaginate(100, 1, 'created_date');
-         *
-         * @scenario 分区表分页 - 针对分区表的并行扫描优化
          */
         static::define('partitionPaginate', function (
             int $perPage = 15,
@@ -522,10 +550,8 @@ class FastPaginationMacro extends BaseMacro
         ): LengthAwarePaginator {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $page = $page ?: request()->input('page', 1);
+            $page = $page ?: (int) (optional(request())->input('page', 1) ?? 1);
             $page = max(1, (int) $page);
             $columns = $options['columns'] ?? ['*'];
 
@@ -550,8 +576,6 @@ class FastPaginationMacro extends BaseMacro
      * @param  int  $perPage  每页数量
      * @param  string  $strategy  策略
      * @return string|false 优化策略或false
-     *
-     * @scenario 判断是否需要进行分页优化
      */
     public static function shouldOptimize(
         Builder|QueryBuilder $query,
@@ -590,8 +614,6 @@ class FastPaginationMacro extends BaseMacro
      *
      * @param  Builder|QueryBuilder  $query  查询构建器
      * @param  string  $strategy  计数策略
-     *
-     * @scenario 获取总记录数
      */
     public static function getTotalCount(Builder|QueryBuilder $query, string $strategy): int
     {
@@ -613,8 +635,6 @@ class FastPaginationMacro extends BaseMacro
      * 获取近似记录数
      *
      * @param  Builder|QueryBuilder  $query  查询构建器
-     *
-     * @scenario 获取近似记录数
      */
     public static function getApproximateCount(Builder|QueryBuilder $query): int
     {
@@ -623,10 +643,10 @@ class FastPaginationMacro extends BaseMacro
 
         if (BaseMacro::isPostgres($query)) {
             // PostgreSQL：从统计信息 pg_class.reltuples 读取近似行数（非精确，但与 EXPLAIN 近似语义一致）
-            $result = DB::select('SELECT reltuples::bigint AS rows FROM pg_class WHERE oid = '.$wrappedTable.'::regclass');
+            $result = BaseMacro::connSelect($query, 'SELECT reltuples::bigint AS rows FROM pg_class WHERE oid = '.$wrappedTable.'::regclass');
         } else {
             // MySQL：EXPLAIN 返回估算行数
-            $result = DB::select("EXPLAIN SELECT * FROM {$wrappedTable}");
+            $result = BaseMacro::connSelect($query, "EXPLAIN SELECT * FROM {$wrappedTable}");
         }
 
         if (! empty($result) && isset($result[0]->rows)) {
@@ -647,8 +667,6 @@ class FastPaginationMacro extends BaseMacro
      * @param  int  $perPage  每页数量
      * @param  string  $strategy  策略
      * @param  array  $columns  查询列
-     *
-     * @scenario 执行优化分页
      */
     public static function executeOptimizedPaginate(
         Builder|QueryBuilder $query,
@@ -692,8 +710,6 @@ class FastPaginationMacro extends BaseMacro
      * @param  int  $page  页码
      * @param  int  $perPage  每页数量
      * @param  array  $columns  查询列
-     *
-     * @scenario 执行延迟关联分页
      */
     public static function executeDeferredPaginate(
         Builder|QueryBuilder $query,
@@ -705,11 +721,19 @@ class FastPaginationMacro extends BaseMacro
     ): Collection {
         $offset = ($page - 1) * $perPage;
 
+        // 子查询的排序必须【稳定】：LIMIT/OFFSET 在无稳定序时，数据库可以任意择行，
+        // 同一页两次请求可能拿到不同的 ID 集合。追加主键做二级排序。
+        $hasPkTiebreak = FastPaginationMacro::hasOrderOn(BaseMacro::ordersOf($query), $primaryKey);
+
         // 构建子查询：只查询ID
         $subQuery = $query->clone()
             ->select($primaryKey)
             ->offset($offset)
             ->limit($perPage);
+
+        if (! $hasPkTiebreak) {
+            $subQuery->orderBy($primaryKey, 'asc');
+        }
 
         // 主查询：根据ID获取完整数据
         $ids = $subQuery->pluck($primaryKey);
@@ -718,9 +742,43 @@ class FastPaginationMacro extends BaseMacro
             return collect([]);
         }
 
-        return $query->clone()
-            ->whereIn($primaryKey, $ids)
-            ->get($columns);
+        $main = $query->clone()->whereIn($primaryKey, $ids);
+
+        // 原实现的致命疏漏：主查询**没有保留调用方的 orderBy**。
+        // whereIn(...) 返回的行顺序取决于执行计划，而不是调用方要的排序 ——
+        // 分页结果会错序，且同一页两次请求顺序可能不同。
+        // 这里保留原排序；调用方完全没给排序时补一个主键序，保证结果稳定可复现。
+        if (! $hasPkTiebreak) {
+            $main->orderBy($primaryKey, 'asc');
+        }
+
+        return $main->get($columns);
+    }
+
+    /**
+     * 判断 orders 列表里是否已有针对指定列的排序（列名可能被 grammar 引用过）。
+     *
+     * @param  array<int, mixed>  $orders
+     */
+    public static function hasOrderOn(array $orders, string $column): bool
+    {
+        foreach ($orders as $order) {
+            if (! is_array($order)) {
+                continue;
+            }
+
+            $target = (string) ($order['column'] ?? '');
+            if ($target === '' || $target === $column) {
+                continue;
+            }
+
+            // orders 里存的可能已被 grammar wrap（如 `id`），统一去掉反引号再比
+            if (str_replace('`', '', $target) === $column) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -735,8 +793,6 @@ class FastPaginationMacro extends BaseMacro
      * @param  int  $perPage  每页数量
      * @param  string  $direction  排序方向
      * @param  array  $columns  查询列
-     *
-     * @scenario 执行窗口函数分页
      */
     public static function executeWindowPaginate(
         Builder|QueryBuilder $query,
@@ -768,7 +824,11 @@ class FastPaginationMacro extends BaseMacro
 
         // 获取原始查询的 WHERE 条件
         $baseQuery = $query->clone();
-        BaseMacro::queryOf($baseQuery)->orders = []; // 清除排序，稍后重新添加
+        // 清除排序 / 分页（稍后重新添加）。
+        // 必须连同 bindings['order'] 一起清：调用方用过 orderByRaw('FIELD(x, ?, ?)', [...])
+        // 时残留绑定会顶在 getBindings() 最前，而 SQL 里已没有对应占位符 → 绑定错位。
+        BaseMacro::queryOf($baseQuery)->orders = [];
+        BaseMacro::queryOf($baseQuery)->bindings['order'] = [];
         BaseMacro::queryOf($baseQuery)->limit = null;
         BaseMacro::queryOf($baseQuery)->offset = null;
 
@@ -793,7 +853,7 @@ class FastPaginationMacro extends BaseMacro
             ORDER BY __row_num
         ';
 
-        $results = DB::select($sql, $bindings);
+        $results = BaseMacro::connSelect($query, $sql, $bindings);
 
         // DB::table() 等 Query\Builder 没有关联模型，modelOf 返回 null，需返回纯集合而非调用 hydrate（否则 null->hydrate() 致命错误）。
         $model = BaseMacro::modelOf($query);
@@ -811,8 +871,6 @@ class FastPaginationMacro extends BaseMacro
      * @param  string  $sortColumn  排序字段
      * @param  int  $perPage  每页数量
      * @param  string  $direction  排序方向
-     *
-     * @scenario 生成分页书签
      */
     public static function generateBookmarks(
         Builder|QueryBuilder $query,
@@ -823,21 +881,35 @@ class FastPaginationMacro extends BaseMacro
         $bookmarks = [];
         $page = 1;
 
-        $query->clone()
-            ->orderBy($sortColumn, $direction)
-            ->select($sortColumn)
-            ->chunk($perPage, function ($items) use (&$bookmarks, &$page, $sortColumn) {
-                if ($items->isNotEmpty()) {
-                    $bookmarks[$page] = [
-                        'min' => $items->first()->{$sortColumn},
-                        'max' => $items->last()->{$sortColumn},
-                    ];
-                    $page++;
-                }
+        // 必须同时 select 主键、且排序带上主键：
+        //  1) Eloquent 的 chunk() 用「上一批最后一行的主键」推进 offset/limit，
+        //     只 select 排序列时该值为 null，每批偏移都算错 → **静默跳行**；
+        //  2) 排序列存在并列值时（如 created_at 精确到秒），单列游标无法区分同值行，
+        //     必须用 (排序列, 主键) 复合键才能唯一确定一页的边界。
+        $primaryKey = BaseMacro::keyName($query);
+        $direction = strtolower($direction) === 'desc' ? 'desc' : 'asc';
 
-                // 只生成前100页的书签
-                return $page <= 100;
-            });
+        $inner = $query->clone()
+            ->orderBy($sortColumn, $direction)
+            ->orderBy($primaryKey, $direction);
+
+        $inner->select(array_values(array_unique([$primaryKey, $sortColumn])));
+
+        $inner->chunk($perPage, function ($items) use (&$bookmarks, &$page, $sortColumn, $primaryKey) {
+            if ($items->isNotEmpty()) {
+                $bookmarks[$page] = [
+                    'min' => $items->first()->{$sortColumn},
+                    'max' => $items->last()->{$sortColumn},
+                    // 复合书签：与 min/max 同序的边界主键
+                    'min_pk' => $items->first()->{$primaryKey},
+                    'max_pk' => $items->last()->{$primaryKey},
+                ];
+                $page++;
+            }
+
+            // 只生成前100页的书签
+            return $page <= 100;
+        });
 
         return $bookmarks;
     }

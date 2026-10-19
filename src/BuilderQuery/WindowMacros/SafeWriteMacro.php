@@ -30,29 +30,21 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5），Laravel 11+ / 12+ / 13+，MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 防失控写入 / 删除护栏宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class SafeWriteMacro extends BaseMacro
 {
     /**
      *  默认每批删除行数（兼顾吞吐与锁粒度）。
-     *
-     * @scenario 默认每批删除行数（兼顾吞吐与锁粒度）。
      */
     public const DEFAULT_CHUNK_SIZE = 1000;
 
     /**
      *  单批次删除的默认最大迭代次数（防御性上限，防极端异常下的无限循环）。
-     *
-     * @scenario 单批次删除的默认最大迭代次数（防御性上限，防极端异常下的无限循环）。
      */
     public const MAX_ITERATIONS = 100000;
 
     /**
      *  注册所有防失控写入 / 删除护栏宏。
-     *
-     * @scenario 注册所有防失控写入 / 删除护栏宏。
      */
     public static function register(): void
     {
@@ -62,8 +54,6 @@ class SafeWriteMacro extends BaseMacro
 
     /**
      * 注册 mustHaveWhere。
-     *
-     * @scenario 注册 mustHaveWhere。
      */
     public static function registerMustHaveWhere(): void
     {
@@ -74,7 +64,6 @@ class SafeWriteMacro extends BaseMacro
          * User::query()->where('id', $id)->mustHaveWhere()->delete();
          * ```
          *
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 安全删除：已带 where，正常通过闸门
@@ -87,8 +76,6 @@ class SafeWriteMacro extends BaseMacro
         static::define('mustHaveWhere', function (): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return SafeWriteMacro::assertHasWhere($this);
@@ -97,8 +84,6 @@ class SafeWriteMacro extends BaseMacro
 
     /**
      * 注册 deleteInChunks。
-     *
-     * @scenario 注册 deleteInChunks。
      */
     public static function registerDeleteInChunks(): void
     {
@@ -127,8 +112,6 @@ class SafeWriteMacro extends BaseMacro
         ): int {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return SafeWriteMacro::deleteByChunks($this, $chunkSize, $key);
@@ -139,8 +122,6 @@ class SafeWriteMacro extends BaseMacro
      * mustHaveWhere 的实现：断言存在 WHERE 条件，否则抛异常。
      *
      * @throws RuntimeException 当构建器未携带任何 WHERE 条件时
-     *
-     * @scenario mustHaveWhere 的实现：断言存在 WHERE 条件，否则抛异常。
      */
     public static function assertHasWhere(
         Builder|\Illuminate\Database\Query\Builder $builder
@@ -160,8 +141,6 @@ class SafeWriteMacro extends BaseMacro
 
     /**
      * deleteInChunks 的实现：按主键分批删除并返回总数（终端执行）。
-     *
-     * @scenario deleteInChunks 的实现：按主键分批删除并返回总数（终端执行）。
      */
     public static function deleteByChunks(
         Builder|\Illuminate\Database\Query\Builder $builder,

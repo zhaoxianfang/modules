@@ -25,15 +25,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 窗口函数宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class WindowFunctionsMacro extends BaseMacro
 {
     /**
      * 注册所有窗口函数宏
-     *
-     * @scenario 注册所有窗口函数宏
      */
     public static function register(): void
     {
@@ -46,8 +42,6 @@ class WindowFunctionsMacro extends BaseMacro
 
     /**
      * 注册排名窗口函数
-     *
-     * @scenario 注册排名窗口函数
      */
     public static function registerRankingFunctions(): void
     {
@@ -64,8 +58,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 按部门分区，按工资降序排名
          * Employee::query()->rowNumber('department_id', 'salary', 'desc', 'rn')->get();
-         *
-         * @scenario 为查询结果添加行号（ROW_NUMBER）
          */
         static::define('rowNumber', function (
             string|array|null $partitionBy = null,
@@ -75,8 +67,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'row_num', 'alias');
@@ -89,7 +79,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "ROW_NUMBER() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -105,8 +95,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 按分数排名（并列会跳过名次）
          * Student::query()->rank('class_id', 'score', 'desc', 'rank_pos')->get();
-         *
-         * @scenario 添加排名（RANK）
          */
         static::define('rank', function (
             string|array|null $partitionBy = null,
@@ -116,8 +104,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'rank_val', 'alias');
@@ -130,7 +116,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "RANK() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -146,8 +132,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 按销售额密集排名（并列不跳过名次）
          * Sales::query()->denseRank('region', 'amount', 'desc', 'dense_rank_pos')->get();
-         *
-         * @scenario 添加密集排名（DENSE_RANK）
          */
         static::define('denseRank', function (
             string|array|null $partitionBy = null,
@@ -157,8 +141,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'dense_rank_val', 'alias');
@@ -171,7 +153,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "DENSE_RANK() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -187,8 +169,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 将员工按工资分为4个等级
          * Employee::query()->ntile(4, 'department_id', 'salary', 'desc', 'salary_grade')->get();
-         *
-         * @scenario 将分区内的行分为指定数量的桶（NTILE）
          */
         static::define('ntile', function (
             int $buckets = 4,
@@ -199,8 +179,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($buckets < 1) {
                 throw new \InvalidArgumentException('NTILE buckets must be greater than 0');
@@ -216,7 +194,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "NTILE({$buckets}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -232,8 +210,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 计算员工工资的百分比排名
          * Employee::query()->percentRank('department_id', 'salary', 'desc', 'pct_rank')->get();
-         *
-         * @scenario 计算当前行在分区中的百分比排名（PERCENT_RANK）
          */
         static::define('percentRank', function (
             string|array|null $partitionBy = null,
@@ -243,8 +219,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'percent_rank_val', 'alias');
@@ -257,7 +231,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "PERCENT_RANK() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -273,8 +247,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 计算产品价格的累积分布
          * Product::query()->cumeDist('category_id', 'price', 'asc', 'cum_dist')->get();
-         *
-         * @scenario 计算当前行在分区中的累积分布（CUME_DIST）
          */
         static::define('cumeDist', function (
             string|array|null $partitionBy = null,
@@ -284,8 +256,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'cume_dist_val', 'alias');
@@ -298,7 +268,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "CUME_DIST() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -315,8 +285,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 自定义排名
          * Employee::query()->rankOver('DENSE_RANK', 'department_id', 'salary', 'desc')->get();
-         *
-         * @scenario 自定义排名函数（RANK OVER）
          */
         static::define('rankOver', function (
             string $function = 'RANK',
@@ -327,10 +295,21 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $function = WindowFunctionsMacro::assertWindowFunction($function);
+
+            // rankOver 生成的是 `FUNC() OVER (...)`（无实参形式）。
+            // 通用窗口函数白名单里还包含 LAG / LEAD / NTH_VALUE / FIRST_VALUE 等
+            // 【必须带实参】的函数，一旦放行就会生成 `LAG() OVER (...)` 这类非法 SQL，
+            // 由数据库报错。这里额外收敛到"排名类"专属白名单。
+            if (! in_array(strtoupper($function), ['ROW_NUMBER', 'RANK', 'DENSE_RANK', 'PERCENT_RANK', 'CUME_DIST'], true)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'rankOver 只支持排名类窗口函数（ROW_NUMBER / RANK / DENSE_RANK / PERCENT_RANK / CUME_DIST），'
+                    .'不支持 [%s] —— 该函数需要实参，无法用于 `FUNC() OVER (...)` 形式。',
+                    $function
+                ));
+            }
+
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $alias = WindowFunctionsMacro::assertValidIdentifier($alias ?: 'custom_rank', 'alias');
             $wrappedAlias = WindowFunctionsMacro::wrapIdentifier($this, $alias);
@@ -342,14 +321,12 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "{$function}() OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
     }
 
     /**
      * 注册值访问窗口函数
-     *
-     * @scenario 注册值访问窗口函数
      */
     public static function registerValueFunctions(): void
     {
@@ -371,8 +348,6 @@ class WindowFunctionsMacro extends BaseMacro
          *     ->lag('amount', 1, 0, 'product_id', 'month', 'asc', 'prev_amount')
          *     ->selectRaw('amount - prev_amount as growth')
          *     ->get();
-         *
-         * @scenario 访问当前行之前的第N行数据（LAG）
          */
         static::define('lag', function (
             string $column,
@@ -385,8 +360,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
@@ -426,8 +399,6 @@ class WindowFunctionsMacro extends BaseMacro
          *     ->lead('amount', 1, 0, 'product_id', 'month', 'asc', 'next_amount')
          *     ->selectRaw('next_amount - amount as forecast')
          *     ->get();
-         *
-         * @scenario 访问当前行之后的第N行数据（LEAD）
          */
         static::define('lead', function (
             string $column,
@@ -440,8 +411,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
@@ -478,8 +447,6 @@ class WindowFunctionsMacro extends BaseMacro
          *     ->firstValue('open_price', 'stock_code', 'trade_date', 'asc', 'month_first_price')
          *     ->selectRaw('open_price - month_first_price as price_change')
          *     ->get();
-         *
-         * @scenario 获取窗口框架中第一行的值（FIRST_VALUE）
          */
         static::define('firstValue', function (
             string $column,
@@ -490,8 +457,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
@@ -506,7 +471,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "FIRST_VALUE({$wrappedColumn}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -525,8 +490,6 @@ class WindowFunctionsMacro extends BaseMacro
          *     ->lastValue('amount', 'team_id', 'amount', 'asc', 'team_best')
          *     ->selectRaw('team_best - amount as gap_to_best')
          *     ->get();
-         *
-         * @scenario 获取窗口框架中最后一行的值（LAST_VALUE）
          */
         static::define('lastValue', function (
             string $column,
@@ -537,8 +500,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $column = WindowFunctionsMacro::assertValidIdentifier($column, 'column');
@@ -551,9 +512,14 @@ class WindowFunctionsMacro extends BaseMacro
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $windowExpr = "LAST_VALUE({$wrappedColumn}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
+            // LAST_VALUE 的默认窗口帧是 RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW，
+            // 即"从分区开头到当前行"—— 不显式指定帧时 LAST_VALUE(x) 恒等于 x 本身，
+            // 与"取分区最后一行"的语义完全相反（且不会报错，静默给错结果）。
+            // ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING 才是整个分区。
+            $windowExpr = "LAST_VALUE({$wrappedColumn}) OVER ({$partitionClause} {$orderClause}"
+                .' ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS '.$wrappedAlias;
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -572,8 +538,6 @@ class WindowFunctionsMacro extends BaseMacro
          * ExamResult::query()
          *     ->nthValue('score', 3, 'class_id', 'score', 'desc', 'third_place_score')
          *     ->get();
-         *
-         * @scenario 获取窗口框架中第N行的值（NTH_VALUE）
          */
         static::define('nthValue', function (
             string $column,
@@ -585,8 +549,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($n < 1) {
                 throw new \InvalidArgumentException('NTH_VALUE n must be greater than 0');
@@ -602,17 +564,17 @@ class WindowFunctionsMacro extends BaseMacro
             $wrappedOrder = WindowFunctionsMacro::wrapIdentifier($this, WindowFunctionsMacro::assertValidIdentifier($orderColumn, 'order'));
             $orderClause = "ORDER BY {$wrappedOrder} {$direction}";
 
-            $windowExpr = "NTH_VALUE({$wrappedColumn}, {$n}) OVER ({$partitionClause} {$orderClause}) AS {$wrappedAlias}";
+            // 同 lastValue：默认帧只到 CURRENT ROW，NTH_VALUE(x, n>1) 会恒返回当前行。
+            $windowExpr = "NTH_VALUE({$wrappedColumn}, {$n}) OVER ({$partitionClause} {$orderClause}"
+                .' ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS '.$wrappedAlias;
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
     }
 
     /**
      * 注册聚合窗口函数
      * 包含: sumOver, avgOver, countOver, minOver, maxOver
-     *
-     * @scenario 注册聚合窗口函数
      */
     public static function registerAggregateWindowFunctions(): void
     {
@@ -647,8 +609,6 @@ class WindowFunctionsMacro extends BaseMacro
              * StockPrice::query()
              *     ->avgOver('close_price', 'stock_code', 'trade_date', 'asc', 'ma')
              *     ->get();
-             *
-             * @scenario 聚合窗口函数宏
              */
             static::define($macroName, function (
                 string $column,
@@ -659,8 +619,6 @@ class WindowFunctionsMacro extends BaseMacro
             ) use ($config): Builder|\Illuminate\Database\Query\Builder {
                 /**
                  * @var Builder|\Illuminate\Database\Query\Builder $this
-                 *
-                 * @scenario 本类/成员说明。
                  */
                 $direction = WindowFunctionsMacro::assertDirection($direction);
                 $function = WindowFunctionsMacro::assertAggregateFunction($config['fn']);
@@ -678,7 +636,7 @@ class WindowFunctionsMacro extends BaseMacro
 
                 $windowExpr = "{$function}({$wrappedColumn}) OVER ({$partitionClause}{$orderClause}) AS {$wrappedAlias}";
 
-                return $this->addSelect(DB::raw($windowExpr));
+                return BaseMacro::addWindowSelect($this, $windowExpr);
             });
         }
     }
@@ -686,8 +644,6 @@ class WindowFunctionsMacro extends BaseMacro
     /**
      * 注册框架窗口函数
      * 包含: rowsBetween, rangeBetween
-     *
-     * @scenario 注册框架窗口函数
      */
     public static function registerFrameWindowFunctions(): void
     {
@@ -714,8 +670,6 @@ class WindowFunctionsMacro extends BaseMacro
          * Sales::query()
          *     ->rowsBetween('amount', 'SUM', 'UNBOUNDED PRECEDING', 'CURRENT ROW', 'region', 'date', 'asc', 'cumulative')
          *     ->get();
-         *
-         * @scenario 使用 ROWS 框架指定窗口范围
          */
         static::define('rowsBetween', function (
             string $column,
@@ -729,8 +683,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = WindowFunctionsMacro::assertDirection($direction);
             $function = WindowFunctionsMacro::assertAggregateFunction($function);
@@ -748,7 +700,7 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "{$function}({$wrappedColumn}) OVER ({$partitionClause} {$orderClause} ROWS BETWEEN {$start} AND {$end}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
 
         /**
@@ -770,8 +722,6 @@ class WindowFunctionsMacro extends BaseMacro
          * Measurements::query()
          *     ->rangeBetween('value', 'AVG', '10 PRECEDING', '10 FOLLOWING', 'sensor_id', 'reading', 'asc', 'smoothed')
          *     ->get();
-         *
-         * @scenario 使用 RANGE 框架指定窗口范围
          */
         static::define('rangeBetween', function (
             string $column,
@@ -785,8 +735,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if (empty($orderBy)) {
                 throw new \InvalidArgumentException('RANGE frame requires orderBy parameter');
@@ -807,15 +755,13 @@ class WindowFunctionsMacro extends BaseMacro
 
             $windowExpr = "{$function}({$wrappedColumn}) OVER ({$partitionClause} {$orderClause} RANGE BETWEEN {$start} AND {$end}) AS {$wrappedAlias}";
 
-            return $this->addSelect(DB::raw($windowExpr));
+            return BaseMacro::addWindowSelect($this, $windowExpr);
         });
     }
 
     /**
      * 注册统计函数
      * 包含: cumulativeSum, movingAverage, runningTotal
-     *
-     * @scenario 注册统计函数
      */
     public static function registerStatisticalFunctions(): void
     {
@@ -832,8 +778,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 计算累计销售额
          * Sales::query()->cumulativeSum('amount', 'region', 'date', 'asc', 'running_total')->get();
-         *
-         * @scenario 计算累计和（从分区开始到当前行）
          */
         static::define('cumulativeSum', function (
             string $column,
@@ -844,8 +788,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->rowsBetween(
@@ -874,8 +816,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 计算5日移动平均（当前行±2行）
          * StockPrice::query()->movingAverage('close_price', 2, 'stock_code', 'date', 'asc', 'ma5')->get();
-         *
-         * @scenario 计算移动平均
          */
         static::define('movingAverage', function (
             string $column,
@@ -887,8 +827,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->rowsBetween(
@@ -916,8 +854,6 @@ class WindowFunctionsMacro extends BaseMacro
          * @example
          * // 计算运行总计
          * Orders::query()->runningTotal('amount', 'customer_id', 'created_at', 'asc')->get();
-         *
-         * @scenario 计算运行总计（累计和的别名）
          */
         static::define('runningTotal', function (
             string $column,
@@ -928,8 +864,6 @@ class WindowFunctionsMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->cumulativeSum($column, $partitionBy, $orderBy, $direction, $alias);

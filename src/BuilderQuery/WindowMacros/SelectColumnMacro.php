@@ -21,15 +21,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 列选择纪律宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class SelectColumnMacro extends BaseMacro
 {
     /**
      *  注册所有列选择宏。
-     *
-     * @scenario 注册所有列选择宏。
      */
     public static function register(): void
     {
@@ -40,8 +36,6 @@ class SelectColumnMacro extends BaseMacro
 
     /**
      * 注册 selectOnly。
-     *
-     * @scenario 注册 selectOnly。
      */
     public static function registerSelectOnly(): void
     {
@@ -51,7 +45,6 @@ class SelectColumnMacro extends BaseMacro
          * 所有列名经白名单校验并 wrap，支持 `表.列` 形式。
          *
          * @param  string|array  $columns  需要保留的列（可多列）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 列表页只取展示所需字段，避免拉取 body/text 等大字段
@@ -63,8 +56,6 @@ class SelectColumnMacro extends BaseMacro
         static::define('selectOnly', function (string|array $columns): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
             $wrapped = [];
@@ -81,8 +72,6 @@ class SelectColumnMacro extends BaseMacro
 
     /**
      * 注册 selectExcept。
-     *
-     * @scenario 注册 selectExcept。
      */
     public static function registerSelectExcept(): void
     {
@@ -93,7 +82,6 @@ class SelectColumnMacro extends BaseMacro
          * 比对按列的基础名（忽略表前缀与别名），如 'body' 会剔除 `articles`.`body` 与 `body AS b`。
          *
          * @param  string|array  $columns  需要剔除的列（按基础列名匹配）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 已 select 多列后，剔除大字段 text
@@ -104,8 +92,6 @@ class SelectColumnMacro extends BaseMacro
         static::define('selectExcept', function (string|array $columns): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $query = BaseMacro::queryOf($this);
             $current = $query->columns;
@@ -133,8 +119,6 @@ class SelectColumnMacro extends BaseMacro
 
     /**
      * 注册 selectPrimaryKey。
-     *
-     * @scenario 注册 selectPrimaryKey。
      */
     public static function registerSelectPrimaryKey(): void
     {
@@ -143,7 +127,6 @@ class SelectColumnMacro extends BaseMacro
          * 适用于「仅判断存在性 / 仅取 ID 列表 / 仅做关联键集合」等不需要完整字段的场景，
          * 最大限度减少结果集体积。主键列默认取模型主键，DB 模式回退为 'id'。
          *
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 仅取 ID 集合用于后续 in 查询，避免拉取整行
@@ -154,8 +137,6 @@ class SelectColumnMacro extends BaseMacro
         static::define('selectPrimaryKey', function (): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $key = BaseMacro::keyName($this);
 
@@ -173,8 +154,6 @@ class SelectColumnMacro extends BaseMacro
      *
      * @param  string  $column  已 wrap 或原始的列标识
      * @return string 小写基础列名（无法解析时回退为去除引号后的整体）
-     *
-     * @scenario 提取列的基础名（忽略表前缀与别名），用于 selectExcept 的剔除匹配。
      */
     public static function columnBaseName(string $column): string
     {

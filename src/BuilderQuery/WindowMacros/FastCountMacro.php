@@ -28,15 +28,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires PHP 8.2+（兼容 8.3/8.4/8.5），Laravel 11+ / 12+ / 13+，MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 大表计数加速宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class FastCountMacro extends BaseMacro
 {
     /**
      *  注册大表计数加速宏。
-     *
-     * @scenario 注册大表计数加速宏。
      */
     public static function register(): void
     {
@@ -45,8 +41,6 @@ class FastCountMacro extends BaseMacro
 
     /**
      * 注册 approximateCount。
-     *
-     * @scenario 注册 approximateCount。
      */
     public static function registerApproximateCount(): void
     {
@@ -71,8 +65,6 @@ class FastCountMacro extends BaseMacro
         static::define('approximateCount', function (?string $column = null): int {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return FastCountMacro::approximateCountOf($this, $column);
@@ -83,8 +75,6 @@ class FastCountMacro extends BaseMacro
      * approximateCount 的实现（宏闭包外部，可安全使用显式类名调用）。
      *
      * @param  string|null  $column  精确计数时的计数列（可空，缺省取主键）
-     *
-     * @scenario approximateCount 的实现（宏闭包外部，可安全使用显式类名调用）。
      */
     public static function approximateCountOf(
         Builder|\Illuminate\Database\Query\Builder $builder,

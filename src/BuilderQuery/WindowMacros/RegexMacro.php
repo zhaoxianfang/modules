@@ -25,15 +25,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 正则表达式匹配宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class RegexMacro extends BaseMacro
 {
     /**
      * 注册所有正则表达式宏
-     *
-     * @scenario 注册所有正则表达式宏
      */
     public static function register(): void
     {
@@ -46,8 +42,6 @@ class RegexMacro extends BaseMacro
 
     /**
      * 注册正则匹配筛选宏
-     *
-     * @scenario 注册正则匹配筛选宏
      */
     public static function registerRegexpMatch(): void
     {
@@ -69,8 +63,6 @@ class RegexMacro extends BaseMacro
          * User::query()->whereRegexp('phone', '^1[3-9]\d{9}$', 'i')->get();
          * // 不匹配正则
          * User::query()->whereNotRegexp('username', '^admin', 'i')->get();
-         *
-         * @scenario 正则表达式匹配筛选
          */
         static::define('whereRegexp', function (
             string $column,
@@ -80,8 +72,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -103,8 +93,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->whereNotRegexp('col', $p, 'natural', 'and')->get();
-         *
-         * @scenario 正则表达式不匹配筛选
          */
         static::define('whereNotRegexp', function (
             string $column,
@@ -114,8 +102,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -142,8 +128,6 @@ class RegexMacro extends BaseMacro
          *     '@yahoo\.com$',
          *     '@outlook\.com$'
          * ])->get();
-         *
-         * @scenario 匹配任意一个正则模式（OR 组合）
          */
         static::define('whereRegexpAny', function (
             string $column,
@@ -153,8 +137,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -176,8 +158,6 @@ class RegexMacro extends BaseMacro
 
     /**
      * 注册正则提取宏
-     *
-     * @scenario 注册正则提取宏
      */
     public static function registerRegexpExtract(): void
     {
@@ -194,8 +174,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->regexpExtract('col', $p, $g, $o, 'natural', $a)->get();
-         *
-         * @scenario 使用正则提取子串
          */
         static::define('regexpExtract', function (
             string $column,
@@ -207,8 +185,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -231,8 +207,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->regexpExtractAll('col', $p, 'natural', $a)->get();
-         *
-         * @scenario 提取所有匹配项为 JSON 数组
          */
         static::define('regexpExtractAll', function (
             string $column,
@@ -242,8 +216,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -258,8 +230,6 @@ class RegexMacro extends BaseMacro
 
     /**
      * 注册正则替换宏
-     *
-     * @scenario 注册正则替换宏
      */
     public static function registerRegexpReplace(): void
     {
@@ -276,8 +246,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->regexpReplace('col', $p, $r, $o, 'natural', $a)->get();
-         *
-         * @scenario 使用正则替换文本
          */
         static::define('regexpReplace', function (
             string $column,
@@ -289,8 +257,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -313,8 +279,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->regexpReplaceBatch('col', $r, 'natural', $a)->get();
-         *
-         * @scenario 批量正则替换（依次应用多条规则）
          */
         static::define('regexpReplaceBatch', function (
             string $column,
@@ -324,8 +288,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -352,8 +314,6 @@ class RegexMacro extends BaseMacro
 
     /**
      * 注册正则位置宏
-     *
-     * @scenario 注册正则位置宏
      */
     public static function registerRegexpPosition(): void
     {
@@ -370,8 +330,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->regexpPosition('col', $p, $o, 'natural', $r, $a)->get();
-         *
-         * @scenario 查找正则匹配位置
          */
         static::define('regexpPosition', function (
             string $column,
@@ -383,8 +341,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -399,8 +355,6 @@ class RegexMacro extends BaseMacro
 
     /**
      * 注册正则计数宏
-     *
-     * @scenario 注册正则计数宏
      */
     public static function registerRegexpCount(): void
     {
@@ -415,8 +369,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->regexpCount('col', $p, 'natural', $a)->get();
-         *
-         * @scenario 统计正则匹配次数
          */
         static::define('regexpCount', function (
             string $column,
@@ -426,8 +378,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $mode = BaseMacro::assertRegexMode($mode);
@@ -452,8 +402,6 @@ class RegexMacro extends BaseMacro
          *
          * @example
          * Model::query()->whereRegexpCount('col', $p, 10, $o, 'natural', 'and')->get();
-         *
-         * @scenario 按匹配次数筛选
          */
         static::define('whereRegexpCount', function (
             string $column,
@@ -465,8 +413,6 @@ class RegexMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedColumn = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $operator = BaseMacro::assertOperator($operator);

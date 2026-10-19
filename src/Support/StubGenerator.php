@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace zxf\Modules\Support;
 
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
 /**
@@ -52,6 +51,22 @@ class StubGenerator
      * @var array<string, mixed>
      */
     protected array $replacements = [];
+
+    /**
+     * stub 模板进程内缓存 [path => ['mtime'=>int, 'content'=>string, 'found'=>array<string,int>]]
+     *
+     * 以文件 mtime 作为失效依据；module:make 生成 30+ 文件时可省下大量重复读盘与正则扫描。
+     *
+     * @var array<string, array{mtime:int, content:string, found:array<string,int>}>
+     */
+    protected static array $stubCache = [];
+
+    /**
+     * 已按变量名长度降序排好的替换表（null = 需要重新排序）
+     *
+     * @var array<string, mixed>|null
+     */
+    private ?array $sortedReplacementsCache = null;
 
     /**
      * 变量替换统计
@@ -182,6 +197,9 @@ class StubGenerator
      */
     protected function setReplacements(): void
     {
+        // 整体重建替换表 → 已排序缓存必须失效
+        $this->sortedReplacementsCache = null;
+
         $this->replacements = [
             // === 模块名称相关变量 ===
             '{{NAME}}' => $this->moduleName,                                    // 首字母大写: Blog
@@ -253,6 +271,9 @@ class StubGenerator
 
         $this->replacements[$key] = $value;
         $this->definedVariables[$key] = true;
+
+        // 替换表变了 → 已排序缓存失效（否则会按旧顺序替换，导致长短变量名互相覆盖）
+        $this->sortedReplacementsCache = null;
 
         return $this;
     }
@@ -363,11 +384,11 @@ class StubGenerator
             // 确保目标目录存在（递归创建）
             $directory = dirname($fullPath);
             if (! is_dir($directory)) {
-                File::makeDirectory($directory, 0755, true);
+                SafeFilesystem::makeDirectory($directory, 0755, true);
             }
 
             // 写入文件内容
-            return File::put($fullPath, $content) !== false;
+            return SafeFilesystem::put($fullPath, $content) !== false;
         } catch (\InvalidArgumentException $e) {
             // 非法路径（如含 '..'）属于调用方错误，必须让异常冒泡以给出明确原因，
             // 而不是被降级成一句含糊的「生成失败」
@@ -401,7 +422,7 @@ class StubGenerator
         $fullPath = $this->getFullPath($destination);
 
         if (file_exists($fullPath)) {
-            return File::delete($fullPath);
+            return SafeFilesystem::delete($fullPath);
         }
 
         return false;
@@ -444,6 +465,70 @@ class StubGenerator
     }
 
     /**
+     * 读取 stub 模板（带按 mtime 失效的进程内缓存）
+     *
+     * module:make 一次生成 30+ 文件，多个文件共用同一份 stub；
+     * 每次都读盘 + preg_match_all 全量扫描属于纯重复开销，这里缓存一次。
+     * 以 mtime 作为失效依据，编辑器改过 stub 后自动重新读取，不会拿到过期内容。
+     *
+     * @return array{content:string, found:array<string,int>}
+     */
+    private function fetchStubTemplate(string $stubPath): array
+    {
+        $mtime = @filemtime($stubPath);
+
+        if ($mtime !== false
+            && isset(self::$stubCache[$stubPath])
+            && self::$stubCache[$stubPath]['mtime'] === $mtime) {
+            return self::$stubCache[$stubPath];
+        }
+
+        $content = SafeFilesystem::get($stubPath);
+
+        $found = [];
+        preg_match_all('/\{\{[\w]+\}\}/', $content, $matches);
+
+        foreach ($matches[0] as $variable) {
+            $found[$variable] = ($found[$variable] ?? 0) + 1;
+        }
+
+        if ($mtime !== false) {
+            self::$stubCache[$stubPath] = [
+                'mtime' => $mtime,
+                'content' => $content,
+                'found' => $found,
+            ];
+        }
+
+        return ['content' => $content, 'found' => $found];
+    }
+
+    /**
+     * 取「按变量名长度降序」排列的替换表（结果缓存，replacements 变化时自动重排）
+     *
+     * @return array<string, mixed>
+     */
+    private function sortedReplacements(): array
+    {
+        if ($this->sortedReplacementsCache !== null) {
+            return $this->sortedReplacementsCache;
+        }
+
+        $sorted = $this->replacements;
+        uksort($sorted, fn (string $a, string $b): int => strlen($b) - strlen($a));
+
+        return $this->sortedReplacementsCache = $sorted;
+    }
+
+    /**
+     * 清空进程内 stub 模板缓存（测试用）
+     */
+    public static function clearTemplateCache(): void
+    {
+        self::$stubCache = [];
+    }
+
+    /**
      * 获取 Stub 内容并替换变量
      * 执行变量替换，并记录替换统计信息
      * 在严格模式下，会检测未替换的变量
@@ -453,25 +538,25 @@ class StubGenerator
      */
     protected function getStubContent(string $stubPath): string
     {
-        $content = File::get($stubPath);
+        // ---- 性能：stub 模板内容与变量出现次数做「按 mtime 失效」的进程内缓存 ----
+        // module:make 一次会生成 30+ 文件，其中多个文件共用同一份 stub，
+        // 每次都 SafeFilesystem::get() 读盘 + preg_match_all() 全量扫描是纯粹的重复 IO 与 CPU 开销。
+        $cache = $this->fetchStubTemplate($stubPath);
 
-        // 重置统计信息
+        $content = $cache['content'];
+
+        // 统计信息：found 来自缓存，replaced 每次替换后重算（替换值可能变）
         $this->replacementStats = [];
 
-        // 第一次遍历：统计变量出现次数
-        preg_match_all('/\{\{[\w]+\}\}/', $content, $matches);
-        foreach ($matches[0] as $variable) {
-            if (! isset($this->replacementStats[$variable])) {
-                $this->replacementStats[$variable] = ['found' => 0, 'replaced' => 0];
-            }
-            $this->replacementStats[$variable]['found']++;
+        foreach ($cache['found'] as $variable => $times) {
+            $this->replacementStats[$variable] = ['found' => $times, 'replaced' => 0];
         }
 
         // 执行替换（按变量名长度降序排序，防止短变量名干扰长变量名替换）
         // 例如：{{MODULE_NAMESPACE}} 必须在 {{NAMESPACE}} 之前替换，
         // 否则 {{NAMESPACE}} 会先替换 {{MODULE_NAMESPACE}} 中的部分内容
-        $replacements = $this->replacements;
-        uksort($replacements, fn (string $a, string $b): int => strlen($b) - strlen($a));
+        // 排序结果同样缓存：replacements 未变化时无需重复 uksort。
+        $replacements = $this->sortedReplacements();
 
         foreach ($replacements as $search => $replace) {
             $count = 0;
@@ -519,12 +604,6 @@ class StubGenerator
             }
         }
 
-        // 检查是否有定义但未使用的变量
-        // foreach ($this->replacements as $variable => $value) {
-        //     }
-        // }
-
-        // 如果有错误，记录日志
         if (! empty($errors)) {
             $stubName = basename($stubPath);
             $message = "Stub [{$stubName}] 变量替换验证失败:\n".implode("\n", $errors);
@@ -595,7 +674,7 @@ class StubGenerator
 
         self::assertNoTraversal($destination);
 
-        $content = File::get($stubPath);
+        $content = SafeFilesystem::get($stubPath);
 
         if ($replacements) {
             // 按变量名长度降序排序，防止短变量名干扰长变量名替换
@@ -611,10 +690,10 @@ class StubGenerator
 
         $directory = dirname($destination);
         if (! is_dir($directory)) {
-            File::makeDirectory($directory, 0755, true);
+            SafeFilesystem::makeDirectory($directory, 0755, true);
         }
 
-        return File::put($destination, $content) !== false;
+        return SafeFilesystem::put($destination, $content) !== false;
     }
 
     /**
@@ -627,7 +706,7 @@ class StubGenerator
             self::assertNoTraversal($path);
 
             if (! is_dir($path)) {
-                File::makeDirectory($path, 0755, true);
+                SafeFilesystem::makeDirectory($path, 0755, true);
             }
         }
     }

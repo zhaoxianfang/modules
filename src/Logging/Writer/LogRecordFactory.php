@@ -35,6 +35,19 @@ final class LogRecordFactory
      */
     private static array $columns = [];
 
+    /**
+     * 表存在性缓存（与列清单同 TTL），供 DatabaseLogHandler 复用。
+     *
+     * 原先 handler 与本类各自调 Schema::hasTable —— 同一次请求里对同一张表
+     * 重复探测两遍。收敛到这里的唯一入口后，一次 TTL 周期内只发一次查询。
+     *
+     * 注意：**探测失败（抛异常）一律不写缓存**，只把失败频率限制交给
+     * DatabaseLogHandler 的短 TTL 负缓存处理，避免"缓存住 false 导致长期静默"。
+     *
+     * @var array<string, array{exists: bool, expires_at: int}>
+     */
+    private static array $exists = [];
+
     /** TTL 本身也缓存（只解析一次 config()） */
     private static ?int $cacheTtl = null;
 
@@ -99,7 +112,7 @@ final class LogRecordFactory
 
         $columns = null;
         try {
-            if (class_exists(Schema::class) && Schema::hasTable($table)) {
+            if (class_exists(Schema::class) && self::tableExists($table)) {
                 $listing = Schema::getColumnListing($table);
                 $columns = is_array($listing) ? $listing : null;
             }
@@ -113,6 +126,39 @@ final class LogRecordFactory
         ];
 
         return $columns;
+    }
+
+    /**
+     * 表是否存在（按表名缓存，成功结果才缓存）。
+     *
+     * 与 {@see self::columns()} 共用同一份列/表缓存语义，取代原先在 handler 与本类
+     * 里各自发起的 Schema::hasTable() 重复探测。
+     *
+     * 注意：本方法**不吞异常** —— 探测异常直接向上抛，由调用方决定失败后的行为：
+     *  - {@see self::columns()} 自己有 try/catch，异常时按"不做列过滤"处理；
+     *  - DatabaseLogHandler 据此建立短 TTL 负缓存，避免每条日志都重试一次连接。
+     * 两种失败路径都刻意【不写缓存】，避免数据库恢复后仍长期静默跳过日志。
+     */
+    public static function tableExists(string $table): bool
+    {
+        if ($table === '') {
+            return false;
+        }
+
+        $cached = self::$exists[$table] ?? null;
+        if ($cached !== null && $cached['expires_at'] > time()) {
+            return $cached['exists'];
+        }
+
+        if (! class_exists(Schema::class)) {
+            return false;
+        }
+
+        $exists = Schema::hasTable($table);
+
+        self::$exists[$table] = ['exists' => $exists, 'expires_at' => time() + self::cacheTtl()];
+
+        return $exists;
     }
 
     /**
@@ -147,6 +193,7 @@ final class LogRecordFactory
     public static function flushCache(): void
     {
         self::$columns = [];
+        self::$exists = [];
         self::$cacheTtl = null;
     }
 }

@@ -550,8 +550,9 @@ LogContext::reset();
 
 // ===================== 预脱敏键跳过二次脱敏 =====================
 $handlerSrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/Handler/DatabaseLogHandler.php');
-check(str_contains($handlerSrc, 'in_array($key, LogContext::PRE_REDACTED_KEYS, true)'),
-    '落库处理器对预脱敏键不再二次 sanitize');
+check(str_contains($handlerSrc, '$preRedactedLookup = LogContext::preRedactedKeyLookup()')
+    && str_contains($handlerSrc, 'isset($preRedactedLookup[$key])'),
+    '落库处理器对预脱敏键不再二次 sanitize（且以 O(1) 查表替代线性 in_array 扫描）');
 check(str_contains($handlerSrc, 'foreach ($preRedacted as $key => $value)'),
     '落库处理器把摘出的键补回属性数组');
 check(str_contains($handlerSrc, 'if (! array_key_exists($key, $attributes))'),
@@ -685,6 +686,197 @@ check($claimPos !== false && $dedupePos !== false && $claimPos < $dedupePos, '�
 check(
     (bool) preg_match('/else \{\s*\/\/[^\n]*\n\s*\$key = \$this->dedupeKey/', $handlerSrc),
     '业务日志走去重分支（与请求日志守卫互斥）'
+);
+
+// ===================== P0：脱敏器单例被容器绕过（自定义敏感键失效） =====================
+
+// 容器解析类类型参数时【优先于默认值】：resolveClass() 会 make(Redactor::class)，
+// 而 Redactor 是可实例化的 final 类（构造参数全默认）→ 解析必定成功。
+// 于是中间件里 `?Redactor $x = null` 的 ?? 分支永不执行，实际拿到 new Redactor([], 20000)，
+// 应用自定义的 sensitive_keys 被静默丢弃，POST 入参里的自定义敏感字段明文进库。
+$providerSrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/LoggingServiceProvider.php');
+check(
+    str_contains($providerSrc, '$this->app->bind(Redactor::class'),
+    '具体类 Redactor 被绑定到契约单例（容器不再绕过配置构造新实例）'
+);
+check(
+    str_contains($mwSrc, 'public function __construct(?RedactorContract $redactor = null)'),
+    '中间件注入类型为契约而非具体类（否则容器会优先 make 具体类，?? 兜底成死代码）'
+);
+check(
+    str_contains($mwSrc, 'private RedactorContract $redactor;'),
+    '中间件属性类型为契约，与注入类型一致'
+);
+
+// 实际生效的脱敏器必须带上自定义敏感键
+$customKeys = new Redactor(['credit_card', 'staff_no'], 1234);
+check($customKeys->maskArray(['credit_card' => '6222xxxx'])['credit_card'] === Redactor::MASK,
+    '自定义敏感键 credit_card 生效');
+check($customKeys->maskArray(['staff_no' => 'E007'])['staff_no'] === Redactor::MASK,
+    '自定义敏感键 staff_no 生效');
+check(strlen($customKeys->maskArray(['note' => str_repeat('a', 9999)])['note']) === 1234,
+    '自定义 max_field_length 生效（不再被硬编码 20000 覆盖）');
+
+// ===================== payload 放大防护 =====================
+
+$bomb = [];
+for ($i = 0; $i < 8000; $i++) {
+    $bomb['f'.$i] = str_repeat('v', 500);
+}
+$bombStart = microtime(true);
+$masked = $customKeys->maskArray($bomb);
+$bombMs = (microtime(true) - $bombStart) * 1000;
+$encoded = (string) json_encode($masked, JSON_UNESCAPED_UNICODE);
+check(count($masked) < 8000, '超大入参数组被节点预算裁掉尾部（不再原样进库），实际保留 '.count($masked).' 项');
+check(str_contains($encoded, '已截断'), '预算耗尽处写入显式截断标记');
+check(mb_strlen($encoded, 'UTF-8') < 4 * 1024 * 1024,
+    '超大入参 JSON 体积被压到 MB 级以内（'.$bombMs.' ms）');
+check($bombMs < 3000, '超大入参脱敏耗时可控（'.$bombMs.' ms）');
+
+// 预算耗尽前的前缀仍应被正常脱敏 —— 不能因为预算把前面的密码也放过去
+$mixed = ['password' => 'PLAINPW', 'ok' => 'v'];
+for ($i = 0; $i < 9000; $i++) {
+    $mixed['f'.$i] = 'v';
+}
+$mixedMasked = $customKeys->maskArray($mixed);
+check($mixedMasked['password'] === Redactor::MASK, '预算耗尽前的敏感字段仍然被脱敏');
+
+// ===================== ReDoS 结构回归 =====================
+$redactorSrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/Support/Redactor.php');
+check(
+    str_contains($redactorSrc, "'/((?:\\w{1,32}[_-]){0,4})('"),
+    '无引号 key=value 规则的字段前缀改为【有界】量词（消除嵌套量词回溯）'
+);
+check(
+    ! str_contains(explode('bareKeyValuePattern =', $redactorSrc)[1] ?? '', '(?:[a-z0-9]+[_-])*'),
+    '规则本身不再使用无界的 (?:[a-z0-9]+[_-])* 前缀组'
+);
+check(
+    str_contains($redactorSrc, 'const MAX_NODES = 5000') && str_contains($redactorSrc, 'const MAX_TOTAL_BYTES = 1048576'),
+    'Redactor 声明了节点数与累计字节双重预算'
+);
+
+// 病态输入（大量无分隔长串 + 敏感键前缀）在有限时间内返回
+$pathological = str_repeat('a', 4000).' user_password=x'.str_repeat('b', 4000).' token=y';
+$t0 = microtime(true);
+$out = $customKeys->maskText($pathological);
+$ms = (microtime(true) - $t0) * 1000;
+check($ms < 500, '病态长文本的 maskText 无灾难性回溯（'.$ms.' ms）');
+check(! str_contains($out, '=x'), '病态输入中的 password 值仍被脱敏');
+
+// ===================== 定宽列截断（超长值致整行日志丢失） =====================
+$longPath = new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: [
+        'request_path' => '/'.str_repeat('seg/', 300),
+        'request_route' => str_repeat('r', 900),
+        'request_controller' => str_repeat('C', 900),
+    ],
+);
+$attrsLong = $ref->invoke($handler, $longPath);
+check(strlen((string) $attrsLong['request_path']) <= 512, 'request_path 按列宽 512 截断');
+check(strlen((string) $attrsLong['request_route']) <= 255, 'request_route 按列宽 255 截断');
+check(strlen((string) $attrsLong['request_controller']) <= 255, 'request_controller 按列宽 255 截断');
+
+// 多字节字符不得被从中间劈开（劈开会产生非法 UTF-8，同样让 MySQL 拒写）
+$attrsLong['request_path'] = '/'.str_repeat('模块/', 300);
+$attrsLong = $ref->invoke($handler, new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: ['request_path' => '/'.str_repeat('模块/', 300)],
+));
+$mbPath = (string) $attrsLong['request_path'];
+check(strlen($mbPath) <= 512, '多字节 request_path 按字节裁剪且不超列宽');
+check(mb_check_encoding($mbPath, 'UTF-8'), '多字节 request_path 裁剪后仍是合法 UTF-8（不会写库失败）');
+
+// 空响应体归一为 null（与 request_url 口径一致）
+$attrsBody = $ref->invoke($handler, new LogRecord(
+    datetime: new DateTimeImmutable,
+    channel: 'database',
+    level: Level::Info,
+    message: 'm',
+    context: [],
+    extra: ['response_body' => '', 'response_content' => ''],
+));
+check($attrsBody['response_body'] === null, '空 response_body 归一为 null（不再落空串干扰 IS NOT NULL 查询）');
+check($attrsBody['response_content'] === null, '空 response_content 归一为 null');
+
+// ===================== Monolog 3 level 取值不依赖 level_name =====================
+check(
+    ! str_contains($handlerSrc, "\$record['level_name'].'|'. \$record->message"),
+    '去重签名的等级维度不再依赖 $record[\'level_name\']（退化时会塌成 "|message"）'
+);
+check(
+    (bool) preg_match('/function shouldThrottleBurst[\s\S]{0,1600}?normalizeLevel\(\$record\)/', $handlerSrc),
+    '限流等级判定改用 normalizeLevel()（level_name 退化时限流曾对所有级别静默失效）'
+);
+check(
+    str_contains($handlerSrc, "if (LogContext::isCliSapi()\n            && empty(\$record->context['console_to_log'])"),
+    'CLI 判定统一用 isCliSapi()（与 headers_sent 守卫同口径，覆盖 phpdbg）'
+);
+
+// ===================== scopeBusinessLogs 不再被 bot 上下文摧毁 =====================
+$logModelSrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/Models/Log.php');
+check(
+    str_contains($logModelSrc, "whereNotNull('context')->where('context', '!=', '[]')"),
+    'scopeBusinessLogs 语义保持为"有业务 context"'
+);
+check(
+    (bool) preg_match('/function applyBotAttributes[\s\S]{0,3000}?! in_array\(\'bot_type\', \$columns, true\)/', $handlerSrc),
+    'context[\'bot\'] 仅在旧表缺 bot_* 列时才注入（否则 scopeBusinessLogs 恒等于全表）'
+);
+
+// ===================== scopeMetrics 分组粒度与 PostgreSQL 布尔兼容 =====================
+check(
+    (bool) preg_match('/function scopeMetrics[\s\S]{0,900}?DATE\(\'.\$dateColumn\.\'\)/', $logModelSrc),
+    'scopeMetrics 按天分组（原实现按 DATETIME 原始值分组，粒度实为"秒"）'
+);
+check(
+    str_contains($logModelSrc, "=== 'pgsql'") && str_contains($logModelSrc, 'is_crawler = true'),
+    'scopeMetrics 对 PostgreSQL 的 boolean 列不再用 = 1 比较'
+);
+check(! str_contains($logModelSrc, 'is_crawler = 1 THEN 1 ELSE 0 END) AS crawler_hits'),
+    'scopeMetrics 不再对所有驱动硬编码 is_crawler = 1');
+
+// ===================== 表探测限频与缓存合并 =====================
+$factorySrc = (string) file_get_contents('/Users/aha/www/modules/src/Logging/Writer/LogRecordFactory.php');
+check(
+    str_contains($factorySrc, 'public static function tableExists(string $table): bool'),
+    '表存在性探测收敛到 LogRecordFactory 唯一入口（消除与 handler 的重复 Schema::hasTable）'
+);
+check(
+    str_contains($handlerSrc, 'LogRecordFactory::tableExists($table)'),
+    'handler 复用 factory 的表探测缓存'
+);
+check(
+    (bool) preg_match('/function logsTableExists[\s\S]{0,900}?self::\$probeFailed/', $handlerSrc),
+    '数据库不可达时启用短 TTL 负缓存（原实现每条日志重试一次连接，可累计数十秒静默挂死）'
+);
+check(str_contains($factorySrc, 'self::$exists = [];'), 'flushCache 同步清空表存在性缓存');
+
+// ===================== burst 限流状态有界 =====================
+check(
+    str_contains($handlerSrc, 'count(self::$burstSeen) >= self::BURST_SEEN_MAX'),
+    '进程内限流表有容量上限（常驻进程下开 burst_throttle 会无界增长直至 OOM）'
+);
+
+// ===================== 常驻进程配置热更新 =====================
+check(
+    (bool) preg_match('/function config\(\)[\s\S]{0,1200}?maxFieldLength !== \$this->config->maxFieldLength/', $handlerSrc),
+    '配置 TTL 到期时敏感词表变化会重建 Redactor（recompile 此前无任何调用方）'
+);
+
+// ===================== baseExtra 不得存明文 URL =====================
+check(
+    (bool) preg_match("/'request_url' => \\\$this->redactor->maskText\(\(string\) \\\$context\['url'\]\)/", $mwSrc),
+    'baseExtra 的 request_url 在源头脱敏（否则 stack 通道会把 ?token= 写进日志文件）'
 );
 
 // ===================== 汇总 =====================

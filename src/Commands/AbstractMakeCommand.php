@@ -6,9 +6,12 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Contracts\ModuleInterface;
 use zxf\Modules\Facades\Module;
+use zxf\Modules\Support\PathGuard;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -26,6 +29,68 @@ use zxf\Modules\Support\StubGenerator;
 abstract class AbstractMakeCommand extends Command
 {
     use EscapesConsoleOutput;
+    use PathGuard;
+
+    /**
+     * 命令入口：先统一校验实体名，再交给子类的 handle()
+     *
+     * 【为什么要放在基类而不是各子类】
+     * 19 个 make-* 命令都把用户输入的 name 拼进「目标相对路径」，
+     * 只要出现 '/' 或 '..' 就能写到模块目录之外，甚至生成非法 PHP
+     * （如 class Foo/Bar）导致 PSR-4 永久无法加载。
+     * 此前只有 Route / View 两个命令自己做了校验，其余 17 个都是裸拼。
+     * 这里覆写 execute() 做**前置拦截**，子类零改动即可全部获得保护，
+     * 也避免将来新增 make 命令时又漏掉。
+     */
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        if (($reason = $this->rejectInvalidEntityArgument()) !== null) {
+            $this->error($reason);
+            $this->line('提示：实体名只能包含字母、数字、下划线、点与连字符，且必须以字母/数字/下划线开头。');
+
+            return self::FAILURE;
+        }
+
+        return parent::execute($input, $output);
+    }
+
+    /**
+     * 校验 name / module 两个位置参数，非法时返回可展示的拒绝理由（合法返回 null）
+     */
+    protected function rejectInvalidEntityArgument(): ?string
+    {
+        foreach (['name', 'module'] as $key) {
+            $value = $this->optionalArgument($key);
+
+            if ($value === null || $value === '') {
+                continue;
+            }
+
+            if (! $this->isValidEntityName($value)) {
+                return sprintf('参数 [%s] 的值 [%s] 不合法。', $key, $value);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 安全读取位置参数（未声明该参数时返回 null 而不是抛异常）
+     */
+    protected function optionalArgument(string $key): ?string
+    {
+        try {
+            $value = $this->argument($key);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($value === null || is_array($value)) {
+            return null;
+        }
+
+        return (string) $value;
+    }
 
     /**
      * 当前已解析的模块实例（resolveModule 后可用）

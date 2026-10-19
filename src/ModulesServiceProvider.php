@@ -17,6 +17,7 @@ use zxf\Modules\Contracts\RepositoryInterface;
 use zxf\Modules\Support\ModuleAutoDiscovery;
 use zxf\Modules\Support\ModuleContext;
 use zxf\Modules\Support\ModuleLoader;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 模块系统服务提供者
@@ -42,6 +43,22 @@ class ModulesServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // 必须是本提供者做的**第一件事**：
+        //
+        // Laravel 13 反转了容器别名方向（aliases[Filesystem::class] = 'files'），
+        // 'files' 不再是别名，而是 Illuminate\Filesystem\FilesystemServiceProvider
+        // 的 register() 注册的 singleton。只要它缺席，以下写法全部致命：
+        //     File::xxx() / app('files') / $app['files']
+        //     $app->make(Filesystem::class)  ← bound() 为 true，make() 却抛异常
+        //     loadRoutesFrom() → routesAreCached() → $this['files']
+        // 报错形态正是：
+        //     Target class [files] does not exist.
+        //     Class "files" does not exist
+        //
+        // 在此兜底绑定一次，即可保护本次启动中后续所有 provider 的 register/boot
+        // （含 Passport 等会调用 loadRoutesFrom() 的第三方包），代价仅一次 bound() 判断。
+        SafeFilesystem::ensureBound($this->app);
+
         $this->registerRepository();
         $this->registerModuleLoader();
         $this->mergeModuleConfig();
@@ -102,6 +119,80 @@ class ModulesServiceProvider extends ServiceProvider
 
         $this->registerTerminatingCleanup();
         $this->registerQueueJobCleanup();
+        $this->registerFrameworkProvidersGuard();
+    }
+
+    /**
+     * 兜底自愈：确保 config('app.providers') 始终保有完整的框架 provider 列表
+     *
+     * 【背景 · 这是 `php artisan optimize` 报 "Target class [files] does not exist" 的完整链路】
+     *
+     *  1. Laravel 12/13 在 bootstrap 阶段把完整 provider 列表写进 `config('app.providers')`；
+     *  2. 模块（或模块里的应用代码）若把 `providers` 当成模块私有元信息从 config('app') 里
+     *     摘除，`php artisan config:cache` 就会写出一份**缺 app.providers** 的配置；
+     *  3. 下一次启动 `LoadConfiguration` 判定「配置来自缓存」→ `config_loaded_from_cache = true`
+     *     → `RegisterProviders` 直接跳过 provider 列表写入；
+     *  4. 结果只剩 composer 自动发现的十几个包 provider，
+     *     `Illuminate\Filesystem\FilesystemServiceProvider` 等核心 provider 全部缺席；
+     *  5. 第一个去解析这些服务的地方（File 门面 / loadRoutesFrom → routesAreCached /
+     *     zxf-captcha 的 validator ……）就会抛
+     *         Target class [files] does not exist.
+     *         Class "files" does not exist
+     *     而 `php artisan optimize` 恰好会把这段链路全部走一遍 → 必然失败。
+     *
+     * 【为什么放在 booted()】
+     * booted() 在**所有** provider 的 boot() 结束之后才触发，
+     * 是本进程内「所有模块 provider 都已执行完」的最后一个时机；
+     * 只有在这里补齐，才能覆盖模块自身 boot 期间的任何删改。
+     *
+     * 【安全性】
+     * - 幂等：只补齐缺失项，不改顺序、不覆盖已有值；
+     * - 非破坏：正常应用里 app.providers 本就完整，此时直接 return，什么都不做；
+     * - 无框架依赖：`booted()` 不存在（裸容器）时整体跳过。
+     */
+    protected function registerFrameworkProvidersGuard(): void
+    {
+        try {
+            if (! method_exists($this->app, 'booted')) {
+                return;
+            }
+
+            $this->app->booted(function (): void {
+                $this->restoreFrameworkProvidersConfig();
+            });
+        } catch (\Throwable) {
+            // 最小容器可能没有 booted 能力，忽略即可
+        }
+    }
+
+    /**
+     * 补齐 config('app.providers') 中缺失的框架默认 provider
+     */
+    protected function restoreFrameworkProvidersConfig(): void
+    {
+        try {
+            $config = $this->app->make('config');
+
+            $defaults = ServiceProvider::defaultProviders()->toArray();
+
+            if ($defaults === []) {
+                return;
+            }
+
+            $current = $config->get('app.providers');
+            $current = is_array($current) ? $current : [];
+
+            $missing = array_values(array_diff($defaults, $current));
+
+            if ($missing === []) {
+                return;
+            }
+
+            // 缺失项补在前面，保持框架默认 provider 优先于包 provider 的原有顺序
+            $config->set('app.providers', array_merge($missing, $current));
+        } catch (\Throwable) {
+            // 配置服务不可用时不影响启动
+        }
     }
 
     /**
@@ -230,42 +321,54 @@ class ModulesServiceProvider extends ServiceProvider
     /**
      * 解析文件系统实例
      *
-     * 只要 'files' 这个字符串绑定不在容器里就会抛：
-     *     Target class [files] does not exist.
-     *     Class "files" does not exist
-     * 而本包的设计原则是「最小化 Laravel 框架依赖」，并不保证运行容器一定
-     * 是完整的 Illuminate\Foundation\Application（测试用裸 Container、
-     * 精简容器、自建微内核等都可能出现该报错，且每次 boot 必现）。
+     * ==================== 为什么不能写成「三级回退 + bound() 判断」====================
      *
-     * 现在按三级回退：已绑定 'files' → 已绑定 Filesystem 类名 → 直接 new。
-     * 第三级让本包在没有文件系统服务的容器里也能正常工作。
-     */
-    /**
-     * @param  Container  $app
+     * Laravel 13 反转了容器别名方向：
+     *     Laravel 11/12： aliases['files']            = Illuminate\Filesystem\Filesystem::class
+     *     Laravel 13   ： aliases[Filesystem::class]  = 'files'
      *
-     * 形参类型由 Foundation\Application 放宽为 Container 基类。
-     * 本方法只用到 bound() / make()，两者都在 Container 基类上；
-     * 沿用 Foundation 契约会让裸容器直接抛 TypeError。
+     * 于是「用 bound() 判断后再 make()」这种直觉写法在 Laravel 13 下是**致命陷阱**：
+     *     bound(Filesystem::class)  → true   （别名反向指向 'files'）
+     *     make(Filesystem::class)   → 实际执行 make('files')
+     *                              → files 未绑定时直接抛：
+     *                                Target class [files] does not exist.
+     *                                Class "files" does not exist
+     *
+     * 只要宿主应用裁剪了 FilesystemServiceProvider（精简内核 / 微应用），
+     * 或本包被解析发生在该 provider 注册之前，本包构造函数就会把整个应用打断，
+     * `php artisan optimize` 直接失败退出。
+     *
+     * 因此解析逻辑统一委托 SafeFilesystem：所有容器解析都整体 try/catch，
+     * 任何一级失败都退到下一级，最后兜底自建，**保证永不抛异常**。
      */
     protected function resolveFilesystem($app): Filesystem
     {
-        if ($app->bound('files')) {
-            $files = $app->make('files');
+        try {
+            if (is_object($app) && method_exists($app, 'bound') && $app->bound('files')) {
+                $files = $app->make('files');
 
-            if ($files instanceof Filesystem) {
-                return $files;
+                if ($files instanceof Filesystem) {
+                    return $files;
+                }
             }
+        } catch (\Throwable) {
+            // 落到下面的统一解析器
         }
 
-        if ($app->bound(Filesystem::class)) {
-            $files = $app->make(Filesystem::class);
+        try {
+            if (is_object($app) && method_exists($app, 'bound') && $app->bound(Filesystem::class)) {
+                $files = $app->make(Filesystem::class);
 
-            if ($files instanceof Filesystem) {
-                return $files;
+                if ($files instanceof Filesystem) {
+                    return $files;
+                }
             }
+        } catch (\Throwable) {
+            // Laravel 13 下的正常路径：别名把 Filesystem::class 解析成 'files'，
+            // 未绑定时必然抛异常。这里吞掉并兜底自建，绝不让异常冒泡。
         }
 
-        return new Filesystem;
+        return SafeFilesystem::instance();
     }
 
     /**
@@ -297,8 +400,27 @@ class ModulesServiceProvider extends ServiceProvider
     {
         $configPath = __DIR__.'/../config/modules.php';
 
-        if (file_exists($configPath)) {
+        if (! file_exists($configPath)) {
+            return;
+        }
+
+        try {
             $this->mergeConfigFrom($configPath, 'modules');
+
+            return;
+        } catch (\Throwable) {
+            // mergeConfigFrom() 在部分 Laravel 版本里会先调用
+            // Application::configurationIsCached()，而它内部用 $this['files']->exists(...)；
+            // 一旦 files 未绑定就会抛 `Target class [files] does not exist`，
+            // 进而让 register() 失败 = 整个包无法装载。下面手工合并兜底。
+        }
+
+        try {
+            $config = $this->app->make('config');
+            $existing = $config->get('modules', []);
+            $config->set('modules', array_merge(require $configPath, is_array($existing) ? $existing : []));
+        } catch (\Throwable) {
+            // 配置服务都不可用时静默跳过：包仍可通过 env()/默认路径工作
         }
     }
 
@@ -434,12 +556,29 @@ class ModulesServiceProvider extends ServiceProvider
             return;
         }
 
-        $this->loadViewsFrom($viewPath, 'modules');
+        // 注意：Laravel 13 反转了别名方向后，bound('view') 为 true 只代表
+        // 「aliases[ViewFactory::class] 指向 'view'」，并不代表容器里真绑定了 'view'
+        // （真正的 singleton 由 Illuminate\View\ViewServiceProvider 注册）。
+        // 该 provider 被裁剪时，下面 $this->app['view'] 会抛
+        //     Target class [view] does not exist.
+        // 故整个视图注册段整体兜底，绝不让 boot 失败。
+        try {
+            $this->loadViewsFrom($viewPath, 'modules');
 
-        // 允许用户自定义覆盖视图
-        $customViewPath = resource_path('views/vendor/modules');
-        if (is_dir($customViewPath)) {
-            $this->app['view']->prependNamespace('modules', $customViewPath);
+            // resource_path() 内部是 app()->resourcePath()，该实例方法只存在于
+            // Illuminate\Foundation\Application。裸容器下调用会直接致命：
+            //     Call to undefined method Illuminate\Container\Container::resourcePath()
+            // 且 is_dir() 的守卫在它之后，救不了场 —— 必须先判能力。
+            if (! $this->hasFoundationPathHelpers()) {
+                return;
+            }
+
+            $customViewPath = resource_path('views/vendor/modules');
+            if (is_dir($customViewPath)) {
+                $this->app['view']->prependNamespace('modules', $customViewPath);
+            }
+        } catch (\Throwable) {
+            // 视图子系统不可用时跳过：本包的核心能力（模块扫描/注册）不依赖它
         }
     }
 

@@ -5,14 +5,16 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
 use zxf\Modules\Facades\Module;
+use zxf\Modules\Support\PathGuard;
+use zxf\Modules\Support\SafeFilesystem;
 
 class ModuleDeleteCommand extends Command
 {
     use EscapesConsoleOutput;
+    use PathGuard;
 
     /**
      * 命令签名
@@ -69,11 +71,15 @@ class ModuleDeleteCommand extends Command
             return Command::FAILURE;
         }
 
-        // 安全性校验：删除是递归且不可恢复的操作，必须确保目标路径确实位于
-        // 受信任的模块目录（modules.path 及其 scan_paths）之下，防止路径穿越
-        // （如传入含 ../ 的模块名）误删系统文件。
-        if (! $this->isWithinTrustedPaths($modulePath)) {
-            $this->error("模块路径 [{$this->esc($modulePath)}] 不在受信任的模块目录内，已拒绝删除以防止误删。");
+        // 安全性校验：删除是递归且不可恢复的操作。
+        // 这里统一走 PathGuard —— 它把「路径」与「可信根」两侧都做 realpath 归一，
+        // 既能挡住含 ../ 的穿越，也能挡住**符号链接逃逸**
+        // （<Modules>/Blog 是软链时 deleteDirectory 会删掉链接目标的内容），
+        // 同时避免 macOS 上 /tmp 与 /private/tmp 这类不对称路径造成的误判。
+        $guard = $this->guardAgainstEscape($modulePath, $this->trustedPaths(), '模块目录');
+
+        if ($guard !== null) {
+            $this->error($guard);
             $this->line('受信任目录: '.implode(', ', $this->trustedPaths()));
 
             return Command::FAILURE;
@@ -97,7 +103,7 @@ class ModuleDeleteCommand extends Command
         }
 
         // 删除模块目录
-        if (! File::deleteDirectory($modulePath)) {
+        if (! SafeFilesystem::deleteDirectory($modulePath)) {
             $this->error("删除模块 [{$this->esc($name)}] 失败");
             $this->line('提示：检查文件权限');
 
@@ -194,17 +200,7 @@ class ModuleDeleteCommand extends Command
      */
     protected function isWithinTrustedPaths(string $path): bool
     {
-        $real = realpath($path);
-        if ($real === false) {
-            return false;
-        }
-
-        foreach ($this->trustedPaths() as $trusted) {
-            if ($real === $trusted || str_starts_with($real.DIRECTORY_SEPARATOR, $trusted.DIRECTORY_SEPARATOR)) {
-                return true;
-            }
-        }
-
-        return false;
+        // 统一委托 PathGuard，避免本类里出现第二套「路径是否越界」判定
+        return $this->guardAgainstEscape($path, $this->trustedPaths(), '模块目录') === null;
     }
 }

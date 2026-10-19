@@ -18,15 +18,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0.31+ / PostgreSQL 15+
- *
- * @scenario QUALIFY 子句宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
  */
 class QualifyMacro extends BaseMacro
 {
     /**
      * 注册所有 QUALIFY 宏
-     *
-     * @scenario 注册所有 QUALIFY 宏
      */
     public static function register(): void
     {
@@ -36,8 +32,6 @@ class QualifyMacro extends BaseMacro
 
     /**
      * 注册 QUALIFY 基础方法
-     *
-     * @scenario 注册 QUALIFY 基础方法
      */
     public static function registerQualify(): void
     {
@@ -72,8 +66,6 @@ class QualifyMacro extends BaseMacro
          *     ->qualify('rn', '=', 1)
          *     ->orQualify('rn', '=', 2)
          *     ->get();
-         *
-         * @scenario QUALIFY 子句 - 过滤窗口函数结果
          */
         static::define('qualify', function (
             string $column,
@@ -83,8 +75,6 @@ class QualifyMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if (func_num_args() === 2) {
                 $value = $operator;
@@ -117,8 +107,6 @@ class QualifyMacro extends BaseMacro
          *     ->qualify('rn', '=', 1)
          *     ->orQualify('rn', '=', 3)
          *     ->get();
-         *
-         * @scenario OR QUALIFY 子句
          */
         static::define('orQualify', function (
             string $column,
@@ -127,8 +115,6 @@ class QualifyMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if (func_num_args() === 2) {
                 $value = $operator;
@@ -141,8 +127,6 @@ class QualifyMacro extends BaseMacro
 
     /**
      * 注册 QUALIFY RAW 方法
-     *
-     * @scenario 注册 QUALIFY RAW 方法
      */
     public static function registerQualifyRaw(): void
     {
@@ -168,8 +152,6 @@ class QualifyMacro extends BaseMacro
          *     ->selectRaw('NTILE(4) OVER (ORDER BY amount DESC) as quartile')
          *     ->qualifyRaw('sales_rank <= 10 AND quartile = 1')
          *     ->get();
-         *
-         * @scenario 使用原始 SQL 的 QUALIFY 子句
          */
         static::define('qualifyRaw', function (
             string $sql,
@@ -178,8 +160,6 @@ class QualifyMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $method = $boolean === 'or' ? 'orHavingRaw' : 'havingRaw';
 
@@ -195,8 +175,6 @@ class QualifyMacro extends BaseMacro
          *
          * @example
          * Model::query()->orQualifyRaw($s, $b)->get();
-         *
-         * @scenario OR QUALIFY RAW 子句
          */
         static::define('orQualifyRaw', function (
             string $sql,
@@ -204,8 +182,6 @@ class QualifyMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->qualifyRaw($sql, $bindings, 'or');

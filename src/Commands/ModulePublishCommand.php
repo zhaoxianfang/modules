@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
 use zxf\Modules\Commands\Concerns\EscapesConsoleOutput;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 发布多模块资源命令
@@ -124,7 +124,7 @@ class ModulePublishCommand extends Command
 
         // 确保目录存在
         if (! is_dir($modulesPath)) {
-            File::makeDirectory($modulesPath, 0755, true);
+            SafeFilesystem::makeDirectory($modulesPath, 0755, true);
             $this->line("创建目录: {$modulesPath}");
         }
 
@@ -138,7 +138,7 @@ class ModulePublishCommand extends Command
 
         // 写入文件
         $content = file_get_contents($stubPath);
-        $result = File::put($guidePath, $content);
+        $result = SafeFilesystem::put($guidePath, $content);
 
         if ($result) {
             $this->line("文件位置: {$guidePath}");
@@ -180,7 +180,7 @@ class ModulePublishCommand extends Command
         }
 
         // 复制配置文件
-        $result = File::copy($packageConfigPath, $configPath);
+        $result = SafeFilesystem::copy($packageConfigPath, $configPath);
 
         if ($result) {
             $this->line("文件位置: {$configPath}");

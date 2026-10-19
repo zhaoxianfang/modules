@@ -25,15 +25,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 并发与行锁宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class LockingMacro extends BaseMacro
 {
     /**
      *  注册所有并发锁宏。
-     *
-     * @scenario 注册所有并发锁宏。
      */
     public static function register(): void
     {
@@ -43,15 +39,12 @@ class LockingMacro extends BaseMacro
 
     /**
      * 注册行锁组合宏（均委托 Laravel 原生能力，保证双库一致语义）。
-     *
-     * @scenario 注册行锁组合宏（均委托 Laravel 原生能力，保证双库一致语义）。
      */
     public static function registerRowLocks(): void
     {
         /**
          * 加排他行锁并跳过已被锁定的行（SKIP LOCKED）。
          *
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 队列消费：每次取 10 条未被其他 worker 锁定的任务
@@ -64,8 +57,6 @@ class LockingMacro extends BaseMacro
         static::define('lockForUpdateSkipLocked', function (): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->lockForUpdate()->skipLocked();
@@ -74,7 +65,6 @@ class LockingMacro extends BaseMacro
         /**
          * 加排他行锁，拿不到锁立即失败（NOWAIT，不阻塞等待）。
          *
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 并发编辑场景：若记录已被他人锁定则立即抛异常，避免长时等待
@@ -86,8 +76,6 @@ class LockingMacro extends BaseMacro
         static::define('lockForUpdateNoWait', function (): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->lockForUpdate()->nowait();
@@ -96,7 +84,6 @@ class LockingMacro extends BaseMacro
         /**
          * 加共享锁并跳过已被锁定的行（共享锁 + SKIP LOCKED）。
          *
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 读多写少：以共享锁读取，避免与写事务冲突的同时不被他人阻塞
@@ -107,8 +94,6 @@ class LockingMacro extends BaseMacro
         static::define('sharedLockSkipLocked', function (): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return $this->sharedLock()->skipLocked();
@@ -117,8 +102,6 @@ class LockingMacro extends BaseMacro
 
     /**
      * 注册咨询锁宏（MySQL GET_LOCK / PostgreSQL pg_advisory_lock）。
-     *
-     * @scenario 注册咨询锁宏（MySQL GET_LOCK / PostgreSQL pg_advisory_lock）。
      */
     public static function registerAdvisory(): void
     {
@@ -144,8 +127,6 @@ class LockingMacro extends BaseMacro
         static::define('advisoryLock', function (int|string $key, bool $session = false): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $conn = $this->getConnection();
             if (BaseMacro::isPostgres($this)) {
@@ -162,7 +143,6 @@ class LockingMacro extends BaseMacro
          * 释放咨询锁（与 {@see self::advisoryLock()} 配对）。
          *
          * @param  int|string  $key  锁标识
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * Report::query()->advisoryUnlock('report:daily:2025-06-01');
@@ -172,8 +152,6 @@ class LockingMacro extends BaseMacro
         static::define('advisoryUnlock', function (int|string $key): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $conn = $this->getConnection();
             if (BaseMacro::isPostgres($this)) {

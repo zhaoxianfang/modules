@@ -6,9 +6,9 @@ namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 创建模型命令
@@ -168,7 +168,7 @@ class ModelMakeCommand extends AbstractMakeCommand
         $modelPath = $this->targetPath($modelDir.'/'.$modelName.'.php');
 
         // 存在性检查
-        if (File::exists($modelPath)) {
+        if (SafeFilesystem::exists($modelPath)) {
             if (! $force) {
                 $this->error("模块 [{$this->esc($moduleName)}] 中已存在模型类 [{$modelName}]");
                 $this->line("文件位置: {$modelPath}");
@@ -210,11 +210,11 @@ class ModelMakeCommand extends AbstractMakeCommand
         // 确保模型目录存在
         $modelBaseDir = $module->getPath($modelDir);
         if (! is_dir($modelBaseDir)) {
-            File::makeDirectory($modelBaseDir, 0755, true);
+            SafeFilesystem::makeDirectory($modelBaseDir, 0755, true);
         }
 
         // 写入模型文件
-        if (! File::put($modelPath, $modelContent)) {
+        if (! SafeFilesystem::put($modelPath, $modelContent)) {
             $this->error("创建模型类 [{$modelName}] 失败");
             $this->line('提示：检查文件权限和磁盘空间');
 
@@ -226,14 +226,25 @@ class ModelMakeCommand extends AbstractMakeCommand
         $this->line("数据表: {$tableName}");
 
         // 可选：创建迁移文件
+        //
+        // 必须检查退出码：model:make-migration 失败时（模块不存在、名称非法、
+        // 目录不可写等）会返回 FAILURE，原实现丢弃返回值后 handle() 仍返回 SUCCESS，
+        // 命令行显示"创建成功"但迁移文件并不存在 —— 典型的假成功。
         if ($createMigration) {
             $this->line('');
             $this->line('正在创建迁移文件...');
-            $this->call('module:make-migration', [
+
+            $migrationExit = $this->call('module:make-migration', [
                 'module' => $moduleName,
                 'name' => 'create_'.$tableName.'_table',
                 '--create' => $tableName,
             ]);
+
+            if ($migrationExit !== Command::SUCCESS) {
+                $this->error("迁移文件 [create_{$this->esc($tableName)}_table] 创建失败，模型类已生成但迁移缺失。");
+
+                return Command::FAILURE;
+            }
         }
 
         // 可选：创建数据工厂

@@ -19,15 +19,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0.31+ / PostgreSQL 15+
- *
- * @scenario 集合操作宏（MySQL 8.0.31+ / PostgreSQL 15+ 通用）
  */
 class SetOperationsMacro extends BaseMacro
 {
     /**
      * 注册所有集合操作宏
-     *
-     * @scenario 注册所有集合操作宏
      */
     public static function register(): void
     {
@@ -38,8 +34,6 @@ class SetOperationsMacro extends BaseMacro
 
     /**
      * 注册 INTERSECT 交集操作
-     *
-     * @scenario 注册 INTERSECT 交集操作
      */
     public static function registerIntersect(): void
     {
@@ -49,30 +43,28 @@ class SetOperationsMacro extends BaseMacro
          *
          * @param  \Closure|Builder|\Illuminate\Database\Query\Builder  $query  第二个查询构建器或闭包
          * @param  bool  $all  是否保留重复行 true=INTERSECT ALL, false=INTERSECT DISTINCT
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
-         * // 查找既购买了A商品又购买了B商品的用户
-         * User::query()
-         *     ->whereExists(function ($q) {
-         *     })
-         *     ->intersect(function ($q) {
-         *           ->whereExists(function ($sq) {
-         *           });
-         *     })
-         *     ->get();
-         * // 使用 \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder 实例
-         * $q1 = User::query()->select('id')->where('status', 1);
-         * $q2 = User::query()->select('id')->where('vip', 1);
-         * $q1->intersect($q2)->get();
+         * // 查找既是 VIP、又已激活的用户
+         * $activeVips = User::query()->select('id')
+         *     ->where('status', 1)
+         *     ->where('vip', 1);
+         * $recentBuyers = User::query()->select('id')
+         *     ->whereHasIn('orders', fn ($q) => $q->where('paid_at', '>=', now()->subDays(30)));
+         * $activeVips->intersect($recentBuyers)->get();   // 两个集合的交集
          *
-         * @scenario 返回两个查询结果的交集（去重）
+         * // 也可直接传闭包（内部会新建同源查询并应用条件）
+         * User::query()->select('id')->where('status', 1)->intersect(function ($q) {
+         *     $q->where('vip', 1);
+         * })->get();
+         *
+         * @scenario 需要「同时满足两组条件」的记录，例如「近 30 天有订单 且 是 VIP」。
+         *           注意：两个查询的 SELECT 列必须一致（都取 id 或都取业务主键），
+         *           否则 SQL 层的 INTERSECT 会因列数/类型不匹配报错。
          */
         static::define('intersect', function ($query, bool $all = false): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $sql = $this->toSql();
             $bindings = $this->getBindings();
@@ -97,8 +89,6 @@ class SetOperationsMacro extends BaseMacro
 
     /**
      * 注册 EXCEPT 差集操作
-     *
-     * @scenario 注册 EXCEPT 差集操作
      */
     public static function registerExcept(): void
     {
@@ -108,26 +98,33 @@ class SetOperationsMacro extends BaseMacro
          *
          * @param  \Closure|Builder|\Illuminate\Database\Query\Builder  $query  第二个查询构建器或闭包
          * @param  bool  $all  是否保留重复行 true=EXCEPT ALL, false=EXCEPT DISTINCT
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
-         * // 查找活跃但未验证邮箱的用户
-         * User::query()->select('id')->where('status', 'active')
+         * // 查找「已激活但还没验证邮箱」的用户
+         * User::query()->select('id')
+         *     ->where('status', 'active')
          *     ->except(function ($q) {
+         *         $q->whereNotNull('email_verified_at');
          *     })
          *     ->get();
-         * // 查找有订单但未评价的用户
-         * $orderedUsers = User::query()->select('id')->whereHas('orders');
-         * $reviewedUsers = User::query()->select('id')->whereHas('reviews');
+         *
+         * // 查找「有订单但从未评价」的用户
+         * $orderedUsers  = User::query()->select('id')->whereHasIn('orders');
+         * $reviewedUsers = User::query()->select('id')->whereHasIn('reviews');
          * $orderedUsers->except($reviewedUsers)->get();
          *
-         * @scenario 返回在第一个查询中存在但在第二个查询中不存在的记录
+         * @scenario 需要「满足 A 但不满足 B」的记录，例如「激活了却没验证邮箱」
+         *           「下单了却没评价」「有退款记录但已结案」等差集场景。
+         *           注意：两个查询的 SELECT 列必须一致，否则 SQL 层的 EXCEPT 会报错。
+         *
+         * ★ **Eloquent Builder 上请用别名 {@see exceptSet}**：框架原生 `Eloquent\Builder::except()`
+         *   是「按主键排除模型」（whereKeyNot），与本宏的 SQL 集合差集**同名异义**。
+         *   define() 会让原生方法优先，因此 Eloquent 侧本宏不注册 `except`，改由 `exceptSet` 出口；
+         *   Query\Builder 上的原生 `except()` 本身就是 SQL 集合差集，语义一致，可直接使用。
          */
         static::define('except', function ($query, bool $all = false): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $sql = $this->toSql();
             $bindings = $this->getBindings();
@@ -147,13 +144,11 @@ class SetOperationsMacro extends BaseMacro
 
             return BaseMacro::freshQuery($this)
                 ->fromRaw("({$combinedSql}) as except_result", $combinedBindings);
-        });
+        }, 'exceptSet');
     }
 
     /**
      * 注册 UNION DISTINCT 显式去重
-     *
-     * @scenario 注册 UNION DISTINCT 显式去重
      */
     public static function registerUnionDistinct(): void
     {
@@ -161,24 +156,23 @@ class SetOperationsMacro extends BaseMacro
          * UNION DISTINCT - 显式去重的并集（默认行为，但显式声明更清晰）
          *
          * @param  \Closure|Builder|\Illuminate\Database\Query\Builder  $query  第二个查询构建器或闭包
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
-         * // 合并两个查询结果并去重
-         * User::query()->where('role', 'admin')
+         * // 合并「管理员」与「高权限用户」两个集合并去重
+         * User::query()->select('id')->where('role', 'admin')
          *     ->unionDistinct(function ($q) {
-         *           ->join('permissions', 'users.id', '=', 'permissions.user_id')
-         *           ->where('permissions.level', '>=', 5);
+         *         $q->join('permissions', 'users.id', '=', 'permissions.user_id')
+         *             ->where('permissions.level', '>=', 5);
          *     })
          *     ->get();
          *
-         * @scenario UNION DISTINCT - 显式去重的并集（默认行为，但显式声明更清晰）
+         * @scenario 需要合并两个来源的记录集合并自动去重（UNION 的默认语义）。
+         *           显式写 unionDistinct 相比直接用 Laravel 的 union() 更能表达意图，
+         *           便于与 unionAll() 区分。
          */
         static::define('unionDistinct', function ($query): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($query instanceof \Closure) {
                 $callback = $query;

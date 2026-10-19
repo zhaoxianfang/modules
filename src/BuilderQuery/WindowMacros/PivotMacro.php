@@ -19,15 +19,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 行列转换（PIVOT / UNPIVOT / CrossTab）宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class PivotMacro extends BaseMacro
 {
     /**
      * 注册所有透视宏
-     *
-     * @scenario 注册所有透视宏
      */
     public static function register(): void
     {
@@ -39,8 +35,6 @@ class PivotMacro extends BaseMacro
 
     /**
      * 注册通用 PIVOT 方法
-     *
-     * @scenario 注册通用 PIVOT 方法
      */
     public static function registerPivot(): void
     {
@@ -65,8 +59,6 @@ class PivotMacro extends BaseMacro
          * Sales::query()
          *     ->pivot('category', ['electronics', 'clothing', 'food'], 'amount', 'SUM', 'month')
          *     ->get();
-         *
-         * @scenario PIVOT - 行转列（数据透视）
          */
         static::define('pivot', function (
             string $pivotColumn,
@@ -77,102 +69,62 @@ class PivotMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $function = BaseMacro::assertAggregateFunction($function);
             $pivotColumn = BaseMacro::assertValidIdentifier($pivotColumn, 'pivot');
             $aggregateColumn = BaseMacro::assertValidIdentifier($aggregateColumn, 'aggregate');
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
-            $wrappedPivot = BaseMacro::wrapIdentifier($this, $pivotColumn);
-            $wrappedAggregate = BaseMacro::wrapIdentifier($this, $aggregateColumn);
+            $table = BaseMacro::resolveTable($this);
+            $wrappedPivot = BaseMacro::wrapIdentifier($this, $table.'.'.$pivotColumn);
+            $wrappedAggregate = BaseMacro::wrapIdentifier($this, $table.'.'.$aggregateColumn);
 
             // 确保分组列被选中
             $groupColumns = is_array($groupBy) ? $groupBy : ($groupBy ? [$groupBy] : []);
-            $selectColumns = array_map(function ($col) use ($table, $model) {
+            $selectParts = [];
+            foreach ($groupColumns as $col) {
                 $col = BaseMacro::assertValidIdentifier($col, 'group');
+                $selectParts[] = BaseMacro::wrapIdentifier($this, $table.'.'.$col);
+            }
 
-                return BaseMacro::wrapIdentifier($model->newQuery(), "{$table}.{$col}");
-            }, $groupColumns);
+            // 构建 CASE WHEN 聚合表达式（值使用参数绑定防止 SQL 注入；列名/函数名已白名单校验）
             $bindings = [];
-
-            // 构建 CASE WHEN 聚合表达式（值使用参数绑定防止SQL注入；列名/函数名已白名单校验）
             foreach ($values as $value) {
                 $safeAlias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $value);
                 $safeAlias = is_numeric($safeAlias[0] ?? '') ? '_'.$safeAlias : $safeAlias;
                 $safeAlias = BaseMacro::assertValidIdentifier($safeAlias, 'alias');
                 $wrappedAlias = BaseMacro::wrapIdentifier($this, $safeAlias);
                 if (is_null($value)) {
-                    $selectColumns[] = "{$function}(CASE WHEN {$wrappedPivot} IS NULL THEN {$wrappedAggregate} ELSE NULL END) AS {$wrappedAlias}";
+                    $selectParts[] = "{$function}(CASE WHEN {$wrappedPivot} IS NULL THEN {$wrappedAggregate} ELSE NULL END) AS {$wrappedAlias}";
                 } else {
-                    $selectColumns[] = "{$function}(CASE WHEN {$wrappedPivot} = ? THEN {$wrappedAggregate} ELSE NULL END) AS {$wrappedAlias}";
+                    $selectParts[] = "{$function}(CASE WHEN {$wrappedPivot} = ? THEN {$wrappedAggregate} ELSE NULL END) AS {$wrappedAlias}";
                     $bindings[] = $value;
                 }
             }
 
-            // 构建查询：复制原始查询的 WHERE 条件
+            // 【原地改造当前构建器】
             //
-            // 但 pivot 场景的调用方几乎一定带 join / having / orderBy / limit，
-            // 这些全部被丢弃 → 透视结果与原查询语义不符（统计口径错了），
-            // 而且 where 绑定被搬运、join 的绑定却没有，会造成**绑定错位**。
-            // 现在把「结构」与「绑定」成对搬运。
-            $base = BaseMacro::queryOf($baseQuery);
-            $target = BaseMacro::queryOf($query);
+            // 透视是一次完整的「列重塑」：结果集必然是「分组列 + N 个透视列」，
+            // 因此原查询的 columns 与其绑定一并替换。
+            //
+            // 只清绑定不清 columns 是不够的：selectRaw() 在 columns 非 null 时是【追加】，
+            // 调用方此前的 selectRaw('UPPER(?) as tag', ['x']) 会连同它的 ? 一起留在 SQL 里，
+            // 而它的绑定已被我们清掉 → "Invalid parameter number"。
+            // columns 与 bindings['select'] 必须成对处理。
+            $query = BaseMacro::queryOf($this);
+            $query->columns = null;
+            $query->bindings['select'] = [];
+            $query->selectRaw(implode(', ', $selectParts), $bindings);
 
-            // WHERE
-            if (! empty($base->wheres)) {
-                $target->wheres = $base->wheres;
-                $target->addBinding($base->bindings['where'] ?? [], 'where');
-            }
-
-            // JOIN（join 绑定顺序必须与 joins 一致）
-            if (! empty($base->joins)) {
-                $target->joins = $base->joins;
-                $target->addBinding($base->bindings['join'] ?? [], 'join');
-            }
-
-            // HAVING（依赖 where 绑定，须在 where 之后追加）
-            if (! empty($base->havings)) {
-                $target->havings = $base->havings;
-                $target->addBinding($base->bindings['having'] ?? [], 'having');
-            }
-
-            // ORDER BY
-            if (! empty($base->orders)) {
-                $target->orders = $base->orders;
-                $target->addBinding($base->bindings['order'] ?? [], 'order');
-            }
-
-            // GROUP BY / LIMIT / OFFSET / UNION —— 透视自带 groupBy，
-            // 但 limit / offset 属于原查询语义，应保留。
-            if (($base->limit ?? null) !== null) {
-                $target->limit = $base->limit;
-            }
-
-            if (($base->offset ?? null) !== null) {
-                $target->offset = $base->offset;
-            }
-
-            if (! empty($base->unions)) {
-                $target->unions = $base->unions;
-                $target->addBinding($base->bindings['union'] ?? [], 'union');
-            }
-
-            // 添加分组（使用 grammar wrap 生成适配驱动的标识符引用）
+            // 分组（透视的语义前提）。使用 grammar wrap 生成适配驱动的标识符引用。
             foreach ($groupColumns as $col) {
-                $wrappedGroupCol = BaseMacro::wrapIdentifier($this, "{$table}.{$col}");
-                $query->groupByRaw($wrappedGroupCol);
+                $query->groupByRaw(BaseMacro::wrapIdentifier($this, $table.'.'.$col));
             }
 
-            return $query;
+            return $this;
         });
     }
 
     /**
      * 注册常用聚合透视快捷方法
-     *
-     * @scenario 注册常用聚合透视快捷方法
      */
     public static function registerPivotAggregates(): void
     {
@@ -197,8 +149,6 @@ class PivotMacro extends BaseMacro
              * @example
              * // 统计每个地区各状态订单数量
              * Order::query()->pivotCount('status', ['pending', 'paid', 'shipped'], 'id', 'region')->get();
-             *
-             * @scenario {$function} 聚合透视快捷方法
              */
             static::define($macroName, function (
                 string $pivotColumn,
@@ -208,8 +158,6 @@ class PivotMacro extends BaseMacro
             ) use ($function): Builder|\Illuminate\Database\Query\Builder {
                 /**
                  * @var Builder|\Illuminate\Database\Query\Builder $this
-                 *
-                 * @scenario 本类/成员说明。
                  */
 
                 return $this->pivot($pivotColumn, $values, $aggregateColumn, $function, $groupBy);
@@ -219,8 +167,6 @@ class PivotMacro extends BaseMacro
 
     /**
      * 注册 UNPIVOT 方法
-     *
-     * @scenario 注册 UNPIVOT 方法
      */
     public static function registerUnpivot(): void
     {
@@ -243,8 +189,6 @@ class PivotMacro extends BaseMacro
          *     ], 'month', 'sales_amount')
          *     ->get();
          * // 结果: product_id | month | sales_amount
-         *
-         * @scenario UNPIVOT - 列转行
          */
         static::define('unpivot', function (
             array $columns,
@@ -253,12 +197,9 @@ class PivotMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
-            $primaryKey = BaseMacro::assertValidIdentifier($model->getKeyName(), 'primaryKey');
+            $table = BaseMacro::resolveTable($this);
+            $primaryKey = BaseMacro::assertValidIdentifier(BaseMacro::keyName($this), 'primaryKey');
             $wrappedPk = BaseMacro::wrapIdentifier($this, $primaryKey);
             $nameColumn = BaseMacro::assertValidIdentifier($nameColumn, 'name');
             $valueColumn = BaseMacro::assertValidIdentifier($valueColumn, 'value');
@@ -286,15 +227,13 @@ class PivotMacro extends BaseMacro
 
             $unionSql = implode(' UNION ALL ', $unionParts);
 
-            return $model->newQuery()
+            return BaseMacro::freshQuery($this)
                 ->fromRaw("({$unionSql}) as unpivoted", $bindings);
         });
     }
 
     /**
      * 注册交叉表（Cross Tabulation）
-     *
-     * @scenario 注册交叉表（Cross Tabulation）
      */
     public static function registerCrossTab(): void
     {
@@ -315,8 +254,6 @@ class PivotMacro extends BaseMacro
          *     ->crossTab('region', 'month', 'amount', 'SUM', ['01', '02', '03', '04'])
          *     ->get();
          * // 结果: region | jan | feb | mar | apr | total
-         *
-         * @scenario CROSS TAB - 交叉表查询（双维透视）
          */
         static::define('crossTab', function (
             string $rowColumn,
@@ -327,18 +264,15 @@ class PivotMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $function = BaseMacro::assertAggregateFunction($function);
             $rowColumn = BaseMacro::assertValidIdentifier($rowColumn, 'row');
             $colColumn = BaseMacro::assertValidIdentifier($colColumn, 'col');
             $aggregateColumn = BaseMacro::assertValidIdentifier($aggregateColumn, 'aggregate');
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
-            $wrappedRow = BaseMacro::wrapIdentifier($this, $rowColumn);
-            $wrappedCol = BaseMacro::wrapIdentifier($this, $colColumn);
-            $wrappedAgg = BaseMacro::wrapIdentifier($this, $aggregateColumn);
+            $table = BaseMacro::resolveTable($this);
+            $wrappedRow = BaseMacro::wrapIdentifier($this, $table.'.'.$rowColumn);
+            $wrappedCol = BaseMacro::wrapIdentifier($this, $table.'.'.$colColumn);
+            $wrappedAgg = BaseMacro::wrapIdentifier($this, $table.'.'.$aggregateColumn);
 
             // 如果没有指定列值，使用 DISTINCT 查询（需要额外查询，这里简化处理）
             //
@@ -348,15 +282,21 @@ class PivotMacro extends BaseMacro
             //  2) 每个值都会拼一条 CASE WHEN 到 SELECT，
             //     生成几十万列的巨型 SQL，数据库必然报「列数过多」甚至拖垮实例。
             // 因此：
-            //  - 按 scanColValues() 加 limit 截断（默认 200，可在 pivot 配置里调大）；
+            //  - limit 必须在【SQL 层】下发（见下），不能靠 pluck() 之后再 take()；
             //  - 超出上限时明确抛异常，而不是继续生成一条注定失败的巨型 SQL。
             if ($colValues === null) {
-                $limit = self::crossTabColumnLimit();
+                // 注意：此处必须写 PivotMacro:: 而不能写 self::。
+                // 宏闭包是被 Macroable 重新绑定到构建器实例上的，闭包内的 self
+                // 解析为 Eloquent\Builder / Query\Builder，self::crossTabColumnLimit()
+                // 会抛 "Call to undefined method"，使 crossTab 100% 不可用。
+                $limit = PivotMacro::crossTabColumnLimit();
 
-                $colValues = $model->newQuery()
+                $colValues = BaseMacro::freshQuery($this)
                     ->distinct()
+                    // 先 limit 再 pluck：pluck() 会把结果集整体物化到 PHP，
+                    // 「pluck()->take(n)」的 n 只是内存里的 take，防 OOM 完全无效。
+                    ->limit($limit + 1)
                     ->pluck($colColumn)
-                    ->take($limit + 1)
                     ->toArray();
 
                 if (count($colValues) > $limit) {
@@ -392,7 +332,7 @@ class PivotMacro extends BaseMacro
 
             // 复制原始 WHERE 条件
             $baseQuery = $this->clone();
-            $query = $model->newQuery()
+            $query = BaseMacro::freshQuery($this)
                 ->selectRaw(implode(', ', $selectColumns), $bindings)
                 ->groupByRaw(implode(', ', $groupByColumns));
 
@@ -439,7 +379,10 @@ class PivotMacro extends BaseMacro
      * 数据库的列数上限一起打爆。缺省 200，可在
      * config/modules.php 的 builder_query.pivot_cross_tab_column_limit 调整。
      */
-    private static function crossTabColumnLimit(): int
+    // 必须 public：crossTab 的宏闭包被 Macroable 重新绑定到构建器实例上，
+    // 闭包内 `PivotMacro::crossTabColumnLimit()` 的调用方作用域是 Builder，
+    // private 方法在那个作用域下不可访问（private 触发 "Call to private method ... from scope Builder"）。
+    public static function crossTabColumnLimit(): int
     {
         try {
             if (function_exists('config') && function_exists('app') && app()->bound('config')) {

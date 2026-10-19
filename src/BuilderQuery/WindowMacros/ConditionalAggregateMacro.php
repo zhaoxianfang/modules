@@ -25,15 +25,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 条件聚合宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class ConditionalAggregateMacro extends BaseMacro
 {
     /**
      *  注册所有条件聚合宏。
-     *
-     * @scenario 注册所有条件聚合宏。
      */
     public static function register(): void
     {
@@ -46,8 +42,6 @@ class ConditionalAggregateMacro extends BaseMacro
 
     /**
      * 注册 selectSumIf。
-     *
-     * @scenario 注册 selectSumIf。
      */
     public static function registerSumIf(): void
     {
@@ -77,8 +71,6 @@ class ConditionalAggregateMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ConditionalAggregateMacro::buildIf($this, 'SUM', $column, $condition, $conditionBindings, $alias ?? 'sum_if', null);
@@ -87,8 +79,6 @@ class ConditionalAggregateMacro extends BaseMacro
 
     /**
      * 注册 selectCountIf。
-     *
-     * @scenario 注册 selectCountIf。
      */
     public static function registerCountIf(): void
     {
@@ -118,8 +108,6 @@ class ConditionalAggregateMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ConditionalAggregateMacro::buildIf($this, 'COUNT', $column, $condition, $conditionBindings, $alias ?? 'count_if', 1);
@@ -128,8 +116,6 @@ class ConditionalAggregateMacro extends BaseMacro
 
     /**
      * 注册 selectAvgIf。
-     *
-     * @scenario 注册 selectAvgIf。
      */
     public static function registerAvgIf(): void
     {
@@ -156,8 +142,6 @@ class ConditionalAggregateMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ConditionalAggregateMacro::buildIf($this, 'AVG', $column, $condition, $conditionBindings, $alias ?? 'avg_if', null);
@@ -166,8 +150,6 @@ class ConditionalAggregateMacro extends BaseMacro
 
     /**
      * 注册 selectMaxIf。
-     *
-     * @scenario 注册 selectMaxIf。
      */
     public static function registerMaxIf(): void
     {
@@ -194,8 +176,6 @@ class ConditionalAggregateMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ConditionalAggregateMacro::buildIf($this, 'MAX', $column, $condition, $conditionBindings, $alias ?? 'max_if', null);
@@ -204,8 +184,6 @@ class ConditionalAggregateMacro extends BaseMacro
 
     /**
      * 注册 selectMinIf。
-     *
-     * @scenario 注册 selectMinIf。
      */
     public static function registerMinIf(): void
     {
@@ -232,8 +210,6 @@ class ConditionalAggregateMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return ConditionalAggregateMacro::buildIf($this, 'MIN', $column, $condition, $conditionBindings, $alias ?? 'min_if', null);
@@ -249,8 +225,6 @@ class ConditionalAggregateMacro extends BaseMacro
      * @param  array  $conditionBindings  条件绑定值
      * @param  string  $alias  别名
      * @param  mixed  $thenValue  COUNT 时为 1，其余为列本身（null 表示用列）
-     *
-     * @scenario 构建条件聚合表达式并以 selectRaw 输出。
      */
     public static function buildIf(Builder|\Illuminate\Database\Query\Builder $builder, string $agg, string $column, string $condition, array $conditionBindings, string $alias, mixed $thenValue): Builder|\Illuminate\Database\Query\Builder
     {

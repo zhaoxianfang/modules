@@ -171,61 +171,134 @@ class MigrateCommand extends Command
         // 全模块模式 + --seeder：警告用户不会传递
         $this->warnSeederIgnoredForAllModules($seeder);
 
-        // --path 在全模块模式下会被对每个模块重复执行。
-        //
-        // --path 表达的是「扫描哪个目录下的迁移文件」，
-        // 同一个目录跑 N 次是纯粹的重复劳动：
-        //   - 第 1 次执行完迁移后，后续 N-1 次都只是打印 "Nothing to migrate"；
-        //   - 若该目录不属于任何模块，这份「无意义」的工作同样会重复 N 次。
-        //
-        // 只要显式给了 --path，就**只跑一次**（路径与模块无关），
-        // 不套进模块循环里。
+        // --path 在全模块模式下与模块无关，只跑一次（详见下方说明）。
         if (! empty($customPath)) {
-            $this->components->info("--path 已指定，跳过模块循环，仅对 [{$this->esc($customPath)}] 执行一次迁移。");
-
-            // 本命令签名里没有 --database；Symfony 的 option() 遇到未声明选项会抛
-            // InvalidArgumentException，这里必须用 MigrationPathHelper::safeOption()。
-            $databaseOption = $this->safeOption('database');
-
-            if ($seed || $seeder) {
-                $this->components->warn('--path 模式不执行数据填充，--seed / --seeder 已被忽略。');
-            }
-
-            $migrateParams = ['--force' => true];
-
-            if ($databaseOption) {
-                $migrateParams['--database'] = $databaseOption;
-            }
-
-            $migrateParams['--path'] = method_exists($this, 'getRelativePath')
-                ? $this->getRelativePath($customPath)
-                : $customPath;
-
-            return $this->call('migrate', $migrateParams) === Command::SUCCESS
-                ? Command::SUCCESS
-                : Command::FAILURE;
+            return $this->migrateExplicitPath($force, $customPath, $seed, $seeder);
         }
 
-        $hasFailures = false;
-
+        // 收集所有已启用模块的迁移目录。
+        $paths = [];
+        $migratable = [];
         foreach ($modules as $module) {
-            $result = $this->migrateModule(
-                $module->getName(),
-                $force,
-                $customPath,
-                // 全模块模式：--seed 自动运行每个模块的 Seeder
-                // --seeder 不传递（避免在所有模块运行同一个 Seeder）
-                $seed,
-                null
-            );
-
-            if ($result === Command::FAILURE) {
-                $hasFailures = true;
+            if (! $module->isEnabled()) {
+                continue;
             }
+
+            $migrationPath = $module->getMigrationsPath();
+            if (! is_dir($migrationPath)) {
+                // 无迁移文件的模块跳过（与单模块模式一致的语义）
+                $this->components->warn("模块 [{$this->esc($module->getName())}] 没有迁移文件，跳过。");
+
+                continue;
+            }
+
+            $paths[] = $this->getRelativePath($migrationPath);
+            $migratable[] = $module;
+        }
+
+        if (empty($paths)) {
+            $this->components->info('没有需要执行的迁移。');
+
+            return Command::SUCCESS;
+        }
+
+        /**
+         * 一次 migrate 调用覆盖全部模块目录，而不是"每模块启动一次子命令"。
+         *
+         * 原实现是 foreach + $this->call('migrate', ...)：每启动一次子命令，
+         * Laravel 都要重新构造 Migrator、解析 --path、跑一遍 MigrationRepository 的
+         * 已执行列表查询、并独立提交事务。20 个模块就是 20 倍的这套开销，
+         * 而绝大多数模块根本没有待执行的迁移（多数调用只是打印 "Nothing to migrate"）。
+         *
+         * migrate 的 --path 本就是【数组选项】（--path=*），
+         * 传入多个路径时框架会把它们合并成一次待执行的迁移集合，
+         * 再按文件名字节序统一排序 —— 跨模块的先后依赖反而更符合时间戳语义。
+         */
+        $this->components->info(sprintf(
+            '正在运行 %d 个模块的迁移（%d 个迁移目录）...',
+            count($migratable),
+            count($paths)
+        ));
+
+        $databaseOption = $this->safeOption('database');
+
+        $migrateParams = [
+            '--force' => $force,
+            '--path' => $paths,
+        ];
+
+        if ($databaseOption) {
+            $migrateParams['--database'] = $databaseOption;
+        }
+
+        $exitCode = $this->call('migrate', $migrateParams);
+
+        // 迁移失败：直接返回失败，不再跑 Seeder（在未完成的库结构上填充数据只会放大损坏）
+        if ($exitCode !== Command::SUCCESS) {
+            return Command::FAILURE;
         }
 
         $this->components->info('迁移完成！');
 
-        return $hasFailures ? Command::FAILURE : Command::SUCCESS;
+        // 数据填充：逐模块执行（每个模块用自己的 Seeder，不存在"一个 Seeder 跑全部"的可能）
+        if (! $seed) {
+            return Command::SUCCESS;
+        }
+
+        $this->newLine();
+        $this->components->info('正在运行数据填充...');
+
+        $hasSeedFailures = false;
+        foreach ($migratable as $module) {
+            $seedParams = ['module' => $module->getName()];
+            if ($force) {
+                $seedParams['--force'] = true;
+            }
+
+            if ($this->call('module:seed', $seedParams) !== Command::SUCCESS) {
+                $hasSeedFailures = true;
+            }
+        }
+
+        return $hasSeedFailures ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * 全模块模式下显式传入 --path 的执行分支。
+     *
+     * --path 表达的是「扫描哪个目录下的迁移文件」，与模块无关：
+     *   - 第 1 次执行完迁移后，后续 N-1 次都只是打印 "Nothing to migrate"；
+     *   - 若该目录不属于任何模块，这份「无意义」的工作同样会重复 N 次。
+     * 因此只跑一次，不套进模块循环。
+     */
+    protected function migrateExplicitPath(
+        bool $force,
+        string $customPath,
+        bool $seed,
+        ?string $seeder
+    ): int {
+        $this->components->info("--path 已指定，跳过模块循环，仅对 [{$this->esc($customPath)}] 执行一次迁移。");
+
+        // 本命令签名里没有 --database；Symfony 的 option() 遇到未声明选项会抛
+        // InvalidArgumentException，这里必须用 MigrationPathHelper::safeOption()。
+        $databaseOption = $this->safeOption('database');
+
+        if ($seed || $seeder) {
+            $this->components->warn('--path 模式不执行数据填充，--seed / --seeder 已被忽略。');
+        }
+
+        $migrateParams = ['--force' => true];
+
+        if ($databaseOption) {
+            $migrateParams['--database'] = $databaseOption;
+        }
+
+        $migrateParams['--path'] = method_exists($this, 'getRelativePath')
+            ? $this->getRelativePath($customPath)
+            : $customPath;
+
+        return $this->call('migrate', $migrateParams) === Command::SUCCESS
+            ? Command::SUCCESS
+            : Command::FAILURE;
     }
 }

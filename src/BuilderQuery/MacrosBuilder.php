@@ -42,6 +42,7 @@ use zxf\Modules\BuilderQuery\WindowMacros\StringFunctionsMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\TableSampleMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\TopNMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\ValuesMacro;
+use zxf\Modules\BuilderQuery\WindowMacros\VectorMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WindowFunctionsMacro;
 use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
 
@@ -364,8 +365,18 @@ use zxf\Modules\BuilderQuery\WindowMacros\WithRecursiveMacro;
  * @method $this selectOnly(string|array $columns) 只保留指定列（精确投影，替代 SELECT *）
  * @method $this selectExcept(string|array $columns) 从当前显式列中剔除指定列（需先显式 select）
  * @method $this selectPrimaryKey() 只取主键列（轻量投影，用于仅取 ID/关联键）
- *
- * @scenario Macros 宏定义构建器 - Laravel 11+ / 12+ / 13+ & MySQL 8.0+ / PostgreSQL 15+ 通用版
+ *                                                                                                                    ===== 31. 向量操作系列 - 跨库向量距离/相似度/KNN =====
+ * @method $this addVectorDistance(string $column, array|string $vector, ?string $as = null, string $metric = 'cosine') 追加「向量距离」投影列（cosine/l2/inner_product/l1；后端需支持距离函数）
+ * @method $this addVectorSimilarity(string $column, array|string $vector, ?string $as = null, string $metric = 'cosine') 追加「向量相似度」投影列（值越大越相近，= 1 - 归一化距离）
+ * @method $this addVectorDimension(string $column, ?string $as = null) 追加「向量维度」投影列（MySQL VECTOR_DIM / PostgreSQL vector_dims；仅需向量类型支持）
+ * @method $this addVectorText(string $column, ?string $as = null) 追加「向量转文本」投影列（VECTOR_TO_STRING / vector_out；仅需向量类型支持）
+ * @method $this addVectorNormalized(string $column, ?string $as = null) 追加「L2 归一化后向量」投影列（用于余弦距离等价改写，需距离能力）
+ * @method $this whereVectorDistance(string $column, array|string $vector, float $maxDistance, string $metric = 'cosine') 按向量距离上限筛选（KNN 半径检索）
+ * @method $this whereVectorDimension(string $column, int $min = null, int $max = null) 按向量维度区间筛选（仅需向量类型支持）
+ * @method $this orderByVectorSimilarity(string $column, array|string $vector, string $direction = 'desc') 按向量相似度排序（降序=最相近在前）
+ * @method $this vectorKnn(string $column, array|string $vector, int $limit, string $metric = 'cosine') Top-K 最近邻（等价 orderBy 相似度 + limit，用于 pgvector / MariaDB / HeatWave）
+ * @method array vectorSearchParams(string $indexName, array $params) 生成向量索引 ANN 检索参数（pgvector hnsw/ivfflat 参数集）；MySQL 社区版无 ANN 索引，返回参数为空并附迁移建议
+ * @method array vectorIndexAdvice(string $column, string $metric = 'cosine', array $options = []) 生成向量索引 DDL 建议（metric 与 ORDER BY 运算符必须配对，否则静默退化为全表扫描）
  */
 class MacrosBuilder extends Builder
 {
@@ -376,8 +387,6 @@ class MacrosBuilder extends Builder
      * 服务提供者可能在同一进程内被多次 boot（如测试、容器重建、多个 Provider 串联），
      * 若每次都重新 register 约 60 个宏，虽被 Macroable 覆盖、不报错，但重复构造闭包、重复
      * 注册 Eloquent/Query 双构建器，徒增启动开销。本标志位确保整组宏仅注册一次。
-     *
-     * @scenario 服务提供者可能在同一进程内被多次 boot（如测试、容器重建、多个 Provider 串联），
      */
     private static bool $registered = false;
 
@@ -387,8 +396,6 @@ class MacrosBuilder extends Builder
      * 自带幂等守卫：同一进程内重复调用直接返回，避免重复注册带来的启动开销。
      *
      * @param  ServiceProvider  $provider  服务提供者实例
-     *
-     * @scenario 注册所有宏指令
      */
     public static function register(ServiceProvider $provider): void
     {
@@ -483,6 +490,9 @@ class MacrosBuilder extends Builder
 
         // 22. 向量相似度搜索系列 - Laravel 13+ 原生向量/语义检索支持（双构建器友好）
         self::registerVectorSearch($provider);
+
+        // 31. 向量操作系列 - 跨库向量距离/相似度/KNN（后端四档运行时探测：pgvector / MariaDB 11.7+ / HeatWave / MySQL 社区版）
+        VectorMacro::register();
     }
 
     /**
@@ -493,74 +503,101 @@ class MacrosBuilder extends Builder
      * 这样既满足「ORM 与 DB 双友好」，又避免同名宏覆盖原生方法导致递归。
      * 注意：该能力依赖底层数据库驱动与 Laravel 13+ 的查询语法，
      * 在 Laravel 11/12 或不支持向量的数据库上调用会抛出异常，属预期行为。
-     *
-     * @scenario 注册 Laravel 13+ 向量相似度搜索宏（Eloquent 桥接；Query\Builder 走原生方法）
      */
     public static function registerVectorSearch(ServiceProvider $provider): void
     {
         /**
          * whereVectorSimilarTo —— 按向量相似度筛选（语义/近邻匹配），桥接 Laravel 13 原生向量检索。
-         * 底层依赖数据库向量能力（如 PostgreSQL + pgvector）。当表存在向量列（embedding）时，
-         * 本宏可在 Eloquent 查询中以「相似度阈值」做过滤，常用于 RAG 召回、语义搜索、推荐相似度等场景。
-         * 列名会先经 {@see MacrosBuilder::assertValidIdentifier()} 校验，防止列名注入。
-         * 设计要点：仅针对 Eloquent\Builder 注册宏；Query\Builder（即 `DB::table()` 路径）直接使用
-         * Laravel 13 原生方法，避免同名宏覆盖原生方法引发递归。当调用方未显式传入 $minSimilarity 时，
-         * 不向下透传该参数，让框架使用默认阈值 0.6，避免传入 null 造成 `1 - null` 的语义偏差。
+         *
+         * ★ **MySQL 请改用 {@see VectorMacro}**（`whereVectorDistance` / `vectorKnn`）：
+         *   Laravel 13 原生的 `whereVectorSimilarTo()` 内部先调 `Grammar::supportsVectorDistance()`，
+         *   该方法只有 PostgresGrammar / MariaDbGrammar 覆写为 true，**MySQL 走原生实现会直接抛
+         *   RuntimeException**（"only supported by Postgres and MariaDB"）。而 MySQL 9.x 社区版
+         *   只提供 VECTOR 列类型与 STRING_TO_VECTOR / VECTOR_TO_STRING / VECTOR_DIM，
+         *   **并没有距离函数**（VEC_* 系列属 MariaDB，DISTANCE() 属 HeatWave/AI），
+         *   故社区版 MySQL 无法完成距离检索，需改用 PostgreSQL/pgvector 或 MariaDB 11.7+。
+         *   本宏仅作 PostgreSQL 场景的语法糖保留。
+         *
+         * 本宏修正了原实现的一处**链式契约缺陷**：原先直接 `return $query->whereVectorSimilarTo(...)`
+         * 返回的是底层 Query\Builder，因此 `Post::query()->whereVectorSimilarTo(...)->get()`
+         * 得到的是 stdClass 集合而不是 Post 模型。现改为在 Eloquent 构建器上追加条件后
+         * **返回 $this**，保持 ORM 链类型不变。
          *
          * @param  string  $column  向量列名（标识符，经白名单校验）
-         * @param  mixed  $value  查询向量（数组或可序列化为向量的格式，依底层驱动而定）
-         * @param  float|null  $minSimilarity  最小相似度阈值，null 表示使用框架默认 0.6
+         * @param  mixed  $value  查询向量（数组或 [x,y,z] 字面量；**不要传字符串** —— 原生实现会
+         *                       对字符串调用 `Stringable::toEmbeddings()` 去请求外部 AI 服务）
+         * @param  float|null  $minSimilarity  最小相似度阈值，null 表示用框架默认 0.6
+         * @param  bool  $order  是否按距离升序排序（原生参数，默认 true）
          * @return Builder
          *
          * @example
-         * // 基于向量列的语义相似度召回（使用框架默认阈值 0.6）
-         * $vec = [0.12, -0.34, 0.78, /* ... *\/];
-         * Post::query()->whereVectorSimilarTo('embedding', $vec)->get();
-         * // 显式提高相似度门槛，仅召回高度相关结果
+         * // PostgreSQL + pgvector：余弦相似度 >= 0.6 的记录，按相似度排序
+         * $vec = [0.12, -0.34, 0.78, 0.55];
+         * Post::query()->whereVectorSimilarTo('embedding', $vec)->get();      // 仍是 Post 模型集合
          * Post::query()->whereVectorSimilarTo('embedding', $vec, 0.85)->get();
          *
-         * @scenario 语义搜索 / 相似文档推荐 / 向量库近邻检索。需底层数据库与 Laravel 13+ 支持向量类型，
-         *           否则运行期会抛出异常（属预期行为）。
+         * @scenario PostgreSQL + pgvector 环境下的语义搜索 / RAG 召回 / 相似推荐；
+         *           MySQL 或需要自定义度量、Top-K 时请改用 VectorMacro 的向量宏。
          */
-        Builder::macro('whereVectorSimilarTo', function (string $column, $value, ?float $minSimilarity = null) {
+        Builder::macro('whereVectorSimilarTo', function (string $column, $value, ?float $minSimilarity = null, bool $order = true) {
             // 校验列名标识符（与其他宏一致，防止列名注入）
             $column = MacrosBuilder::assertValidIdentifier($column, 'column');
 
+            // 校验并预转换向量：避免把非法向量透传给原生方法后报出含糊的数据库错误
+            $value = BaseMacro::normalizeVectorLiteral(
+                is_array($value) || $value instanceof \Illuminate\Contracts\Support\Arrayable
+                    ? $value
+                    : (string) $value
+            );
+
             $query = $this->getQuery();
 
-            if ($minSimilarity === null) {
-                return $query->whereVectorSimilarTo($column, $value);
-            }
+            // 在【Query 构建器】上调用原生方法（原生方法确实存在于 Query\Builder），
+            // 但返回给调用方的必须是原来的 Eloquent 构建器。
+            $minSimilarity === null
+                ? $query->whereVectorSimilarTo($column, $value, 0.6, $order)
+                : $query->whereVectorSimilarTo($column, $value, $minSimilarity, $order);
 
-            return $query->whereVectorSimilarTo($column, $value, $minSimilarity);
+            return $this;
         });
 
         /**
-         * orderByVectorDistance —— 按向量距离升序排序（最近邻检索排序）。
-         * 与 whereVectorSimilarTo 配套使用，将结果按「与给定向量的距离」由近到远排序，
-         * 实现 K 近邻（KNN）检索。仅走升序（最近邻优先）；底层 Laravel 13 原生方法不接收排序方向参数，
-         * 故此处仅透传列名与向量值。列名经 {@see MacrosBuilder::assertValidIdentifier()} 校验。
+         * orderByVectorDistance —— 按向量距离升序排序（最近邻排序）。
+         *
+         * ★ **MySQL 请改用 {@see VectorMacro}** 的 `orderByVectorSimilarity()`：原生实现在
+         *   MySQL 上会抛 RuntimeException，且只支持余弦距离（`compileVectorDistanceExpression()`
+         *   在 PG 侧硬编码 `<=>`），无法用 L2 / 内积。
+         *
+         * 同样修正了原实现的返回类型缺陷：原先 `return $this->getQuery()->orderByVectorDistance(...)`
+         * 会把 Eloquent 链降级成 Query 链，导致后续 `->get()` 返回 stdClass 而非模型。
          *
          * @param  string  $column  向量列名（标识符，经白名单校验）
-         * @param  mixed  $value  排序基准向量
+         * @param  mixed  $value  排序基准向量（数组或 [x,y,z] 字面量）
          * @return Builder
          *
          * @example
-         * // 召回与给定向量最相近的 10 条记录（先按距离排序，再取前 N）
-         * $vec = [0.12, -0.34, 0.78, /* ... *\/];
+         * // 召回与给定向量最相近的 10 条（PostgreSQL + pgvector）
          * Post::query()
          *     ->whereVectorSimilarTo('embedding', $vec)
          *     ->orderByVectorDistance('embedding', $vec)
          *     ->limit(10)
          *     ->get();
          *
-         * @scenario 向量相似度结果集的排序 / 最近邻排序分页。需底层数据库与 Laravel 13+ 支持向量类型。
+         * @scenario PostgreSQL + pgvector 的近邻排序分页；跨库或需自定义度量请用 VectorMacro。
          */
         Builder::macro('orderByVectorDistance', function (string $column, $value) {
             // 校验列名标识符
             $column = MacrosBuilder::assertValidIdentifier($column, 'column');
 
-            return $this->getQuery()->orderByVectorDistance($column, $value);
+            $value = BaseMacro::normalizeVectorLiteral(
+                is_array($value) || $value instanceof \Illuminate\Contracts\Support\Arrayable
+                    ? $value
+                    : (string) $value
+            );
+
+            $this->getQuery()->orderByVectorDistance($column, $value);
+
+            return $this;
         });
     }
 
@@ -668,8 +705,6 @@ class MacrosBuilder extends Builder
          * @example
          * // 与标签字典做交叉组合
          * Product::query()->whereHasCrossJoin('tags', fn ($q) => $q->where('enabled', 1))->get();
-         *
-         * @scenario whereHasCrossJoin —— 用 CROSS JOIN（笛卡尔积）关联查询。
          */
         Builder::macro('whereHasCrossJoin', function ($relationName, $callable = null) {
             // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
@@ -699,8 +734,6 @@ class MacrosBuilder extends Builder
          * @example
          * // 列出全部用户，并筛选出「有已支付订单」的用户（未匹配者也保留）
          * User::query()->whereHasLeftJoin('orders', fn ($q) => $q->where('status', 'paid'))->get();
-         *
-         * @scenario whereHasLeftJoin —— 用 LEFT JOIN 关联查询，保留主表全部记录（即使关联不匹配）。
          */
         Builder::macro('whereHasLeftJoin', function ($relationName, $callable = null) {
             // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
@@ -730,8 +763,6 @@ class MacrosBuilder extends Builder
          * @example
          * // 以订单为主，反向关联用户
          * Order::query()->whereHasRightJoin('user', fn ($q) => $q->where('active', 1))->get();
-         *
-         * @scenario whereHasRightJoin —— 用 RIGHT JOIN 关联查询（以关联表为主，保留关联表全部记录）。
          */
         Builder::macro('whereHasRightJoin', function ($relationName, $callable = null) {
             // $self 捕获主构建器：嵌套关联（'a.b'）的下一级 JOIN 必须加在【主查询】上，
@@ -764,8 +795,6 @@ class MacrosBuilder extends Builder
          *     ->whereHasIn('orders', fn ($q) => $q->where('status', 'paid'))
          *     ->orWhereHasIn('coupons', fn ($q) => $q->where('valid', 1))
          *     ->get();
-         *
-         * @scenario orWhereHasIn —— 以 OR 条件追加 whereHasIn 关联筛选。
          */
         Builder::macro('orWhereHasIn', function ($relationName, $callable = null) {
             return $this->orWhere(function ($query) use ($relationName, $callable) {
@@ -786,8 +815,6 @@ class MacrosBuilder extends Builder
          *     ->whereHasNotIn('orders', fn ($q) => $q->where('status', 'pending'))
          *     ->orWhereHasNotIn('refunds')
          *     ->get();
-         *
-         * @scenario orWhereHasNotIn —— 以 OR 条件追加 whereHasNotIn 关联反选。
          */
         Builder::macro('orWhereHasNotIn', function ($relationName, $callable = null) {
             return $this->orWhere(function ($query) use ($relationName, $callable) {
@@ -858,8 +885,6 @@ class MacrosBuilder extends Builder
              * User::query()->whereHasJoin('orders')->mainWhere('status', 1)->get();
              * // mainOrderByDesc('created_at') 等价于 orderByDesc('users.created_at')
              * User::query()->whereHasJoin('orders')->mainOrderByDesc('created_at')->get();
-             *
-             * @scenario main{Pascal} 族 —— 自动为首个列参数前缀「主表名.」，避免关联查询（JOIN）下的列名歧义。
              */
             Builder::macro('main'.ucfirst($method), function (...$params) use ($method) {
                 if (isset($params[0])) {
@@ -879,8 +904,6 @@ class MacrosBuilder extends Builder
          * @example
          * // 仅取主表字段并加前缀（适合 JOIN 后避免列名冲突）
          * User::query()->whereHasJoin('orders')->mainSelect(['id', 'email'])->get();
-         *
-         * @scenario mainSelect —— 为主表的每个列自动加表前缀后 select，避免关联查询下 `SELECT *` 的列歧义。
          */
         Builder::macro('mainSelect', function ($columns = ['*']) {
             $table = $this->getModel()->getTable();

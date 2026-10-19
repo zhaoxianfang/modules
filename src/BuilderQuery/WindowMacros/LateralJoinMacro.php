@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\BuilderQuery\WindowMacros;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
 use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
 
@@ -18,15 +19,37 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0.14+ / PostgreSQL 15+
- *
- * @scenario LATERAL JOIN 宏（MySQL 8.0.14+ / PostgreSQL 15+ 通用）
  */
 class LateralJoinMacro extends BaseMacro
 {
     /**
-     * 注册所有 LATERAL JOIN 宏
+     * 归一化 LATERAL 子查询：兼容两种回调写法。
      *
-     * @scenario 注册所有 LATERAL JOIN 宏
+     * 原实现一律把「主模型的新查询」交给回调、并丢弃返回值，于是本宏自己的文档示例
+     *   ->lateralJoin(fn () => Order::query()->whereColumn('user_id', 'users.id'), 'recent_orders')
+     * 实际生成的是 `LATERAL (select * from users ...) AS recent_orders` —— 主表与子查询
+     * **同表**，语义完全跑偏且不会报错，属于最难排查的一类缺陷。
+     *
+     * 现在：
+     *   - 回调返回构建器 → 以返回值为准（支持 Order::query() 这类"关联另一个模型"的写法）；
+     *   - 回调返回 null   → 视为"就地改造传入的构建器"（完全向后兼容原有用法）。
+     *
+     * @param  \Closure  $callback  回调
+     * @param  Builder|QueryBuilder  $main  主查询构建器
+     * @return Builder|QueryBuilder 子查询构建器
+     */
+    private static function resolveLateralSubQuery(\Closure $callback, $main)
+    {
+        $seed = BaseMacro::freshQuery($main);
+        $returned = $callback($seed);
+
+        return ($returned instanceof Builder || $returned instanceof QueryBuilder)
+            ? $returned
+            : $seed;
+    }
+
+    /**
+     * 注册所有 LATERAL JOIN 宏
      */
     public static function register(): void
     {
@@ -38,8 +61,6 @@ class LateralJoinMacro extends BaseMacro
 
     /**
      * 注册 LATERAL INNER JOIN
-     *
-     * @scenario 注册 LATERAL INNER JOIN
      */
     public static function registerLateralJoin(): void
     {
@@ -49,7 +70,6 @@ class LateralJoinMacro extends BaseMacro
          *
          * @param  \Closure  $callback  子查询闭包，接收主查询当前行的参数
          * @param  string  $alias  子查询别名
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找每个用户最近的3条订单
@@ -72,23 +92,17 @@ class LateralJoinMacro extends BaseMacro
          *             ->limit(1);
          *     }, 'top_earner')
          *     ->get();
-         *
-         * @scenario LATERAL JOIN - 横向连接（INNER）
          */
         static::define('lateralJoin', function (\Closure $callback, string $alias): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
             $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             // 构建子查询
-            $subQuery = $model->newQuery();
-            $callback($subQuery);
+            $subQuery = LateralJoinMacro::resolveLateralSubQuery($callback, $this);
 
             $subSql = $subQuery->toSql();
             $subBindings = $subQuery->getBindings();
@@ -105,8 +119,6 @@ class LateralJoinMacro extends BaseMacro
 
     /**
      * 注册 LATERAL LEFT JOIN
-     *
-     * @scenario 注册 LATERAL LEFT JOIN
      */
     public static function registerLateralLeftJoin(): void
     {
@@ -116,7 +128,6 @@ class LateralJoinMacro extends BaseMacro
          *
          * @param  \Closure  $callback  子查询闭包
          * @param  string  $alias  子查询别名
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 查找所有用户及其最新订单（包括没有订单的用户）
@@ -128,22 +139,16 @@ class LateralJoinMacro extends BaseMacro
          *             ->limit(1);
          *     }, 'latest_order')
          *     ->get();
-         *
-         * @scenario LATERAL LEFT JOIN - 左横向连接
          */
         static::define('lateralLeftJoin', function (\Closure $callback, string $alias): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
             $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             // 构建子查询
-            $subQuery = $model->newQuery();
-            $callback($subQuery);
+            $subQuery = LateralJoinMacro::resolveLateralSubQuery($callback, $this);
 
             $subSql = $subQuery->toSql();
             $subBindings = $subQuery->getBindings();
@@ -158,8 +163,6 @@ class LateralJoinMacro extends BaseMacro
 
     /**
      * 注册 LATERAL LIMIT（Top-N 优化）
-     *
-     * @scenario 注册 LATERAL LIMIT（Top-N 优化）
      */
     public static function registerLateralLimit(): void
     {
@@ -183,8 +186,6 @@ class LateralJoinMacro extends BaseMacro
          * User::query()
          *     ->lateralLimit('id', 'created_at', 'desc', 10, 'recent_messages')
          *     ->get();
-         *
-         * @scenario 使用 LATERAL 实现高效的 Top-N 查询
          */
         static::define('lateralLimit', function (
             string $partitionColumn,
@@ -195,11 +196,8 @@ class LateralJoinMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
             $direction = BaseMacro::assertDirection($direction);
             $partitionColumn = BaseMacro::assertValidIdentifier($partitionColumn, 'partition');
             $orderColumn = BaseMacro::assertValidIdentifier($orderColumn, 'order');
@@ -207,7 +205,7 @@ class LateralJoinMacro extends BaseMacro
             $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
 
             // 构建关联子查询
-            $subQuery = $model->newQuery()
+            $subQuery = BaseMacro::freshQuery($this)
                 ->from("{$table} as t2")
                 ->select('t2.*')
                 ->whereRaw("t2.{$partitionColumn} = {$table}.{$partitionColumn}")
@@ -227,8 +225,6 @@ class LateralJoinMacro extends BaseMacro
 
     /**
      * 注册 LATERAL 聚合查询
-     *
-     * @scenario 注册 LATERAL 聚合查询
      */
     public static function registerLateralAggregate(): void
     {
@@ -252,8 +248,6 @@ class LateralJoinMacro extends BaseMacro
          *         ['column' => '*', 'function' => 'COUNT', 'alias' => 'customer_orders'],
          *     ], 'status', 'completed', 'customer_stats')
          *     ->get();
-         *
-         * @scenario 使用 LATERAL 实现行相关的聚合查询
          */
         static::define('lateralAggregate', function (
             string $relationColumn,
@@ -264,11 +258,8 @@ class LateralJoinMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
-            $model = BaseMacro::modelOf($this);
-            $table = $model->getTable();
+            $table = BaseMacro::resolveTable($this);
             $relationColumn = BaseMacro::assertValidIdentifier($relationColumn, 'relation');
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
             $wrappedAlias = BaseMacro::wrapIdentifier($this, $alias);
@@ -281,7 +272,7 @@ class LateralJoinMacro extends BaseMacro
                 $selectParts[] = "{$function}({$column}) AS ".BaseMacro::wrapIdentifier($this, $aggAlias);
             }
 
-            $subQuery = $model->newQuery()
+            $subQuery = BaseMacro::freshQuery($this)
                 ->from("{$table} as t2")
                 ->selectRaw(implode(', ', $selectParts))
                 ->whereRaw("t2.{$relationColumn} = {$table}.{$relationColumn}");

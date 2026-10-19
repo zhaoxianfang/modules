@@ -1213,4 +1213,683 @@ trait Dialect
 
         return ['COALESCE('.implode(', ', $wrappedColumns).', ?)', [$default]];
     }
+
+
+    /* =====================================================================
+     * 7. 向量操作（PostgreSQL pgvector · MariaDB 11.7+ VECTOR · MySQL HeatWave VECTOR）
+     * ===================================================================== */
+
+    /**
+     * 支持向量距离计算的度量方式（归一化后的小写键）。
+     *
+     * 别名设计是为了让调用方能用业务习惯的写法：
+     *  - cosine    ← cosine / cos / similarity
+     *  - l2        ← l2 / euclidean
+     *  - inner     ← inner / ip / dot / inner_product / innerproduct
+     *  - manhattan ← manhattan / l1 / cityblock
+     *
+     * @var array<string, string>
+     */
+    private const VECTOR_METRIC_ALIASES = [
+        'cosine' => 'cosine',
+        'cos' => 'cosine',
+        'similarity' => 'cosine',
+        'l2' => 'l2',
+        'euclidean' => 'l2',
+        'inner' => 'inner',
+        'ip' => 'inner',
+        'dot' => 'inner',
+        'inner_product' => 'inner',
+        'innerproduct' => 'inner',
+        'manhattan' => 'manhattan',
+        'l1' => 'manhattan',
+        'cityblock' => 'manhattan',
+    ];
+
+    /**
+     * 向量后端类型。
+     *
+     * MySQL 系内部差异极大，必须区分（详见 {@see self::vectorBackend()}）：
+     *  - pgsql     ：PostgreSQL + pgvector 扩展，距离用 `<=>` `<->` `<#>` `<+>` 运算符
+     *  - mariadb   ：MariaDB 11.7+，距离用 VEC_DISTANCE_COSINE / VEC_DISTANCE_EUCLIDEAN
+     *  - heatwave  ：MySQL（HeatWave / MySQL AI 版），距离用 DISTANCE(v1,v2,'METRIC')
+     *  - community ：MySQL 社区版 —— 只能存 VECTOR、**没有距离函数**，无法做相似度检索
+     *
+     * @var array<string, string>
+     */
+    public const VECTOR_BACKEND_PGSQL = 'pgsql';
+    public const VECTOR_BACKEND_MARIADB = 'mariadb';
+    public const VECTOR_BACKEND_HEATWAVE = 'heatwave';
+    public const VECTOR_BACKEND_COMMUNITY = 'community';
+    public const VECTOR_BACKEND_NONE = 'none';
+
+    /**
+     * 向量后端能力探测结果缓存。
+     *
+     * 探测需要真实执行一次函数调用（information_schema.ROUTINES 里查不到内建函数，
+     * 本次实测确认 MySQL 9.3 的 VEC_* 与 DISTANCE 都不在 ROUTINES 中），因此按
+     * 「驱动 + 服务端版本」缓存结果，避免每次查询都探测一次。
+     *
+     * @var array<string, string>
+     */
+    private static array $vectorBackendCache = [];
+
+    /**
+     * 归一化向量度量方式。
+     *
+     * 该值决定生成的 SQL 片段与「应该建哪种索引」，二者强绑定，因此必须白名单化：
+     * 度量名无法参数绑定，放任任意字符串就等于允许注入到函数名位置。
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function normalizeVectorMetric(string $metric): string
+    {
+        $key = strtolower(trim($metric));
+        $normalized = self::VECTOR_METRIC_ALIASES[$key] ?? null;
+
+        if ($normalized === null) {
+            throw new InvalidArgumentException(sprintf(
+                '非法的向量度量方式: "%s"。允许值：cosine / l2(euclidean) / inner(ip,dot) / manhattan(l1)。',
+                $metric
+            ));
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * 探测当前连接的向量后端类型（带进程内缓存）。
+     *
+     * ## 为什么必须分三档，而不是「MySQL 走 VEC_*、PG 走运算符」
+     *
+     * `VEC_DISTANCE_COSINE` / `VEC_FromText` / `VECTOR INDEX` 是 **MariaDB 11.7+** 的函数，
+     * **Oracle MySQL 并不存在**；Oracle MySQL 9.0+ 的对应函数是 `STRING_TO_VECTOR()` /
+     * `VECTOR_TO_STRING()` / `VECTOR_DIM()`，而距离函数 `DISTANCE(v1, v2, 'COSINE')`
+     * **只在 HeatWave / MySQL AI 版提供**。于是 Oracle MySQL 社区版形成了一个尴尬局面：
+     * `VECTOR` 列能建、向量能存能读，但**没有距离函数**，无法在库内做相似度检索。
+     *
+     * 若按「MySQL 一律用 VEC_*」生成 SQL，社区版上会在运行期报出
+     * `FUNCTION xxx.VEC_DISTANCE_COSINE does not exist` —— 用户完全无从判断是版本问题
+     * 还是写法问题。因此这里主动探测并**给出可执行的指引**。
+     *
+     * @return self::VECTOR_BACKEND_* 之一
+     */
+    public static function vectorBackend(EloquentBuilder|QueryBuilder $builder): string
+    {
+        $driver = self::driver($builder);
+
+        if ($driver === 'pgsql') {
+            return self::VECTOR_BACKEND_PGSQL;
+        }
+
+        if ($driver !== 'mysql') {
+            return self::VECTOR_BACKEND_NONE;
+        }
+
+        $connection = $builder->getConnection();
+        $version = (string) $connection->getServerVersion();
+        $cacheKey = $driver.'@'.$version;
+
+        if (isset(self::$vectorBackendCache[$cacheKey])) {
+            return self::$vectorBackendCache[$cacheKey];
+        }
+
+        $backend = self::VECTOR_BACKEND_COMMUNITY;
+
+        try {
+            // MariaDB：VEC_DISTANCE_COSINE 是其 11.7+ 独有函数
+            $connection->select('SELECT VEC_DISTANCE_COSINE(VEC_FromText(?), VEC_FromText(?))', ['[1,0]', '[0,1]']);
+            $backend = self::VECTOR_BACKEND_MARIADB;
+        } catch (\Throwable) {
+            try {
+                // Oracle MySQL HeatWave / MySQL AI：距离用 DISTANCE(v1, v2, 'METRIC')
+                $connection->select('SELECT DISTANCE(STRING_TO_VECTOR(?), STRING_TO_VECTOR(?), \'COSINE\')', ['[1,0]', '[0,1]']);
+                $backend = self::VECTOR_BACKEND_HEATWAVE;
+            } catch (\Throwable) {
+                // 两者都没有：社区版只能存向量、不能算距离
+                $backend = self::VECTOR_BACKEND_COMMUNITY;
+            }
+        }
+
+        self::$vectorBackendCache[$cacheKey] = $backend;
+
+        return $backend;
+    }
+
+    /**
+     * 断言当前连接可执行向量距离计算，否则抛出带**可执行修复建议**的异常。
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function assertVectorSupport(EloquentBuilder|QueryBuilder $builder): void
+    {
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL || $backend === self::VECTOR_BACKEND_MARIADB) {
+            return;
+        }
+
+        if ($backend === self::VECTOR_BACKEND_HEATWAVE) {
+            return;
+        }
+
+        if ($backend === self::VECTOR_BACKEND_COMMUNITY) {
+            throw new InvalidArgumentException(
+                '当前是 MySQL 社区版（Oracle MySQL），可以创建并读写 VECTOR 列，'
+                .'但**不提供任何向量距离函数**（DISTANCE() 仅 HeatWave / MySQL AI 版有）。'
+                .'因此无法在库内做相似度检索。可选方案：'
+                .'① 迁移到 PostgreSQL + pgvector（生态最完整，支持 HNSW/IVFFlat 近似索引）；'
+                .'② 迁移到 MariaDB 11.7+（有 VEC_DISTANCE_* 函数与 VECTOR 近似索引）；'
+                .'③ 改用 MySQL HeatWave / MySQL AI 版；'
+                .'④ 在应用侧把向量算好距离后按普通数值列存储与检索。'
+            );
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            '向量操作仅支持 PostgreSQL（pgvector 扩展）/ MariaDB 11.7+ / MySQL HeatWave；当前驱动为 [%s]。',
+            self::driver($builder)
+        ));
+    }
+
+    /**
+     * 断言当前连接具备**向量类型**能力（能建列、能读写向量）。
+     *
+     * 与 {@see self::assertVectorSupport()}（要求「能算距离」）刻意区分：
+     * Oracle MySQL 社区版**有** VECTOR 列与 `STRING_TO_VECTOR()` / `VECTOR_TO_STRING()` /
+     * `VECTOR_DIM()`（实测 MySQL 9.3 均可用），只是**没有距离函数**。
+     * 因此「查向量维度」「把向量导出成文本」「写入向量」这些操作在社区版上完全合法，
+     * 不应该被距离能力的限制误伤 —— 否则会白白挡掉一批本来能跑的用法。
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function assertVectorTypeSupport(EloquentBuilder|QueryBuilder $builder): void
+    {
+        if (self::vectorBackend($builder) !== self::VECTOR_BACKEND_NONE) {
+            return;
+        }
+
+        throw new InvalidArgumentException(sprintf(
+            '向量类型仅支持 PostgreSQL（pgvector 扩展）/ MariaDB 11.7+ / MySQL 9.0+（VECTOR 列）；当前驱动为 [%s]。',
+            self::driver($builder)
+        ));
+    }
+
+    /**
+     * 返回该度量方式在**当前后端**下的底层实现名（供文档与异常提示使用）。
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function vectorMetricImplementation(
+        EloquentBuilder|QueryBuilder $builder,
+        string $metric
+    ): string {
+        $metric = self::normalizeVectorMetric($metric);
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL) {
+            return match ($metric) {
+                'cosine' => '<=>（pgvector 余弦距离运算符）',
+                'l2' => '<->（pgvector L2 / 欧氏距离运算符）',
+                'inner' => '<#>（pgvector 负内积运算符）',
+                'manhattan' => '<+>（pgvector L1，仅 sparsevec 类型可用）',
+            };
+        }
+
+        if ($backend === self::VECTOR_BACKEND_MARIADB) {
+            return match ($metric) {
+                'cosine' => 'VEC_DISTANCE_COSINE()（MariaDB 11.7+）',
+                'l2' => 'VEC_DISTANCE_EUCLIDEAN()（MariaDB 11.7+）',
+                'inner' => throw new InvalidArgumentException(
+                    'MariaDB 11.7+ 的 VECTOR 未提供内积距离函数（只有 VEC_DISTANCE_COSINE / VEC_DISTANCE_EUCLIDEAN）；'
+                    .'请改用 cosine 或 l2，或迁移到 PostgreSQL + pgvector 使用 <#>。'
+                ),
+                'manhattan' => throw new InvalidArgumentException(
+                    'MariaDB 11.7+ 的 VECTOR 未提供 L1（曼哈顿）距离函数；请改用 cosine 或 l2。'
+                ),
+            };
+        }
+
+        if ($backend === self::VECTOR_BACKEND_HEATWAVE) {
+            return match ($metric) {
+                'cosine' => "DISTANCE(a, b, 'COSINE')（MySQL HeatWave / MySQL AI）",
+                'l2' => "DISTANCE(a, b, 'EUCLIDEAN')（MySQL HeatWave / MySQL AI）",
+                'inner' => "DISTANCE(a, b, 'DOT_PRODUCT')（MySQL HeatWave / MySQL AI）",
+                'manhattan' => throw new InvalidArgumentException(
+                    "MySQL HeatWave 的 DISTANCE() 仅支持 COSINE / EUCLIDEAN / DOT_PRODUCT；"
+                    .'没有 L1（曼哈顿）度量。'
+                ),
+            };
+        }
+
+        self::assertVectorSupport($builder);
+
+        return '';
+    }
+
+    /**
+     * 返回该度量方式在当前后端下**应配套创建的向量索引** DDL 片段与注意事项。
+     *
+     * 这是向量检索最容易被忽略、也最难排查的一点：
+     * - PostgreSQL 的近似索引（IVFFlat / HNSW）**只有在 ORDER BY 使用的运算符与索引
+     *   opclass 完全一致时才会被采用**。用 `<->`（L2）排序却只建了 `vector_cosine_ops`
+     *   索引时，查询会**静默退化为全表暴力扫描** —— 结果完全正确、不报任何错，但百万行下
+     *   耗时从毫秒变成分钟。
+     * - MariaDB 的 `VECTOR INDEX` 同样按建索引时声明的 metric 决定能否命中。
+     * - Oracle MySQL 社区版没有任何向量索引能力。
+     *
+     * @param  string  $column  向量列名（标识符，用于生成可读的建表语句）
+     * @return array{ddl: string, note: string}
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function vectorIndexAdvice(
+        EloquentBuilder|QueryBuilder $builder,
+        string $metric,
+        string $column = 'embedding'
+    ): array {
+        $metric = self::normalizeVectorMetric($metric);
+        $column = self::assertValidIdentifier($column, 'column');
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL) {
+            [$opclass, $algo] = match ($metric) {
+                'cosine' => ['vector_cosine_ops', 'hnsw'],
+                'l2' => ['vector_l2_ops', 'hnsw'],
+                'inner' => ['vector_ip_ops', 'hnsw'],
+                'manhattan' => ['(sparsevec 无近似索引 opclass)', '(暴力检索)'],
+            };
+
+            return [
+                'ddl' => sprintf('CREATE INDEX ON %s USING %s (%s %s);', $column, $algo, $column, $opclass),
+                'note' => sprintf(
+                    'ORDER BY 必须使用与 %s 配套的运算符，索引才会被采用；'
+                    .'召回不足时可用 SET LOCAL hnsw.ef_search / ivfflat.probes 提升（见 vectorSearchParams 宏）。',
+                    $opclass
+                ),
+            ];
+        }
+
+        if ($backend === self::VECTOR_BACKEND_MARIADB) {
+            [$metricName, $supported] = match ($metric) {
+                'cosine' => ['COSINE', true],
+                'l2' => ['EUCLIDEAN', true],
+                'inner' => ['', false],
+                'manhattan' => ['', false],
+            };
+
+            if (! $supported) {
+                return [
+                    'ddl' => '(MariaDB 11.7+ 的 VECTOR 近似索引仅支持 COSINE / EUCLIDEAN)',
+                    'note' => sprintf(
+                        '当前度量 [%s] 无法使用 MariaDB 向量索引，查询将退化为全量向量扫描。'
+                        .'请改用 cosine 或 l2；如必须用内积，请迁移到 PostgreSQL + pgvector（<#> + vector_ip_ops）。',
+                        $metric
+                    ),
+                ];
+            }
+
+            return [
+                'ddl' => sprintf(
+                    "CREATE VECTOR INDEX %s_vec_idx ON %s (%s) USING HNSW DISTANCE_METRIC=%s;",
+                    $column,
+                    $column,
+                    $column,
+                    $metricName
+                ),
+                'note' => 'ORDER BY 使用的距离函数必须与索引声明的 DISTANCE_METRIC 一致，否则索引不会被采用。',
+            ];
+        }
+
+        if ($backend === self::VECTOR_BACKEND_HEATWAVE) {
+            $metricName = match ($metric) {
+                'cosine' => 'COSINE',
+                'l2' => 'EUCLIDEAN',
+                'inner' => 'DOT_PRODUCT',
+            };
+
+            return [
+                'ddl' => sprintf(
+                    "CREATE VECTOR INDEX %s_vec_idx ON %s (%s) USING VECTOR INDEX WITH (metric = '%s');",
+                    $column,
+                    $column,
+                    $column,
+                    $metricName
+                ),
+                'note' => 'HeatWave 向量索引需与距离度量一致；可用 EXPLAIN ANALYZE 确认是否命中近似索引。',
+            ];
+        }
+
+        // 社区版 / 无向量类型：诊断接口不应该抛异常。
+        //
+        // 调用 indexAdvice() 的人正是想知道「这台机器上的向量检索该怎么建索引」，
+        // 抛异常等于把答案换成一句「不支持」—— 反而不如直接告诉他没有索引可用。
+        // 因此这里返回明确的空 DDL + 可执行结论（这与 assertVectorSupport() 的职责区分：
+        // 后者是给执行类宏用的前置守卫）。
+        return [
+            'ddl' => '',
+            'note' => self::VECTOR_BACKEND_COMMUNITY === $backend
+                ? '当前是 MySQL 社区版（Oracle MySQL）：没有距离函数，也没有任何向量索引能力，'
+                    .'无法做库内相似度检索。可选方案：① 迁移到 PostgreSQL + pgvector（支持 HNSW/IVFFlat）；'
+                    .'② 迁移到 MariaDB 11.7+（VEC_DISTANCE_* + VECTOR 索引）；'
+                    .'③ 改用 MySQL HeatWave / MySQL AI 版；'
+                    .'④ 在应用侧算好距离后按普通数值列存储与检索。'
+                : sprintf('当前驱动 [%s] 无向量能力，无法建向量索引。', self::driver($builder)),
+        ];
+    }
+
+    /**
+     * 把数组 / Arrayable 向量规范化为 pgvector 与 MySQL 系都接受的文本字面量：`[1,2,3]`。
+     *
+     * 该文本随后作为**参数绑定**下传（PG 走 `?::vector`，MySQL 走 `STRING_TO_VECTOR(?)`
+     * 或 `VEC_FromText(?)`），本身不存在注入面；但这里仍逐元素校验为有限数值，目的是把
+     * 「维度元素含 NaN / 非数字」这类问题在应用层就报成清晰异常，而不是等数据库抛出
+     * 一句含糊的解析错误。
+     *
+     * @param  array|\Illuminate\Contracts\Support\Arrayable|string  $vector
+     * @return string
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function normalizeVectorLiteral(array|\Illuminate\Contracts\Support\Arrayable|string $vector): string
+    {
+        if (is_string($vector)) {
+            $trimmed = trim($vector);
+
+            if ($trimmed === '' || ! str_starts_with($trimmed, '[') || ! str_ends_with($trimmed, ']')) {
+                throw new InvalidArgumentException(
+                    '向量字面量必须是 [x,y,z] 形式；收到空值或不含首尾方括号的字符串。'
+                );
+            }
+
+            return $trimmed;
+        }
+
+        $items = is_array($vector) ? $vector : $vector->toArray();
+
+        if ($items === []) {
+            throw new InvalidArgumentException('向量不能为空数组：距离计算至少需要 1 个维度。');
+        }
+
+        $parts = [];
+        foreach ($items as $index => $item) {
+            if (! is_int($item) && ! is_float($item) && ! (is_string($item) && is_numeric($item))) {
+                throw new InvalidArgumentException(sprintf(
+                    '向量第 %s 个维度不是数值：%s（%s）。',
+                    (string) $index,
+                    var_export($item, true),
+                    get_debug_type($item)
+                ));
+            }
+
+            $number = (float) $item;
+
+            // is_finite 覆盖 INF 与 NAN：它们能通过上面的数值类型判断，
+            // 但会让距离计算在数据库侧返回 NULL 或溢出，结果静默错误。
+            if (! is_finite($number)) {
+                throw new InvalidArgumentException(sprintf(
+                    '向量第 %s 个维度不是有限数值（INF / NAN）。',
+                    (string) $index
+                ));
+            }
+
+            $parts[] = self::formatVectorElement($number);
+        }
+
+        return '['.implode(',', $parts).']';
+    }
+
+    /**
+     * 格式化单个向量元素为**不带指数形式**的短小数串。
+     *
+     * 必须避免 PHP 默认的浮点字符串输出产生 '1.0E-5' 这类科学计数法 ——
+     * pgvector 与 MySQL 的向量解析器只接受普通十进制小数，遇到 'E' 会直接报
+     * 解析错误。（实测 Oracle MySQL 的 VECTOR_TO_STRING 输出形如
+     * `[1.00000e+00,2.00000e+00]`，说明其内部正是二进制浮点表示，
+     * 写入时必须显式规避指数形式。）
+     */
+    private static function formatVectorElement(float $number): string
+    {
+        if ($number === floor($number) && abs($number) < 1.0e15) {
+            return (string) (int) $number;
+        }
+
+        // rtrim 去掉尾随 0，避免 '0.500000' 这类无意义精度膨胀。
+        $formatted = rtrim(rtrim(number_format($number, 10, '.', ''), '0'), '.');
+
+        return ($formatted === '' || $formatted === '-') ? '0' : $formatted;
+    }
+
+    /**
+     * 向量距离表达式片段（SELECT 列 / ORDER BY / WHERE 条件三处通用）。
+     *
+     * - PostgreSQL（pgvector）：用距离运算符，能被近似索引识别
+     *     cosine `(col <=> ?::vector)`、l2 `(col <-> ?::vector)`、
+     *     inner `(col <#> ?::vector)`、manhattan `(col <+> ?::vector)`
+     * - MariaDB 11.7+：`VEC_DISTANCE_COSINE(col, VEC_FromText(?))` 等
+     * - MySQL HeatWave / MySQL AI：`DISTANCE(col, STRING_TO_VECTOR(?), 'COSINE')` 等
+     * - Oracle MySQL 社区版：**无距离函数**，调用即抛带修复方案的异常
+     *
+     * @param  string  $wrappedColumn  已 wrap 的向量列名
+     * @param  array|\Illuminate\Contracts\Support\Arrayable|string  $vector  查询向量
+     * @param  string  $metric  度量方式（别名见 normalizeVectorMetric）
+     * @return array{0: string, 1: array} [sql 片段, 绑定]
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function vectorDistanceFragment(
+        EloquentBuilder|QueryBuilder $builder,
+        string $wrappedColumn,
+        array|\Illuminate\Contracts\Support\Arrayable|string $vector,
+        string $metric = 'cosine'
+    ): array {
+        $metric = self::normalizeVectorMetric($metric);
+        $literal = self::normalizeVectorLiteral($vector);
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL) {
+            $operator = match ($metric) {
+                'cosine' => '<=>',
+                'l2' => '<->',
+                'inner' => '<#>',
+                'manhattan' => '<+>',
+            };
+
+            // PG 必须显式 cast：绑定参数的类型推断结果是 unknown，
+            // 写成 `col <=> ?` 会报 "operator does not exist: vector <=> unknown"。
+            return ["({$wrappedColumn} {$operator} ?::vector)", [$literal]];
+        }
+
+        if ($backend === self::VECTOR_BACKEND_MARIADB) {
+            $function = match ($metric) {
+                'cosine' => 'VEC_DISTANCE_COSINE',
+                'l2' => 'VEC_DISTANCE_EUCLIDEAN',
+                'inner' => throw new InvalidArgumentException(
+                    'MariaDB 11.7+ 的 VECTOR 未提供内积距离函数；请改用 cosine 或 l2。'
+                ),
+                'manhattan' => throw new InvalidArgumentException(
+                    'MariaDB 11.7+ 的 VECTOR 未提供 L1（曼哈顿）距离函数；请改用 cosine 或 l2。'
+                ),
+            };
+
+            return ["{$function}({$wrappedColumn}, VEC_FromText(?))", [$literal]];
+        }
+
+        if ($backend === self::VECTOR_BACKEND_HEATWAVE) {
+            $metricName = match ($metric) {
+                'cosine' => 'COSINE',
+                'l2' => 'EUCLIDEAN',
+                'inner' => 'DOT_PRODUCT',
+                'manhattan' => throw new InvalidArgumentException(
+                    "MySQL HeatWave 的 DISTANCE() 仅支持 COSINE / EUCLIDEAN / DOT_PRODUCT，没有 L1 度量。"
+                ),
+            };
+
+            return [
+                "DISTANCE({$wrappedColumn}, STRING_TO_VECTOR(?), '{$metricName}')",
+                [$literal],
+            ];
+        }
+
+        self::assertVectorSupport($builder);
+
+        return ['', []];
+    }
+
+    /**
+     * 向量相似度表达式片段（SELECT 列用）。
+     *
+     * 距离与相似度的换算关系随度量方式而不同，不能一律用 `1 - distance`：
+     *  - cosine：距离取值 [0,2]，`1 - d` 落在 [-1,1]（完全反向为 -1）。
+     *    这里保持该原始语义而**不额外折半到 [0,1]**，避免「相似度 0.5」从「正交」
+     *    悄悄变成「无关」，让既有阈值失效。需要 [0,1] 请调用方自行 clamp。
+     *  - l2 / manhattan：距离无上界，`1 / (1 + distance)` 才能保证落在 (0,1]。
+     *  - inner：pgvector 的 `<#>` 返回**负**内积，`-(col <#> ?)` 即真实内积；
+     *    MariaDB 无内积函数（直接抛异常）。内积可为负，能表达「方向相反」，
+     *    这是它相对余弦/欧氏的优势，故不压缩到 (0,1]。
+     *
+     * @return array{0: string, 1: array}
+     */
+    public static function vectorSimilarityFragment(
+        EloquentBuilder|QueryBuilder $builder,
+        string $wrappedColumn,
+        array|\Illuminate\Contracts\Support\Arrayable|string $vector,
+        string $metric = 'cosine'
+    ): array {
+        $metric = self::normalizeVectorMetric($metric);
+        $literal = self::normalizeVectorLiteral($vector);
+        $backend = self::vectorBackend($builder);
+
+        if ($metric === 'inner') {
+            if ($backend === self::VECTOR_BACKEND_PGSQL) {
+                return ["-({$wrappedColumn} <#> ?::vector)", [$literal]];
+            }
+
+            if ($backend === self::VECTOR_BACKEND_HEATWAVE) {
+                return [
+                    "DISTANCE({$wrappedColumn}, STRING_TO_VECTOR(?), 'DOT_PRODUCT')",
+                    [$literal],
+                ];
+            }
+
+            // MariaDB / 社区版：无内积函数，落到 assertVectorSupport 给出明确提示
+            [$sql, $bindings] = self::vectorDistanceFragment($builder, $wrappedColumn, $vector, $metric);
+
+            return [$sql, $bindings];
+        }
+
+        [$sql, $bindings] = self::vectorDistanceFragment($builder, $wrappedColumn, $vector, $metric);
+
+        return [$metric === 'cosine' ? '(1 - '.$sql.')' : '(1.0 / (1 + '.$sql.'))', $bindings];
+    }
+
+    /**
+     * 向量维度表达式（无绑定）。
+     * - PostgreSQL：`vector_dims(col)`
+     * - MariaDB / Oracle MySQL 9.0+：`VECTOR_DIM(col)`（实测 MySQL 9.3 社区版可用）
+     */
+    public static function vectorDimensionExpr(
+        EloquentBuilder|QueryBuilder $builder,
+        string $wrappedColumn
+    ): string {
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL) {
+            return "vector_dims({$wrappedColumn})";
+        }
+
+        // 维度查询不需要距离能力：MariaDB 与 Oracle MySQL 9.0+（含社区版）都有 VECTOR_DIM
+        self::assertVectorTypeSupport($builder);
+
+        return "VECTOR_DIM({$wrappedColumn})";
+    }
+
+    /**
+     * 向量转文本表达式（无绑定），用于把向量列导出成可读 / 可比较的字符串。
+     * - PostgreSQL：`col::text`（pgvector 的 text 输出即 [1,2,3] 形式）
+     * - MariaDB：`VEC_ToText(col)`
+     * - Oracle MySQL 9.0+：`VECTOR_TO_STRING(col)`
+     */
+    public static function vectorToTextExpr(
+        EloquentBuilder|QueryBuilder $builder,
+        string $wrappedColumn
+    ): string {
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL) {
+            return "({$wrappedColumn})::text";
+        }
+
+        // 文本导出同样不需要距离能力（Oracle MySQL 社区版的 VECTOR_TO_STRING 可用）
+        self::assertVectorTypeSupport($builder);
+
+        return $backend === self::VECTOR_BACKEND_MARIADB
+            ? "VEC_ToText({$wrappedColumn})"
+            : "VECTOR_TO_STRING({$wrappedColumn})";
+    }
+
+    /**
+     * 文本转向量表达式（供 INSERT / UPDATE 的 SET 段或 VALUES 使用）。
+     *
+     * - PostgreSQL：`?::vector`
+     * - MariaDB：`VEC_FromText(?)`
+     * - Oracle MySQL 9.0+：`STRING_TO_VECTOR(?)`
+     *
+     * @return array{0: string, 1: array}
+     */
+    public static function vectorFromLiteralFragment(
+        EloquentBuilder|QueryBuilder $builder,
+        array|\Illuminate\Contracts\Support\Arrayable|string $vector
+    ): array {
+        $literal = self::normalizeVectorLiteral($vector);
+        $backend = self::vectorBackend($builder);
+
+        if ($backend === self::VECTOR_BACKEND_PGSQL) {
+            return ['?::vector', [$literal]];
+        }
+
+        // 写入向量只需要向量类型能力（社区版的 STRING_TO_VECTOR 可用）
+        self::assertVectorTypeSupport($builder);
+
+        return $backend === self::VECTOR_BACKEND_MARIADB
+            ? ['VEC_FromText(?)', [$literal]]
+            : ['STRING_TO_VECTOR(?)', [$literal]];
+    }
+
+    /**
+     * 向量 L2 归一化表达式（无绑定）。
+     *
+     * 为什么需要归一化：内积度量下，模长差异会主导结果 —— 「方向高度相似但模长差
+     * 10 倍」的两个向量会被排得很远，这是内积检索最常见的误用。归一化后内积 ≡
+     * 余弦相似度，且 HNSW / IVFFlat 的聚类质心才具有几何意义（否则簇中心被长向量拉偏）。
+     *
+     * - PostgreSQL：`l2_normalize(col)`（pgvector 0.7.0+ 内置函数）
+     * - MySQL 系（MariaDB / Oracle MySQL）：**没有内置范数函数**。VEC_* / DISTANCE 系列
+     *   只有距离与维度，且向量分量不可拆出（没有 VEC_INDEX / VEC_SLICE 之类），
+     *   因此无法在 SQL 内等价表达归一化。这里明确抛异常并指引在应用层归一化后写入 ——
+     *   绝不生成一个看似能跑、实则语义错误的表达式。
+     *
+     * @throws InvalidArgumentException
+     */
+    public static function vectorNormalizeExpr(
+        EloquentBuilder|QueryBuilder $builder,
+        string $wrappedColumn
+    ): string {
+        if (self::vectorBackend($builder) === self::VECTOR_BACKEND_PGSQL) {
+            return "l2_normalize({$wrappedColumn})";
+        }
+
+        throw new InvalidArgumentException(
+            'MySQL / MariaDB 的 VECTOR 没有内置范数函数，无法在 SQL 内做 L2 归一化。'
+            .'请在应用层对向量归一化（x / sqrt(sum(x^2))）后再写入数据库，'
+            .'或改用 cosine 度量 —— 余弦距离本身已对模长不敏感，无需归一化。'
+        );
+    }
+
+    /**
+     * 清空向量后端探测缓存（连接版本变更、或测试需要强制重探时使用）。
+     */
+    public static function clearVectorBackendCache(): void
+    {
+        self::$vectorBackendCache = [];
+    }
 }

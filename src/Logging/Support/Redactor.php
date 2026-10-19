@@ -65,6 +65,27 @@ final class Redactor implements RedactorContract
     /** 递归深度上限（超出后原样返回深层结构，保护调用栈） */
     private const MAX_DEPTH = 12;
 
+    /**
+     * 单次脱敏的「节点预算」上限。
+     *
+     * 原实现只对单个字符串做长度截断，数组的**元素个数 / 总字节数**完全没有上限，
+     * 而 request_input 来自攻击者可控的 $request->all()：5000 个字段 × 20000 字符 ≈ 100MB
+     * 会原样进 logs.request_input（longText）。这里加节点预算作为总闸门。
+     */
+    private const MAX_NODES = 5000;
+
+    /** 单次脱敏的「累计字符串字节预算」（1MB），超出后剩余部分统一替换为截断标记 */
+    private const MAX_TOTAL_BYTES = 1048576;
+
+    /** 预算耗尽后的占位值 */
+    private const TRUNCATED = '[已截断:超出日志字段预算]';
+
+    /** 本次脱敏已消耗的节点数（跨递归累加，由 sanitizeContext 统一重置） */
+    private int $nodeCount = 0;
+
+    /** 本次脱敏已消耗的字符串字节数 */
+    private int $byteCount = 0;
+
     /** 合并后的敏感键名（小写、去重） */
     private array $keys;
 
@@ -164,11 +185,13 @@ final class Redactor implements RedactorContract
         // 2) 'key': 'value'
         $this->singlePattern = "/('(?:".$alt.")'\s*:\s*')((?:\\\\.|[^'\\\\])*)(')/i";
         // 3) key=value / key: value（无引号形态，覆盖 query string、表单、命令输出等）
-        //    - (?:[a-z0-9]+[_-])* 允许 user_password / x-api-key 这类带前缀的写法
-        //      （该前缀单独捕获并在替换时原样回填，确保脱敏不会篡改非敏感文本）
+        //    - 字段前缀用【有界】量词 `(?:\w{1,32}[_-]){0,4}` 而非原来的 `(?:[a-z0-9]+[_-])*`：
+        //      后者是无界嵌套量词（外层 `*` 套内层 `+`），在与下方 ~90 分支的键名交替匹配叠加后，
+        //      对「aaaa…」这类用户可控长文本存在指数级回溯（ReDoS），一次日志写入即可拖死 worker。
+        //      有界后最坏情况为常数级分支尝试，彻底消除歧义。
         //    - (?!["']) 排除已被双/单引号规则覆盖的 JSON 形态，避免重复处理
         //    - (?!Bearer|Basic|Token|Digest|ApiKey\b) 避免把认证方案名当成凭证值打码成 "*** ***"
-        $this->bareKeyValuePattern = '/((?:[a-z0-9]+[_-])*)('.$flexAlt.')(\s*[=:]\s*)(?!["\'])(?!(?:Bearer|Basic|Token|Digest|ApiKey)\b)([^\s&,;"\'<>\)\]\}]{1,2048})/i';
+        $this->bareKeyValuePattern = '/((?:\w{1,32}[_-]){0,4})('.$flexAlt.')(\s*[=:]\s*)(?!["\'])(?!(?:Bearer|Basic|Token|Digest|ApiKey)\b)([^\s&,;"\'<>\)\]\}]{1,2048})/i';
 
         // 4) JWT（header.payload.signature）
         $this->jwtPattern = '/\beyJ[A-Za-z0-9_\-]{6,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]*/';
@@ -214,6 +237,8 @@ final class Redactor implements RedactorContract
      */
     public function sanitizeContext(array $context): array
     {
+        $this->nodeCount = 0;
+        $this->byteCount = 0;
         $this->walk($context, '', 0);
 
         return $context;
@@ -318,6 +343,18 @@ final class Redactor implements RedactorContract
         }
 
         foreach ($data as $k => &$value) {
+            // 节点预算：防止超大数组（攻击者可控的 request_input）把日志表撑爆。
+            // 预算耗尽后【直接裁掉尾部】，只在断点处留一个显式标记：
+            // 只把剩余值替换成标记而保留全部键，等于用上千个占位键把体积原样留下来，没有意义。
+            if (++$this->nodeCount > self::MAX_NODES || $this->byteCount > self::MAX_TOTAL_BYTES) {
+                $keys = array_keys($data);
+                $pos = array_search($k, $keys, true);
+                $data = array_slice($data, 0, $pos === false ? null : $pos + 1, true);
+                $data[$k] = self::TRUNCATED;
+
+                return;
+            }
+
             if (is_array($value)) {
                 $this->walk($value, is_string($k) ? $k : $key, $depth + 1);
 
@@ -325,7 +362,7 @@ final class Redactor implements RedactorContract
             }
 
             if ($value instanceof Throwable) {
-                $value = sprintf('[%s] %s', $value::class, $this->maskText($value->getMessage()));
+                $value = sprintf('[%s] %s', $value::class, $this->maskText($this->truncate($value->getMessage())));
 
                 continue;
             }
@@ -355,10 +392,21 @@ final class Redactor implements RedactorContract
             }
 
             if (is_string($value)) {
-                $value = $this->truncate($this->maskText($value));
+                // 先截断再脱敏：落库的只有 truncate() 之后的那一段，对「真正会被保留的文本」
+                // 做脱敏与「先脱敏再截断」完全等价（被丢弃的部分从不离开内存，不会泄露），
+                // 但可避免对 10MB 的 body 跑完 5 条正则后再丢掉 99%。
+                $value = $this->maskText($this->truncate($value));
+                $this->byteCount += mb_strlen($value, 'UTF-8');
             }
         }
         unset($value);
+    }
+
+    /** 清理编译期缓存的同时重置预算计数（供长驻 worker 显式回收） */
+    public function resetBudget(): void
+    {
+        $this->nodeCount = 0;
+        $this->byteCount = 0;
     }
 
     /**
@@ -366,6 +414,10 @@ final class Redactor implements RedactorContract
      */
     private function walkValue(mixed $value, string|int $key, int $depth): mixed
     {
+        if ($this->nodeCount > self::MAX_NODES || $this->byteCount > self::MAX_TOTAL_BYTES) {
+            return self::TRUNCATED;
+        }
+
         if (is_array($value)) {
             $walked = $value;
             $this->walk($walked, $key, $depth + 1);
@@ -374,7 +426,7 @@ final class Redactor implements RedactorContract
         }
 
         if ($value instanceof Throwable) {
-            return sprintf('[%s] %s', $value::class, $this->maskText($value->getMessage()));
+            return sprintf('[%s] %s', $value::class, $this->maskText($this->truncate($value->getMessage())));
         }
 
         if (is_object($value)) {
@@ -385,7 +437,15 @@ final class Redactor implements RedactorContract
             return self::MASK;
         }
 
-        return is_string($value) ? $this->truncate($this->maskText($value)) : $value;
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        // 与 walk() 保持一致：先截断再脱敏，避免对超长文本跑完整套正则后再丢弃。
+        $masked = $this->maskText($this->truncate($value));
+        $this->byteCount += mb_strlen($masked, 'UTF-8');
+
+        return $masked;
     }
 
     /**

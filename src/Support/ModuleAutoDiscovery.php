@@ -9,7 +9,6 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
@@ -34,7 +33,7 @@ use zxf\Modules\Contracts\ModuleInterface;
  * 性能说明（v5.x）：
  * - 当 modules.cache.enabled=true 时，扫描得到的「发现清单」会被持久化到
  *   storage/framework/cache/modules/discovery.json（JSON 格式，原子写入）。
- * - 后续每个请求/命令直接读取清单并「注册」，跳过 File::files() 目录扫描、
+ * - 后续每个请求/命令直接读取清单并「注册」，跳过 SafeFilesystem::files() 目录扫描、
  * - 清单与模块元数据缓存同生命周期：module:cache 重建、module:clear 清除。
  * - 任何清单读取/解析失败都会安全回退到实时扫描，绝不阻断启动。
  *
@@ -42,6 +41,34 @@ use zxf\Modules\Contracts\ModuleInterface;
  */
 class ModuleAutoDiscovery
 {
+    /**
+     * 框架在运行期注入 config('app') 的键，模块配置合并时必须原样保留
+     *
+     * 典型是 **providers**，它的生命周期完全由 Laravel 掌控：
+     *
+     *   1. `Illuminate\Foundation\Bootstrap\RegisterProviders::mergeAdditionalProviders()`
+     *      在 bootstrap 阶段把「默认 provider + 合并项 + bootstrap/providers.php」
+     *      写进 `config('app.providers')`；
+     *   2. 但 `RegisterProviders::bootstrap()` 只在**配置未被缓存**时才执行这一步：
+     *          if (! $app->bound('config_loaded_from_cache')
+     *              || $app->make('config_loaded_from_cache') === false) { ... }
+     *      即 `php artisan config:cache` 写出的配置文件**必须自带 app.providers**，
+     *      否则从下一次启动起，所有 Illuminate 核心 provider 都不会被注册；
+     *   3. 核心 provider 不注册 → files / validator / view / db / cache / session
+     *      等服务全部没有绑定 → 谁先解析谁抛：
+     *          Target class [files] does not exist.
+     *          Class "files" does not exist
+     *      表现为 `php artisan optimize`、`php artisan` 等任意命令直接失败退出。
+     *
+     * 所以模块配置文件里即便声明了同名键（很容易与模块自身语义撞名），
+     * 也**不得**覆盖框架运行时写入的值。
+     *
+     * @var array<int, string>
+     */
+    protected const FRAMEWORK_RUNTIME_APP_KEYS = [
+        'providers',
+    ];
+
     /**
      * 全局命令缓存
      *
@@ -223,6 +250,11 @@ class ModuleAutoDiscovery
      */
     protected function scanAll(): void
     {
+        // 一次性建立模块目录快照：本次发现周期内所有子目录的「存在性 + 文件列表」
+        // 都从这里取，避免 scanXxx() 各自重复 is_dir() + FilesystemIterator。
+        // 12 个扫描器 → 最多只需遍历实际存在的那些目录一次。
+        $this->buildDirectorySnapshot();
+
         $this->scanProviders();
         $this->scanConfigs();
         $this->scanMiddlewares();
@@ -239,6 +271,130 @@ class ModuleAutoDiscovery
         $this->scanObservers();
         $this->scanPolicies();
         $this->scanRepositories();
+    }
+
+    /**
+     * 建立模块子目录快照
+     *
+     * 以「归一化后的绝对路径」为 key，因此无论扫描器用 getProvidersPath() 还是
+     * getPath('Providers') 拼路径，都能命中同一份结果。
+     *
+     * @var array<string, \Symfony\Component\Finder\SplFileInfo[]|null> 目录 => 文件列表（null = 目录不存在）
+     */
+    private array $directorySnapshot = [];
+
+    /**
+     * 预扫描模块子目录，把「是否存在」与「文件列表」缓存到本次发现的快照里
+     *
+     * 收益：原实现里 scanProviders/scanConfigs/scanEvents/... 各自
+     * is_dir() + SafeFilesystem::files()，同一模块最多 12 次 stat + 12 次目录遍历；
+     * 现在每个目录至多遍历一次，模块数量越多、目录越大，节省越明显。
+     */
+    protected function buildDirectorySnapshot(): void
+    {
+        if ($this->directorySnapshot !== []) {
+            return;
+        }
+
+        foreach ($this->snapshotTargets() as $dir) {
+            if (! is_string($dir) || $dir === '') {
+                continue;
+            }
+
+            $key = $this->normalizeForCompare($dir);
+
+            if (array_key_exists($key, $this->directorySnapshot)) {
+                continue;
+            }
+
+            if (! is_dir($dir)) {
+                $this->directorySnapshot[$key] = null;
+
+                continue;
+            }
+
+            try {
+                $this->directorySnapshot[$key] = SafeFilesystem::files($dir);
+            } catch (\Throwable) {
+                $this->directorySnapshot[$key] = null;
+            }
+        }
+    }
+
+    /**
+     * 本次发现周期需要扫描的全部目录（绝对路径）
+     *
+     * @return array<int, string>
+     */
+    protected function snapshotTargets(): array
+    {
+        $dirs = [
+            $this->module->getProvidersPath(),
+            $this->module->getConfigPath(),
+            $this->module->getRoutesPath(),
+            $this->module->getCommandsPath(),
+            $this->module->getViewsPath(),
+            $this->module->getMigrationsPath(),
+            $this->module->getLangPath(),
+        ];
+
+        // 其余组件目录没有专用 getter，按约定目录名补齐
+        foreach (['Http/Middleware', 'Http/Filters', 'Events', 'Listeners', 'Observers', 'Policies', 'Repositories'] as $relative) {
+            $dirs[] = $this->module->getPath($relative);
+        }
+
+        return $dirs;
+    }
+
+    /**
+     * 从快照读取目录文件列表
+     *
+     * 快照尚未建立时（例如某个扫描器被单独调用、或 discoverAll 走了缓存命中分支）
+     * **必须回退到真实读取**，绝不能返回空数组 —— 那会让组件被静默丢弃。
+     *
+     * @return array<int, \Symfony\Component\Finder\SplFileInfo>
+     */
+    protected function snapshotFiles(string $dir): array
+    {
+        if (! is_string($dir) || $dir === '') {
+            return [];
+        }
+
+        $key = $this->normalizeForCompare($dir);
+
+        if (array_key_exists($key, $this->directorySnapshot)) {
+            return $this->directorySnapshot[$key] ?? [];
+        }
+
+        // 未建立快照：实时读取并补写快照（下次即可零 IO 命中）
+        if (! is_dir($dir)) {
+            return [];
+        }
+
+        try {
+            $files = $this->snapshotFiles($dir);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $this->directorySnapshot[$key] = $files;
+
+        return $files;
+    }
+
+    /**
+     * 归一化路径用于快照 key（与 PathGuard 同口径：统一分隔符、去尾斜杠）
+     */
+    private function normalizeForCompare(string $path): string
+    {
+        $path = str_replace('\\', '/', $path);
+        $path = preg_replace('#/+#', '/', $path) ?? $path;
+
+        if (strlen($path) > 1) {
+            $path = rtrim($path, '/');
+        }
+
+        return $path;
     }
 
     /**
@@ -293,7 +449,7 @@ class ModuleAutoDiscovery
         }
 
         try {
-            $files = File::files($providersPath);
+            $files = $this->snapshotFiles($providersPath);
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -367,7 +523,7 @@ class ModuleAutoDiscovery
         $moduleLower = $this->module->getLowerName();
 
         try {
-            $files = File::files($configPath);
+            $files = $this->snapshotFiles($configPath);
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -420,6 +576,20 @@ class ModuleAutoDiscovery
                     ? array_merge($existing, $configValue)
                     : $configValue;
 
+                // 合并到 config('app') 时，必须保护框架运行时注入的键。
+                // 详见 FRAMEWORK_RUNTIME_APP_KEYS 的说明：
+                // 这里的值一旦丢失，config:cache 会写出残缺配置，
+                // 下次启动所有 Illuminate 核心 provider 都不再注册，
+                // 最终表现为 `php artisan optimize` 报
+                //     Target class [files] does not exist.
+                if ($configKey === 'app' && is_array($existing)) {
+                    foreach (self::FRAMEWORK_RUNTIME_APP_KEYS as $protected) {
+                        if (array_key_exists($protected, $existing)) {
+                            $merged[$protected] = $existing[$protected];
+                        }
+                    }
+                }
+
                 config([$configKey => $merged]);
             } catch (\Throwable $e) {
                 $this->log("Config [{$configKey}] merge failed: ".$e->getMessage());
@@ -448,7 +618,7 @@ class ModuleAutoDiscovery
             }
 
             try {
-                $files = File::files($middlewarePath);
+                $files = $this->snapshotFiles($middlewarePath);
 
                 foreach ($files as $file) {
                     if ($file->getExtension() !== 'php') {
@@ -574,8 +744,20 @@ class ModuleAutoDiscovery
         // 同时把「属性路由」这一事实记录清楚，不再伪装成已支持。
         $attributesPath = $routesPath.DIRECTORY_SEPARATOR.'Attributes';
         if (is_dir($attributesPath)) {
-            /** @var Router $router */
-            $router = app('router');
+            // app('router') 必须在 try 内解析：
+            // Laravel 13 反转别名方向后，'router' 与 'files' 一样
+            // 依赖 RoutingServiceProvider 真正注册 singleton，否则
+            // make('router') 会抛 `Target class [router] does not exist.`。
+            // 放在 try 外会让整个 boot() 中断（php artisan optimize 直接失败）。
+            try {
+                /** @var Router $router */
+                $router = app('router');
+            } catch (\Throwable $e) {
+                $this->log("Router unavailable, skip attribute routes: {$e->getMessage()}");
+
+                return;
+            }
+
             $prefix = Str::snake($this->module->getName());
 
             try {
@@ -891,7 +1073,7 @@ class ModuleAutoDiscovery
         }
 
         try {
-            $files = File::files($observersPath);
+            $files = $this->snapshotFiles($observersPath);
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -951,7 +1133,7 @@ class ModuleAutoDiscovery
         }
 
         try {
-            $files = File::files($policiesPath);
+            $files = $this->snapshotFiles($policiesPath);
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -1011,7 +1193,7 @@ class ModuleAutoDiscovery
         }
 
         try {
-            $files = File::files($reposPath);
+            $files = $this->snapshotFiles($reposPath);
 
             foreach ($files as $file) {
                 if ($file->getExtension() !== 'php') {
@@ -1322,7 +1504,7 @@ class ModuleAutoDiscovery
     /**
      * 通用 PHP 文件扫描器
      * 统一处理「遍历模块子目录中的 .php 文件」这一高度重复的模式：
-     * 目录存在性检查、File::files 遍历、.php 扩展名过滤、异常捕获与日志
+     * 目录存在性检查、SafeFilesystem::files 遍历、.php 扩展名过滤、异常捕获与日志
      * 均在此完成，调用方只需通过 $callback 关注单个文件的实际业务逻辑。
      *
      * @param  string  $path  待扫描的目录绝对路径
@@ -1331,12 +1513,14 @@ class ModuleAutoDiscovery
      */
     protected function scanPhpFiles(string $path, callable $callback, string $label = 'scan'): void
     {
-        if (! is_dir($path)) {
+        // 目录存在性直接由快照判定，省掉一次 stat；
+        // 快照未建立时 snapshotFiles() 会回退真实读取，这里额外保证不因目录不存在而误扫。
+        if ($this->directorySnapshot === [] && ! is_dir($path)) {
             return;
         }
 
         try {
-            foreach (File::files($path) as $file) {
+            foreach ($this->snapshotFiles($path) as $file) {
                 if ($file->getExtension() !== 'php') {
                     continue;
                 }

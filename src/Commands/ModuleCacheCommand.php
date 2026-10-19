@@ -49,15 +49,36 @@ class ModuleCacheCommand extends Command
             // 使后续请求跳过目录扫描与自动加载探测（仅当缓存启用时生效）。
             if (config('modules.cache.enabled', false)) {
                 $warmed = 0;
+                $failed = [];
+
                 foreach (Module::allEnabled() as $module) {
                     try {
                         ModuleAutoDiscovery::warm($module);
                         $warmed++;
-                    } catch (\Throwable) {
-                        // 单个模块预热失败不影响整体
+                    } catch (\Throwable $e) {
+                        // 单个模块预热失败不影响其余模块，但必须**留痕**。
+                        // 原实现空 catch 吞掉异常，最终仍打印 "✓ 已预热 N 个模块" 并返回 SUCCESS，
+                        // 而缺失的模块清单会在每次请求时退回全量目录扫描 ——
+                        // 命令"看起来成功了"，性能问题却原封不动，属于典型的假成功。
+                        $failed[] = $module->getName().' ('.$e->getMessage().')';
                     }
                 }
+
                 $this->info("✓ 自动发现清单已预热，覆盖 {$warmed} 个已启用模块。");
+
+                if ($failed !== []) {
+                    $this->warn(sprintf('⚠ %d 个模块预热失败（这些模块将退回每次请求全量扫描）：', count($failed)));
+                    foreach (array_slice($failed, 0, 10) as $item) {
+                        $this->warn('  - '.$item);
+                    }
+                    if (count($failed) > 10) {
+                        $this->warn('  ... 其余 '.(count($failed) - 10).' 项省略');
+                    }
+
+                    // 预热完全失败时返回 FAILURE：此时预热没带来任何收益，
+                    // 继续报 SUCCESS 会掩盖真实的失败。
+                    return $warmed === 0 ? Command::FAILURE : Command::SUCCESS;
+                }
             } else {
                 $this->warn('提示：当前 modules.cache.enabled 为 false，缓存不会被持久化（仅本次进程生效）。');
                 $this->warn('      如需持久化，请在 .env 中设置 MODULES_CACHE_ENABLED=true。');

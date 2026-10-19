@@ -26,15 +26,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+（全文索引/tsvector 配置非必须，但强烈建议以获最佳性能）
- *
- * @scenario 全文检索宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class FullTextMacro extends BaseMacro
 {
     /**
      *  注册所有全文检索宏。
-     *
-     * @scenario 注册所有全文检索宏。
      */
     public static function register(): void
     {
@@ -48,8 +44,6 @@ class FullTextMacro extends BaseMacro
      * 校验并 wrap 全文检索列集合。
      *
      * @return string[]
-     *
-     * @scenario 校验并 wrap 全文检索列集合。
      */
     public static function wrapColumns(Builder|\Illuminate\Database\Query\Builder $builder, array|string $columns): array
     {
@@ -61,8 +55,6 @@ class FullTextMacro extends BaseMacro
 
     /**
      * 注册全文筛选与布尔检索宏。
-     *
-     * @scenario 注册全文筛选与布尔检索宏。
      */
     public static function registerWhereFullText(): void
     {
@@ -104,15 +96,13 @@ class FullTextMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = FullTextMacro::wrapColumns($this, $columns);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
             [$sql, $bindings] = BaseMacro::fullTextMatchFragment($this, $wrapped, $keyword, $mode);
 
             return $this->{$method}($sql, $bindings);
-        });
+        }, 'whereFullTextMatch');
 
         /**
          * 布尔模式全文检索（显式传入布尔查询语法）。
@@ -135,8 +125,6 @@ class FullTextMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = FullTextMacro::wrapColumns($this, $columns);
             $method = $boolean === 'or' ? 'orWhereRaw' : 'whereRaw';
@@ -148,8 +136,6 @@ class FullTextMacro extends BaseMacro
 
     /**
      * 注册全文相关度排序宏。
-     *
-     * @scenario 注册全文相关度排序宏。
      */
     public static function registerFullTextOrder(): void
     {
@@ -180,8 +166,6 @@ class FullTextMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = FullTextMacro::wrapColumns($this, $columns);
             $direction = BaseMacro::assertDirection($direction);
@@ -193,8 +177,6 @@ class FullTextMacro extends BaseMacro
 
     /**
      * 注册全文相关度打分宏。
-     *
-     * @scenario 注册全文相关度打分宏。
      */
     public static function registerFullTextScore(): void
     {
@@ -224,8 +206,6 @@ class FullTextMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = FullTextMacro::wrapColumns($this, $columns);
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
@@ -261,8 +241,6 @@ class FullTextMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = FullTextMacro::wrapColumns($this, $columns);
             $direction = BaseMacro::assertDirection('desc');
@@ -274,8 +252,6 @@ class FullTextMacro extends BaseMacro
 
     /**
      * 注册两阶段检索宏（全文 + LOCATE 兜底）。
-     *
-     * @scenario 注册两阶段检索宏（全文 + LOCATE 兜底）。
      */
     public static function registerTwoStage(): void
     {
@@ -302,8 +278,6 @@ class FullTextMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = FullTextMacro::wrapColumns($this, $columns);
             $method = $boolean === 'or' ? 'orWhere' : 'where';

@@ -23,15 +23,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 相关度搜索宏（无需全文索引的两阶段检索，MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class SearchRelevanceMacro extends BaseMacro
 {
     /**
      *  注册所有相关度搜索宏。
-     *
-     * @scenario 注册所有相关度搜索宏。
      */
     public static function register(): void
     {
@@ -42,8 +38,6 @@ class SearchRelevanceMacro extends BaseMacro
      * 校验并 wrap 列集合并返回每列的 likeRelevance 表达式。
      *
      * @return array{0: string[], 1: array} [表达式数组, 合并后的绑定]
-     *
-     * @scenario 校验并 wrap 列集合并返回每列的 likeRelevance 表达式。
      */
     public static function relevanceExpressions(Builder|\Illuminate\Database\Query\Builder $builder, array|string $columns, string $keyword): array
     {
@@ -61,8 +55,6 @@ class SearchRelevanceMacro extends BaseMacro
 
     /**
      * 注册相关度搜索宏。
-     *
-     * @scenario 注册相关度搜索宏。
      */
     public static function registerRelevance(): void
     {
@@ -87,8 +79,6 @@ class SearchRelevanceMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             [$sql, $bindings] = BaseMacro::likeRelevanceExpr($this, $wrapped, $keyword);
@@ -120,8 +110,6 @@ class SearchRelevanceMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $direction = BaseMacro::assertDirection($direction);
             [$exprs, $bindings] = SearchRelevanceMacro::relevanceExpressions($this, $columns, $keyword);
@@ -152,8 +140,6 @@ class SearchRelevanceMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
@@ -183,8 +169,6 @@ class SearchRelevanceMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
             $direction = BaseMacro::assertDirection($direction);

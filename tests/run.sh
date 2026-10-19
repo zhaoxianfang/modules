@@ -51,13 +51,23 @@ echo "  PASS  宿主可用"
 run_php_test() {
     local name="$1"
     local script="$2"
-    local out summary pass fail_count
+    local out summary pass fail_count code
 
     echo ""
     echo "[3/4] 运行时验证 - ${name}"
 
     out=$(php "${ROOT}/tests/${script}" 2>&1)
+    code=$?
     summary=$(echo "$out" | grep -oE '结果: [0-9]+ PASS / [0-9]+ FAIL' | tail -1)
+
+    # 退出码 2 = 环境不可用（宿主缺失 / 数据库不可达 / 驱动不匹配），
+    # 按 SKIP 处理而不是 FAIL —— 没有可用数据库时要求"全部通过"是不合理的。
+    if [ "${code}" -eq 2 ]; then
+        echo "  SKIP  ${name}（环境不可用）"
+        echo "$out" | grep -E '^SKIP|^FATAL' | head -3
+
+        return
+    fi
 
     if [ -z "$summary" ]; then
         echo "  FAIL  ${script}（未输出结果行，脚本可能异常终止）"
@@ -81,6 +91,8 @@ run_php_test() {
     fi
 }
 
+run_php_test "Laravel 13 files 绑定专项" "verify_files_binding.php"
+run_php_test "路径安全闸门（软链逃逸防护）" "verify_path_guard.php"
 run_php_test "字符串函数宏" "verify_string_macros.php"
 run_php_test "递归 CTE / JSON 宏" "verify_recursive_macros.php"
 run_php_test "whereHas 关联查询宏" "verify_wherehas_macros.php"
@@ -89,6 +101,9 @@ run_php_test "启动链路与核心加载" "verify_boot_chain.php"
 run_php_test "真实宿主集成验证" "verify_integration.php"
 run_php_test "模块缓存存储" "verify_cache_store.php"
 run_php_test "数据库日志模块" "verify_logging.php"
+run_php_test "查询宏真实 SQL 端到端（MySQL）" "verify_sql_endtoend.php"
+run_php_test "向量宏（跨库后端契约）" "verify_vector_macros.php"
+run_php_test "宏工程卫生（遮蔽/占位注释）" "verify_macro_hygiene.php"
 
 # ---------- 4. 汇总 ----------
 echo ""

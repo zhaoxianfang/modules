@@ -22,15 +22,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 数值 / 比较运算宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class MathMacro extends BaseMacro
 {
     /**
      *  注册所有数值运算宏。
-     *
-     * @scenario 注册所有数值运算宏。
      */
     public static function register(): void
     {
@@ -43,8 +39,6 @@ class MathMacro extends BaseMacro
 
     /**
      * 注册 NULL 安全比较宏。
-     *
-     * @scenario 注册 NULL 安全比较宏。
      */
     public static function registerNullSafe(): void
     {
@@ -72,8 +66,6 @@ class MathMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             [$sql, $bindings] = BaseMacro::nullSafeEqualsExpr($this, $wrapped, $value);
@@ -85,8 +77,6 @@ class MathMacro extends BaseMacro
 
     /**
      * 注册区间夹紧宏。
-     *
-     * @scenario 注册区间夹紧宏。
      */
     public static function registerClamp(): void
     {
@@ -114,8 +104,6 @@ class MathMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($min > $max) {
                 throw new \InvalidArgumentException('selectClamp 的下限必须大于等于上限。');
@@ -130,8 +118,6 @@ class MathMacro extends BaseMacro
 
     /**
      * 注册多级兜底宏。
-     *
-     * @scenario 注册多级兜底宏。
      */
     public static function registerCoalesce(): void
     {
@@ -156,8 +142,6 @@ class MathMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $builder = $this;
             $wrapped = array_map(
@@ -175,8 +159,6 @@ class MathMacro extends BaseMacro
 
     /**
      * 注册加权排序宏。
-     *
-     * @scenario 注册加权排序宏。
      */
     public static function registerWeighted(): void
     {
@@ -203,8 +185,6 @@ class MathMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrappedItems = [];
             foreach ($items as $item) {
@@ -222,8 +202,6 @@ class MathMacro extends BaseMacro
 
     /**
      * 注册精度控制宏。
-     *
-     * @scenario 注册精度控制宏。
      */
     public static function registerRound(): void
     {
@@ -250,8 +228,6 @@ class MathMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log as LogFacade;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Throwable;
 use zxf\Modules\Logging\Config\LoggingConfig;
+use zxf\Modules\Logging\Contracts\RedactorContract;
 use zxf\Modules\Logging\LogContext;
 use zxf\Modules\Logging\Support\BotDetector;
 use zxf\Modules\Logging\Support\BotSignature;
@@ -44,9 +45,13 @@ class LogContextMiddleware
 {
     private LoggingConfig $config;
 
-    private Redactor $redactor;
+    private RedactorContract $redactor;
 
-    public function __construct(?Redactor $redactor = null)
+    // 注意：类型必须是【契约】而不是 Redactor 具体类。
+    // 若写成 `?Redactor`，容器会优先 make(Redactor::class) 解析成功（final 类 + 全默认参数），
+    // 使下面的 ?? 分支永不执行，自定义 sensitive_keys / max_field_length 被静默丢弃。
+    // 用契约则与 LoggingServiceProvider 注册的单例天然对齐，同时保留手工 new 的兜底。
+    public function __construct(?RedactorContract $redactor = null)
     {
         $this->config = LoggingConfig::fromConfig();
         $this->redactor = $redactor ?? new Redactor($this->config->sensitiveKeys, $this->config->maxFieldLength);
@@ -227,13 +232,18 @@ class LogContextMiddleware
         // 轻量片段：每条日志都注入（纯标量，数组合并成本极低）
         $baseExtra = [
             'request_method' => $context['method'],
-            'request_url' => $context['url'],
+            // fullUrl() 含 query string。?token= / ?password= / ?api_key= 这类凭证若在这里
+            // 存明文，落库侧的脱敏只是"最终补偿"，而**绕过中间件写出的其它日志**
+            // （stack 通道的 line/json formatter 会直接拿到 baseExtra 的未脱敏值）
+            // 就会把凭证写进日志文件。旁路泄露比主路更隐蔽，因此源头就脱敏。
+            'request_url' => $this->redactor->maskText((string) $context['url']),
             'request_path' => $context['path'],
             'request_route' => $context['route'],
             'request_controller' => $context['controller'],
             'request_ip' => $context['ip'],
             'request_user_agent' => $context['user_agent'],
-            'request_referer' => $context['referer'],
+            // referer 同样可能携带 ?token=
+            'request_referer' => $context['referer'] === null ? null : $this->redactor->maskText((string) $context['referer']),
             'request_session_id' => $sessionId,
             'module_name' => $moduleName,
             'is_crawler' => $bot->isCrawler,

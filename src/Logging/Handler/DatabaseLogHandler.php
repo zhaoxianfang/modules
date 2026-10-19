@@ -21,6 +21,7 @@ use zxf\Modules\Logging\Models\Log as LogModel;
 use zxf\Modules\Logging\Support\BotSignature;
 use zxf\Modules\Logging\Support\Redactor;
 use zxf\Modules\Logging\Writer\DatabaseLogWriter;
+use zxf\Modules\Logging\Writer\LogRecordFactory;
 
 /**
  * 数据库日志处理器（Monolog 3 兼容，Laravel 11 / 12 / 13 通用）。
@@ -71,6 +72,24 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     /** 进程内兜底限流状态（仅在 logging.db.burst_throttle 开启时使用） */
     private static array $burstSeen = [];
 
+    /**
+     * $burstSeen 的容量上限。
+     *
+     * 原实现只写不清、只按时间判过期但不删除：常驻进程（Octane / horizon / queue worker）下，
+     * 若 burst_throttle 开启且错误签名持续变化（含动态 ID 的消息），该数组单调增长直至 OOM。
+     * 超过上限时整体丢弃（限流只影响"减少重复日志"，宁可少限流一轮也不能吃光内存）。
+     */
+    private const BURST_SEEN_MAX = 1000;
+
+    /** 表探测失败（数据库不可达）的独立短 TTL 负缓存时长（秒） */
+    private const PROBE_FAILURE_TTL = 5.0;
+
+    /** 是否处于探测失败负缓存窗口内 */
+    private static bool $probeFailed = false;
+
+    /** 进入负缓存窗口的时间戳 */
+    private static float $probeFailedAt = 0.0;
+
     /** 回退写文件时的重入守护：防止 stack 通道又含 database 时无限递归（直至栈溢出） */
     private static bool $fallbackLock = false;
 
@@ -105,14 +124,32 @@ class DatabaseLogHandler extends AbstractProcessingHandler
             return $cached;
         }
 
-        try {
-            $table = $this->table ?? (new LogModel)->getTable();
-            $exists = Schema::hasTable($table);
-        } catch (Throwable) {
-            // 探测失败（数据库瞬时不可达）时**不写入缓存**：
-            // 一旦把 false 缓存住，数据库恢复后日志仍会长期静默。
+        // 数据库不可达时的【独立短 TTL 负缓存】。
+        //
+        // 原实现在探测失败时「不写缓存」以避免长期静默，但代价是：一次请求若产生 30 条日志，
+        // 就会发起 30 次真实连接尝试 —— connect_timeout=5s 时最坏累计 150s 静默挂死。
+        // 这既不是"不抛异常"，也让日志子系统成为可用性风险。
+        // 用独立的短 TTL（5s）负缓存兼顾两头：避免高频重试，又不会像长 TTL 那样长期静默。
+        if (self::$probeFailed && (microtime(true) - self::$probeFailedAt) < self::PROBE_FAILURE_TTL) {
             return false;
         }
+
+        try {
+            $table = $this->table ?? (new LogModel)->getTable();
+            // 复用 LogRecordFactory 的表存在性缓存（与列清单同一条链路、同一 TTL），
+            // 消除原先"handler 与 factory 各发一次 Schema::hasTable"的重复探测。
+            $exists = LogRecordFactory::tableExists($table);
+        } catch (Throwable) {
+            // 探测失败（数据库瞬时不可达）：记入短 TTL 负缓存后安全跳过
+            self::$probeFailed = true;
+            self::$probeFailedAt = microtime(true);
+
+            return false;
+        }
+
+        // 探测成功：立即解除负缓存，下一条日志即可正常落库
+        self::$probeFailed = false;
+        self::$probeFailedAt = 0.0;
 
         LogContext::setLogsTableExists($exists, $ttl);
 
@@ -143,7 +180,11 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         // CLI 模式默认不写库（无请求上下文）。支持两种显式开启方式：
         //   1) 单条日志携带 context['console_to_log'] = true
         //   2) 全局配置 logging.db.log_cli = true
-        if (PHP_SAPI === 'cli'
+        //
+        // 必须用 LogContext::isCliSapi()（含 phpdbg）而不是裸 PHP_SAPI：
+        // 上面 headers_sent() 守卫用的就是 isCliSapi()，两处判定口径必须一致，
+        // 否则 phpdbg 下会"写库但跳过 headers_sent 守卫"，行为与 cli 自相矛盾。
+        if (LogContext::isCliSapi()
             && empty($record->context['console_to_log'])
             && ! $config->logCli
         ) {
@@ -185,6 +226,27 @@ class DatabaseLogHandler extends AbstractProcessingHandler
     }
 
     /**
+     * 按数据库列宽安全截断，超宽值一律裁剪而非抛错。
+     *
+     * 这是**整条日志能否落库**的关键：MySQL 严格模式（STRICT_TRANS_TABLES）下，
+     * 任何超长值都会抛 "Data too long"，进而触发 fallbackToStack —— 也就是说
+     * 一个超长的路由名 / 控制器名 / 异常文件路径，会让**整行日志永久进不了库**。
+     *
+     * mb_strcut 而非 mb_substr：前者保证不会把一个多字节字符从中间劈开（劈开会产生
+     * 非法 UTF-8，写入 MySQL 同样报错），且按字节裁剪，与 VARCHAR(N) 的字节语义一致。
+     */
+    private static function clip(mixed $value, int $width): ?string
+    {
+        if ($value === null || $value === '' || $value === false) {
+            return null;
+        }
+
+        $str = mb_strcut((string) $value, 0, $width, 'UTF-8');
+
+        return $str === '' ? null : $str;
+    }
+
+    /**
      * 将 LogRecord 归一化为与 logs 表字段对应的属性数组。
      *
      * @return array<string, mixed>
@@ -205,32 +267,44 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         // 把它们从待脱敏集合中摘出，只 sanitizeContext 业务自己产生的 extra。
         $preRedacted = [];
         $rest = [];
+        $preRedactedLookup = LogContext::preRedactedKeyLookup();
         foreach ($extra as $key => $value) {
-            if (in_array($key, LogContext::PRE_REDACTED_KEYS, true)) {
+            // isset($lookup[$key]) 取代 in_array(..., PRE_REDACTED_KEYS, true)：
+            // 后者对每条日志的每个 extra 键做一次 O(27) 线性字符串扫描。
+            if (isset($preRedactedLookup[$key])) {
                 $preRedacted[$key] = $value;
             } else {
                 $rest[$key] = $value;
             }
         }
 
+        // JSON 响应下 response_content 与 response_body 指向【同一个】≤20000 字符的字符串，
+        // 原实现对两者各跑一遍 maskText（5 条正则）→ 白白翻倍 CPU。
+        // 这里只算一次，两个列复用同一结果。
+        $rawBody = $extra['response_body'] ?? '';
+        $maskedBody = $rawBody === '' ? '' : $redactor->maskText((string) $rawBody);
+
         $attributes = [
-            'module_name' => $extra['module_name'] ?? null,
+            'module_name' => self::clip($extra['module_name'] ?? null, 50),
             'level' => $this->normalizeLevel($record),
-            'channel' => $record->channel,
-            'message' => mb_substr($redactor->maskText($record->message), 0, 65535),
+            'channel' => self::clip($record->channel, 50),
+            // 先截断再脱敏：落库的只有前 65535 字节，对这一段脱敏与"先脱敏再截断"等价，
+            // 但避免对 10MB 的 message 跑完正则再丢掉 99%。
+            'message' => $redactor->maskText(mb_strcut((string) $record->message, 0, 65535, 'UTF-8')),
             'context' => $redactor->sanitizeContext($context),
             'extra' => $redactor->sanitizeContext($rest),
             'is_crawler' => (bool) ($extra['is_crawler'] ?? false),
 
-            'request_method' => $extra['request_method'] ?? null,
+            'request_method' => self::clip($extra['request_method'] ?? null, 10),
             // fullUrl() 含 query string，?token= / ?password= / ?api_key= 这类凭证
             // 会明文入库并被后台检索、导出，因此与 request_headers 同口径脱敏。
             'request_url' => $redactor->maskText((string) ($extra['request_url'] ?? '')) ?: null,
-            'request_path' => $extra['request_path'] ?? null,
-            'request_route' => $extra['request_route'] ?? null,
-            'request_controller' => $extra['request_controller'] ?? null,
-            'request_ip' => $extra['request_ip'] ?? null,
-            'request_user_agent' => $extra['request_user_agent'] ?? null,
+            // 以下四列均为定宽 VARCHAR，原实现直接写入未截断值。
+            'request_path' => self::clip($extra['request_path'] ?? null, 512),
+            'request_route' => self::clip($extra['request_route'] ?? null, 255),
+            'request_controller' => self::clip($extra['request_controller'] ?? null, 255),
+            'request_ip' => self::clip($extra['request_ip'] ?? null, 45),
+            'request_user_agent' => self::clip($extra['request_user_agent'] ?? null, 2000),
             'request_referer' => $redactor->maskText((string) ($extra['request_referer'] ?? '')) ?: null,
             // session id 本身就是 Cookie laravel_session 的值，
             // 不脱敏等于抵消了 request_headers.cookie 的脱敏效果。
@@ -244,28 +318,30 @@ class DatabaseLogHandler extends AbstractProcessingHandler
                 : null),
 
             'user_id' => $extra['user_id'] ?? null,
-            'user_type' => $extra['user_type'] ?? null,
+            'user_type' => self::clip($extra['user_type'] ?? null, 50),
 
             'response_code' => $extra['response_code'] ?? null,
-            'response_status' => $extra['response_status'] ?? null,
+            'response_status' => self::clip($extra['response_status'] ?? null, 50),
             // response_content 单独成列（视图名 / JSON 数据）。与 response_body 保持一致，
             // 经过脱敏处理：视图名不含敏感信息仅做格式保留；JSON 数据中的敏感键（password / token …）
             // 会被 Redactor 统一脱敏，避免泄露到 logs 表。
             'response_content' => isset($extra['response_content'])
-                ? $redactor->maskText((string) $extra['response_content'])
+                ? ($redactor->maskText((string) $extra['response_content']) ?: null)
                 : null,
             'response_duration_ms' => $extra['response_duration_ms'] ?? null,
             'response_memory_mb' => $extra['response_memory_mb'] ?? null,
             'response_headers' => ($this->captureResponseBody
                 ? $redactor->maskHeaders((array) ($extra['response_headers'] ?? []))
                 : null),
+            // 补 ?: null：空响应体落库为 '' 而非 null，会让
+            // `WHERE response_body IS NOT NULL` 之类的查询失真（与 request_url 口径对齐）。
             'response_body' => ($this->captureResponseBody
-                ? $redactor->maskText((string) ($extra['response_body'] ?? ''))
+                ? ($maskedBody ?: null)
                 : null),
 
-            'exception_class' => $trace['class'] ?? null,
+            'exception_class' => self::clip($trace['class'] ?? null, 255),
             'exception_message' => $trace['message'] ?? null,
-            'file' => $trace['file'] ?? null,
+            'file' => self::clip($trace['file'] ?? null, 512),
             'trace' => $trace['trace'] ?? null,
         ];
 
@@ -300,11 +376,22 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         $attributes['bot_client'] = $bot->client;
         $attributes['bot_signals'] = $bot->signals === [] ? null : implode(' | ', $bot->signals);
 
-        // 同时写入 context['bot']，确保在尚未升级表结构（无 bot_* 列）的旧安装上
-        // 识别结果依然完整可查，不会因列缺失而丢失。
-        $context = is_array($attributes['context'] ?? null) ? $attributes['context'] : [];
-        $context['bot'] = $bot->toArray();
-        $attributes['context'] = $context;
+        // 仅在【旧表结构】（没有 bot_type 列，写入器会把这些列过滤掉）时才把识别结果
+        // 冗余进 context['bot']，以免旧安装丢失数据。
+        //
+        // 绝不能无条件注入：Log::scopeBusinessLogs() 是 `context IS NOT NULL AND context != '[]'`，
+        // 无条件注入会让每一条日志行的 context 至少是 {"bot":{...}}，
+        // 该 scope 恒等于全表 —— 一个对外公开的查询 API 静默失效。
+        // 列清单由 LogRecordFactory 缓存，此处只是一次 isset，无额外查询开销。
+        $columns = $this->table === null ? null : LogRecordFactory::columns($this->table);
+        $table = $this->table ?? (new LogModel)->getTable();
+        $columns ??= LogRecordFactory::columns($table);
+
+        if ($columns === null || ! in_array('bot_type', $columns, true)) {
+            $context = is_array($attributes['context'] ?? null) ? $attributes['context'] : [];
+            $context['bot'] = $bot->toArray();
+            $attributes['context'] = $context;
+        }
 
         return $attributes;
     }
@@ -338,7 +425,9 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      */
     protected function dedupeKey(LogRecord $record): string
     {
-        $key = $record['level_name'].'|'.$record->message;
+        // 同上：等级维度必须来自 normalizeLevel()。若 level_name 退化，
+        // 签名会塌成 "|message"，等级维度消失 → 同请求内 info/error 同名消息互相吞掉。
+        $key = $this->normalizeLevel($record).'|'.$record->message;
         if ($this->hasException($record)) {
             $key .= '|'.$record->context['exception']::class;
         }
@@ -369,10 +458,12 @@ class DatabaseLogHandler extends AbstractProcessingHandler
         $e = $record->context['exception'];
 
         return [
-            'class' => $e::class,
-            'message' => mb_substr($e->getMessage(), 0, 65535),
-            'file' => $e->getFile().':'.$e->getLine(),
-            'trace' => mb_substr($e->getTraceAsString(), 0, 60000),
+            // class(255) / file(512) 是定宽列，同样必须截断，
+            // 否则一个超长路径会让整行日志触发 "Data too long" 而永久进不了库。
+            'class' => self::clip($e::class, 255),
+            'message' => mb_strcut($e->getMessage(), 0, 65535, 'UTF-8'),
+            'file' => self::clip($e->getFile().':'.$e->getLine(), 512),
+            'trace' => mb_strcut($e->getTraceAsString(), 0, 60000, 'UTF-8'),
         ];
     }
 
@@ -400,7 +491,10 @@ class DatabaseLogHandler extends AbstractProcessingHandler
      */
     protected function shouldThrottleBurst(LogRecord $record, int $seconds = 60): bool
     {
-        $name = strtolower((string) ($record['level_name'] ?? ''));
+        // 必须用 normalizeLevel()（走 Monolog\Level::toPsrLogLevel()）而不是 $record['level_name']。
+        // level_name 的形态在不同 Monolog 3.x 小版本间有差异，一旦退化取不到，
+        // strtolower('') 恒不匹配 → 【限流对所有错误级别静默失效】，而用户看到配置已开启。
+        $name = $this->normalizeLevel($record);
         // 仅对错误 / 警告级别限流；info / debug 等常规日志保持全量落库
         if (! in_array($name, ['error', 'critical', 'alert', 'emergency', 'warning'], true)) {
             return false;
@@ -440,6 +534,13 @@ class DatabaseLogHandler extends AbstractProcessingHandler
             && ($now - self::$burstSeen[$signature]) < $seconds) {
             return true;
         }
+
+        // 常驻进程（Octane / horizon / queue worker）下的无界增长防护：
+        // 签名含动态 ID 时该数组单调增长，一旦超过上限整体丢弃（宁可少限流一轮）。
+        if (count(self::$burstSeen) >= self::BURST_SEEN_MAX) {
+            self::$burstSeen = [];
+        }
+
         self::$burstSeen[$signature] = $now;
 
         return false;
@@ -491,8 +592,27 @@ class DatabaseLogHandler extends AbstractProcessingHandler
             return $this->config;
         }
 
+        $previous = $this->config;
         $this->config = LoggingConfig::fromConfig();
         $this->configLoadedAt = microtime(true);
+
+        // 常驻进程（Octane / queue worker）下的配置热更新补偿。
+        //
+        // $this->config 带 TTL 会刷新，但 Redactor 是【单例】—— 它的敏感键表与
+        // maxFieldLength 在注册时就固化了。Redactor 提供了 recompile() 却没有任何调用方，
+        // 结果是：改了 logging.db.sensitive_keys / max_field_length 之后，
+        // 配置对象读到了新值、脱敏器却仍是旧词表 → 静默不生效。
+        // 这里在 TTL 到期时比对一次，发现词表变化就重建实例（recompile 仍不足以改变键表）。
+        if ($this->redactor !== null
+            && ($previous === null
+                || $previous->sensitiveKeys !== $this->config->sensitiveKeys
+                || $previous->maxFieldLength !== $this->config->maxFieldLength)
+        ) {
+            $this->redactor = new Redactor(
+                $this->config->sensitiveKeys,
+                $this->config->maxFieldLength
+            );
+        }
 
         return $this->config;
     }

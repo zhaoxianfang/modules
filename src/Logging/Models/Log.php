@@ -336,25 +336,38 @@ class Log extends Model
      * 之所以不直接 groupBy(HOUR())：那是 MySQL 专有函数，
      * 迁到 PostgreSQL 或用 SQLite 做测试时会直接报错。
      *
-     * @param  string  $column  可信列名（仅接受本模型声明过的候选列）
-     * @param  string  $dateColumn  时间列（默认 created_at）
+     * 分组粒度：按【天】。原实现直接 groupBy($dateColumn)，而该列是 DATETIME，
+     * 于是 MySQL / SQLite 下的分组粒度实际是"秒" —— 返回行数与数据量同阶，
+     * 日志表稍有规模就会把统计结果撑成一次全表扫 + 内存打爆。
+     * DATE() 三个驱动都支持且语义一致（PG 的 DATE(timestamp) → date）。
+     *
+     * @param  string  $dateColumn  时间列（仅接受 created_at / updated_at）
      */
     public function scopeMetrics(Builder $query, string $dateColumn = 'created_at'): Builder
     {
         $dateColumn = in_array($dateColumn, ['created_at', 'updated_at'], true) ? $dateColumn : 'created_at';
 
+        // is_crawler 在 MySQL/SQLite 是 tinyint，在 PostgreSQL 是 boolean。
+        // 用 `= 1` 比较 PG 的 boolean 会直接报 operator does not exist: boolean = integer。
+        // （同文件 232-240 处已为 SQLite 做过方言分支，这里是同一问题的另一处。）
+        $isCrawler = $this->getConnection()->getDriverName() === 'pgsql'
+            ? 'is_crawler = true'
+            : 'is_crawler = 1';
+
+        $dayExpr = 'DATE('.$dateColumn.')';
+
         return $query
             ->select([
-                $dateColumn,
+                DB::raw($dayExpr.' AS stat_date'),
                 DB::raw('COUNT(*) AS total'),
                 DB::raw("SUM(CASE WHEN level IN ('error','critical','alert','emergency') THEN 1 ELSE 0 END) AS errors"),
                 DB::raw('AVG(response_duration_ms) AS avg_duration_ms'),
                 DB::raw('MAX(response_duration_ms) AS max_duration_ms'),
-                DB::raw('SUM(CASE WHEN is_crawler = 1 THEN 1 ELSE 0 END) AS crawler_hits'),
+                DB::raw('SUM(CASE WHEN '.$isCrawler.' THEN 1 ELSE 0 END) AS crawler_hits'),
                 DB::raw('SUM(CASE WHEN response_code >= 400 THEN 1 ELSE 0 END) AS failed_hits'),
             ])
-            ->groupBy($dateColumn)
-            ->orderByDesc($dateColumn);
+            ->groupBy(DB::raw($dayExpr))
+            ->orderByDesc('stat_date');
     }
 
     /** 按认证用户查询 */

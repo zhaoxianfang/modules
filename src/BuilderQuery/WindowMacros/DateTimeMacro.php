@@ -24,15 +24,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 日期时间处理宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class DateTimeMacro extends BaseMacro
 {
     /**
      *  注册所有日期时间宏。
-     *
-     * @scenario 注册所有日期时间宏。
      */
     public static function register(): void
     {
@@ -43,8 +39,6 @@ class DateTimeMacro extends BaseMacro
 
     /**
      * 注册分桶宏（日/周/月/季/年 + N 分钟）。
-     *
-     * @scenario 注册分桶宏（日/周/月/季/年 + N 分钟）。
      */
     public static function registerBuckets(): void
     {
@@ -74,8 +68,6 @@ class DateTimeMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
@@ -108,8 +100,6 @@ class DateTimeMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $alias = BaseMacro::assertValidIdentifier($alias, 'alias');
@@ -121,8 +111,6 @@ class DateTimeMacro extends BaseMacro
 
     /**
      * 注册索引友好的日期范围筛选宏。
-     *
-     * @scenario 注册索引友好的日期范围筛选宏。
      */
     public static function registerDateRange(): void
     {
@@ -152,8 +140,6 @@ class DateTimeMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $wrapped = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($column, 'column'));
             $method = $boolean === 'or' ? 'orWhere' : 'where';
@@ -166,8 +152,6 @@ class DateTimeMacro extends BaseMacro
 
     /**
      * 注册时段重叠冲突检测宏。
-     *
-     * @scenario 注册时段重叠冲突检测宏。
      */
     public static function registerOverlap(): void
     {
@@ -201,8 +185,6 @@ class DateTimeMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $sc = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($startCol, 'column'));
             $ec = BaseMacro::wrapIdentifier($this, BaseMacro::assertValidIdentifier($endCol, 'column'));

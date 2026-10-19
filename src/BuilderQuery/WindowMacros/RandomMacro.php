@@ -20,8 +20,6 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 随机查询宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class RandomMacro extends BaseMacro
 {
@@ -50,8 +48,6 @@ class RandomMacro extends BaseMacro
          *
          * @example
          * Model::query()->replicateQuery($s, $d)->get();
-         *
-         * @scenario 完整复制查询条件
          */
         static::define('replicateQuery', function (QueryBuilder $source, QueryBuilder $dest) {
             // 复制基础属性
@@ -85,8 +81,6 @@ class RandomMacro extends BaseMacro
          *
          * @example
          * Model::query()->replicateWheres($s, $d)->get();
-         *
-         * @scenario 完整复制所有where条件
          */
         static::define('replicateWheres', function (QueryBuilder $source, QueryBuilder $dest) {
             RandomMacro::copyWheres($source, $dest);
@@ -103,8 +97,6 @@ class RandomMacro extends BaseMacro
      *
      * @param  Builder|QueryBuilder  $source  源查询（宏调用者实际为 Eloquent \Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Query\Builder）
      * @param  QueryBuilder  $dest  目标查询
-     *
-     * @scenario 复制源查询的全部 where 条件到目标查询
      */
     public static function copyWheres(Builder|QueryBuilder $source, QueryBuilder $dest): void
     {
@@ -163,8 +155,6 @@ class RandomMacro extends BaseMacro
      *
      * 数组做递归拷贝（PHP 数组本身为值语义，递归即可安全分离），对象仅在可克隆时 clone
      * （Closure 等不可克隆资源型对象原样保留引用，与 Laravel 构建器自身的浅拷贝语义一致）。
-     *
-     * @scenario 1. 性能差：序列化/反序列化大型查询状态（含 bindings/wheres）开销高；
      */
     private static function cloneValue(mixed $value): mixed
     {
@@ -203,8 +193,6 @@ class RandomMacro extends BaseMacro
         static::define('random', function (int $limit = 10, string $primaryKey = 'id') {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $model = BaseMacro::modelOf($this);
             $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
@@ -212,7 +200,7 @@ class RandomMacro extends BaseMacro
             // 本宏同时注册到 Eloquent\Builder 与 Query\Builder，
             // Query\Builder（DB::table()）路径下 modelOf() 返回 null。
             if ($model === null) {
-                return DB::table(BaseMacro::resolveTable($this))->inRandomOrder()->limit($limit);
+                return BaseMacro::connTable($this)->inRandomOrder()->limit($limit);
             }
 
             $table = $model->getTable();
@@ -220,7 +208,7 @@ class RandomMacro extends BaseMacro
 
             // 构建窗口函数子查询：使用 ROW_NUMBER() + 数据库随机函数实现高效随机
             $randomFn = BaseMacro::randomFunction($this);
-            $subQuery = DB::table($table)
+            $subQuery = BaseMacro::connTable($this, $table)
                 ->select(
                     $primaryKey,
                     DB::raw("ROW_NUMBER() OVER (ORDER BY {$randomFn}) AS rnd_rank")
@@ -266,8 +254,6 @@ class RandomMacro extends BaseMacro
         static::define('groupRandom', function (string $groupColumn, int $limit = 10, string $primaryKey = 'id') {
             /**
              * @var Builder|QueryBuilder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $model = BaseMacro::modelOf($this);
             $primaryKey = BaseMacro::assertValidIdentifier($primaryKey, 'primaryKey');
@@ -275,7 +261,7 @@ class RandomMacro extends BaseMacro
 
             // 同 random()：Query\Builder 路径没有模型，降级为分组随机排序。
             if ($model === null) {
-                return DB::table(BaseMacro::resolveTable($this))
+                return BaseMacro::connTable($this)
                     ->inRandomOrder()
                     ->limit($limit);
             }
@@ -285,7 +271,7 @@ class RandomMacro extends BaseMacro
 
             // 构建窗口函数子查询 - 按分组随机排序
             $randomFn = BaseMacro::randomFunction($this);
-            $subQuery = DB::table($table)
+            $subQuery = BaseMacro::connTable($this, $table)
                 ->select(
                     $primaryKey,
                     $groupColumn,

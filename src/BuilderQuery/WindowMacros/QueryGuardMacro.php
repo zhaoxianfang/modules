@@ -22,22 +22,16 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 查询性能守卫与诊断宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class QueryGuardMacro extends BaseMacro
 {
     /**
      *  默认安全 LIMIT（withLimitGuard 在未设 LIMIT 时补的下限）。
-     *
-     * @scenario 默认安全 LIMIT（withLimitGuard 在未设 LIMIT 时补的下限）。
      */
     public const DEFAULT_SAFE_LIMIT = 1000;
 
     /**
      *  注册所有查询守卫与诊断宏。
-     *
-     * @scenario 注册所有查询守卫与诊断宏。
      */
     public static function register(): void
     {
@@ -47,8 +41,6 @@ class QueryGuardMacro extends BaseMacro
 
     /**
      * 注册 LIMIT 守卫宏。
-     *
-     * @scenario 注册 LIMIT 守卫宏。
      */
     public static function registerLimitGuards(): void
     {
@@ -58,7 +50,6 @@ class QueryGuardMacro extends BaseMacro
          * （如运营后台、用户自定义筛选）兜底，防止误查全表导致内存/带宽打满。
          *
          * @param  int  $limit  安全上限（默认 1000）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 用户自定义筛选，无论如何最多返回 1000 行，避免全表拖垮
@@ -69,8 +60,6 @@ class QueryGuardMacro extends BaseMacro
         static::define('withLimitGuard', function (int $limit = QueryGuardMacro::DEFAULT_SAFE_LIMIT): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($limit < 1) {
                 throw new \InvalidArgumentException('withLimitGuard 的 limit 必须大于 0。');
@@ -89,7 +78,6 @@ class QueryGuardMacro extends BaseMacro
          * 与 withLimitGuard 的区别：本宏不自动补 LIMIT，而是强制调用方显式声明边界。
          *
          * @param  int|null  $maxAllowed  允许的最大 LIMIT（null 表示只要求存在 LIMIT，不限大小）
-         * @return Builder|\Illuminate\Database\Query\Builder
          *
          * @example
          * // 导出任务前置：必须显式 limit，且不得超过 50000 行
@@ -100,8 +88,6 @@ class QueryGuardMacro extends BaseMacro
         static::define('requireLimit', function (?int $maxAllowed = null): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             $query = BaseMacro::queryOf($this);
             if ($query->limit === null) {
@@ -122,8 +108,6 @@ class QueryGuardMacro extends BaseMacro
 
     /**
      * 注册 EXPLAIN 诊断宏。
-     *
-     * @scenario 注册 EXPLAIN 诊断宏。
      */
     public static function registerExplain(): void
     {
@@ -142,11 +126,9 @@ class QueryGuardMacro extends BaseMacro
          *
          * @scenario 慢查询根因定位：是否全表扫描、是否用错索引、是否出现 filesort。
          */
-        static::define('explain', function (?string $format = null): mixed {
+        static::define('explainPlan', function (?string $format = null): mixed {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return QueryGuardMacro::runExplain($this, false, false, $format);
@@ -169,8 +151,6 @@ class QueryGuardMacro extends BaseMacro
         static::define('explainAnalyze', function (bool $verbose = false): mixed {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
 
             return QueryGuardMacro::runExplain($this, true, $verbose, null);
@@ -183,8 +163,6 @@ class QueryGuardMacro extends BaseMacro
      * @param  bool  $analyze  是否 ANALYZE（真实执行）
      * @param  bool  $verbose  PostgreSQL VERBOSE
      * @param  string|null  $format  计划格式
-     *
-     * @scenario 构建并执行 EXPLAIN 语句。
      */
     public static function runExplain(Builder|\Illuminate\Database\Query\Builder $builder, bool $analyze, bool $verbose, ?string $format): mixed
     {

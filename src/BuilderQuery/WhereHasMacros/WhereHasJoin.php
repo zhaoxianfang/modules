@@ -109,10 +109,22 @@ class WhereHasJoin extends BaseWhereHas
         $from = $relationQuery->getQuery();
         $target = $this->builder->getQuery();
 
+        $appended = 0;
         foreach ($from->joins ?? [] as $join) {
             if (! in_array($join, $target->joins ?? [], true)) {
                 $target->joins[] = $join;
+                $appended++;
             }
+        }
+
+        // JOIN 结构与 JOIN 绑定必须【成对】搬运。
+        // 原实现只搬 $from->joins 而丢掉 bindings['join']，于是：
+        //   子查询里 ON 上带占位符（多态关联 whereColumn / 关联等值筛选走 whereRaw 时）
+        //   → SQL 里有 ? 而 getBindings() 里没有对应值 → 驱动报 "number of bindings doesn't match"。
+        // array_slice 限定为"实际追加的 join 个数"，保证绑定与结构严格 1:1，
+        // 不会在去重命中时搬进多余的绑定。
+        if ($appended > 0) {
+            $target->addBinding(array_slice($from->bindings['join'] ?? [], 0, $appended), 'join');
         }
 
         if (($from->wheres ?? []) !== []) {

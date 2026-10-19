@@ -18,6 +18,7 @@ use zxf\Modules\Logging\Middleware\LogContextMiddleware;
 use zxf\Modules\Logging\Support\Redactor;
 use zxf\Modules\Logging\Writer\DatabaseLogWriter;
 use zxf\Modules\Logging\Writer\QueuedDatabaseLogWriter;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 数据库日志子系统服务提供者。
@@ -44,11 +45,18 @@ class LoggingServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // 与 ModulesServiceProvider 保持一致：先兜底绑定 'files'。
+        // Laravel 13 反转别名方向后，'files' 只由 FilesystemServiceProvider 注册；
+        // 一旦缺席，本文件下面的 mergeConfigFrom() / loadMigrationsFrom() 路径
+        // 以及应用内其它包对 files 的解析都会抛
+        //     Target class [files] does not exist.
+        SafeFilesystem::ensureBound($this->app);
+
         // 将 database 日志通道与扩展配置合并进 config('logging')
         // 注意：本服务提供者位于 src/Logging/，配置实际在包根 config/，需上溯两级。
         $channelConfig = require __DIR__.'/../../config/logging.php';
 
-        $this->mergeConfigFrom(__DIR__.'/../../config/logging.php', 'logging');
+        $this->mergeLoggingConfig(__DIR__.'/../../config/logging.php');
 
         // Laravel 的 mergeConfigFrom 实现是：
         //             && $this->app->configurationIsCached())) { ... }
@@ -77,12 +85,50 @@ class LoggingServiceProvider extends ServiceProvider
             return new Redactor(is_array($keys) ? $keys : [], $maxFieldLength);
         });
 
+        // 把具体实现类也指向同一个单例。
+        //
+        // 容器解析类类型参数时【优先于默认值】：`resolveClass()` 会 make(Redactor::class)，
+        // 而 Redactor 是可实例化的 final 类（构造参数全部带默认值）→ 解析必定成功。
+        // 因此中间件里 `?Redactor $redactor = null` 的 ?? 分支【永远不会执行】，
+        // 实际拿到的是 new Redactor([], 20000) —— 应用自定义的 sensitive_keys /
+        // max_field_length 被静默丢弃，POST 入参里的自定义敏感字段会明文进库。
+        // 这里把具体类绑到契约单例上，无论中间件注入哪个类型都拿到同一份配置。
+        $this->app->bind(Redactor::class, static fn ($app) => $app->make(RedactorContract::class));
+
         // 绑定落库写入器：默认同步 Eloquent 实现；开启 logging.db.queue 时切换为队列异步写入，
         // handler 自动受益，无需任何改动。
         $writer = $this->app['config']->get('logging.db.queue', false)
             ? QueuedDatabaseLogWriter::class
             : DatabaseLogWriter::class;
         $this->app->bind(LogWriter::class, $writer);
+    }
+
+    /**
+     * 合并日志配置（对 files 未绑定场景免疫）
+     *
+     * Laravel 的 mergeConfigFrom() 会先判定 Application::configurationIsCached()，
+     * 部分版本内部通过 $this['files']->exists(...) 实现；files 未绑定时直接抛
+     *     Target class [files] does not exist.
+     * 而 register() 抛异常 = 整个包无法装载（php artisan optimize 直接失败）。
+     * 这里整体 try/catch，并在失败时手工完成同等语义的合并。
+     */
+    protected function mergeLoggingConfig(string $configPath): void
+    {
+        try {
+            $this->mergeConfigFrom($configPath, 'logging');
+
+            return;
+        } catch (\Throwable) {
+            // 落到手工合并
+        }
+
+        try {
+            $config = $this->app->make('config');
+            $existing = $config->get('logging', []);
+            $config->set('logging', array_merge(require $configPath, is_array($existing) ? $existing : []));
+        } catch (\Throwable) {
+            // 配置服务不可用时跳过：后续组件自带硬编码兜底值
+        }
     }
 
     /**
@@ -141,6 +187,15 @@ class LoggingServiceProvider extends ServiceProvider
             return;
         }
         $this->app->instance('logging.booted', true);
+
+        // 后面用到 loadMigrationsFrom() / database_path() / publishes()，
+        // 它们分别依赖 migrator 服务与 Foundation 的路径助手。
+        // 非 Foundation 容器（裸 Container / 微内核）下必须整体跳过，
+        // 否则会抛 Call to undefined method Container::runningInConsole() / databasePath()。
+        if (! method_exists($this->app, 'runningInConsole')
+            || ! method_exists($this->app, 'databasePath')) {
+            return;
+        }
 
         // 注册迁移路径：无需先 vendor:publish 即可直接 `php artisan migrate` 创建 logs 表。
         // publishes() 仍保留，以兼容希望将迁移发布到应用 migrations 目录的开发者；

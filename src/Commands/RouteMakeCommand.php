@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace zxf\Modules\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\File;
+use zxf\Modules\Support\SafeFilesystem;
 use zxf\Modules\Support\StubGenerator;
 
 /**
@@ -60,14 +60,14 @@ class RouteMakeCommand extends AbstractMakeCommand
 
         $routePath = $this->targetPath('Routes/'.$routeName.'.php');
 
-        if (File::exists($routePath) && ! $force) {
+        if (SafeFilesystem::exists($routePath) && ! $force) {
             $this->error("模块 [{$this->esc($moduleName)}] 中已存在路由文件 [{$this->esc($routeName)}]");
             $this->line('提示：使用 --force 选项覆盖已存在的文件');
 
             return Command::FAILURE;
         }
 
-        if (File::exists($routePath) && $force) {
+        if (SafeFilesystem::exists($routePath) && $force) {
             $this->warn("正在覆盖已存在的路由文件 [{$this->esc($routeName)}]");
         }
 
@@ -97,7 +97,7 @@ class RouteMakeCommand extends AbstractMakeCommand
         } else {
             // 安全读取 stub 文件内容
             try {
-                $content = File::get($stubPath);
+                $content = SafeFilesystem::get($stubPath);
                 // 应用变量替换
                 $stubGenerator = new StubGenerator($moduleName);
                 $content = $this->applyReplacements($content, $stubGenerator->getReplacements());
@@ -111,10 +111,10 @@ class RouteMakeCommand extends AbstractMakeCommand
         // 确保路由目录存在
         $routeDir = dirname($routePath);
         if (! is_dir($routeDir)) {
-            File::makeDirectory($routeDir, 0755, true);
+            SafeFilesystem::makeDirectory($routeDir, 0755, true);
         }
 
-        $result = File::put($routePath, $content);
+        $result = SafeFilesystem::put($routePath, $content);
 
         if ($result) {
             $this->info("成功在模块 [{$this->esc($moduleName)}] 中创建路由文件 [{$this->esc($routeName)}]");

@@ -22,15 +22,11 @@ use zxf\Modules\BuilderQuery\Concerns\BaseMacro;
  * @version 1.13.9
  *
  * @requires MySQL 8.0+ / PostgreSQL 15+
- *
- * @scenario 每组 Top-N 去重宏（MySQL 8.0+ / PostgreSQL 15+ 通用）
  */
 class TopNMacro extends BaseMacro
 {
     /**
      *  注册所有 Top-N 分组宏。
-     *
-     * @scenario 注册所有 Top-N 分组宏。
      */
     public static function register(): void
     {
@@ -39,8 +35,6 @@ class TopNMacro extends BaseMacro
 
     /**
      * 注册分组 Top-N 宏。
-     *
-     * @scenario 注册分组 Top-N 宏。
      */
     public static function registerTopN(): void
     {
@@ -76,8 +70,6 @@ class TopNMacro extends BaseMacro
         ): Builder|\Illuminate\Database\Query\Builder {
             /**
              * @var Builder|\Illuminate\Database\Query\Builder $this
-             *
-             * @scenario 本类/成员说明。
              */
             if ($n < 1) {
                 throw new \InvalidArgumentException('whereTopNPerGroup 的 n 必须 >= 1。');
@@ -85,6 +77,8 @@ class TopNMacro extends BaseMacro
 
             $builder = $this;
             $keyColumn = $keyColumn ?? BaseMacro::keyName($builder);
+            // wrapColumn() 内部已完成标识符白名单校验，$keyColumn 仍是可安全传给
+            // whereIn() 的原始列名；whereIn 自身会调 grammar wrap。
             $wrappedKey = BaseMacro::wrapColumn($builder, $keyColumn);
             $keyAlias = '_xbq_key';
 
@@ -121,12 +115,15 @@ class TopNMacro extends BaseMacro
             $innerSql = $inner->toSql();
 
             // 外层子查询：FROM (inner) AS _xbq_topn，WHERE _xbq_rn <= N
-            $sub = DB::table(DB::raw("({$innerSql}) AS _xbq_topn"));
+            $sub = BaseMacro::connTable($builder, DB::raw("({$innerSql}) AS _xbq_topn"));
             $sub->mergeBindings($inner);
             $sub->select("_xbq_topn.{$keyAlias}")->where('_xbq_topn._xbq_rn', '<=', $n);
 
-            // 主查询：WHERE 主键 IN (子查询)，由 Laravel 负责合并绑定与编译
-            $builder->whereIn($wrappedKey, $sub);
+            // 主查询：WHERE 主键 IN (子查询)，由 Laravel 负责合并绑定与编译。
+            //
+            // 必须传【未 wrap】的列名：Grammar::wrap() 不是幂等的（没有"已 wrap 就短路"的判断），
+            // 把 wrapColumn() 的结果再交给 whereIn 会被二次引用成 ``id`` → SQL 语法错误。
+            $builder->whereIn($keyColumn, $sub);
 
             return $builder;
         });

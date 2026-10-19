@@ -11,6 +11,7 @@ use zxf\Modules\Exceptions\ModuleNotFoundException;
 use zxf\Modules\Support\ModuleAutoDiscovery;
 use zxf\Modules\Support\ModuleCacheStore;
 use zxf\Modules\Support\ModuleContext;
+use zxf\Modules\Support\SafeFilesystem;
 
 /**
  * 模块仓库
@@ -104,8 +105,12 @@ class Repository implements RepositoryInterface
      *
      * 三处健壮性约束：
      *  1. $files 可选。调用方（ModulesServiceProvider）是从容器解析的，
-     *     一旦容器没有 'files' 绑定，必填参数会在 boot 期抛
-     *     `Target class [files] does not exist`，故允许不传并由内部自建 Filesystem。
+     *     而 Laravel 13 反转了容器别名方向后 'files' 不再是别名
+     *     （aliases[Filesystem::class] = 'files'），'files' 变成由
+     *     Illuminate\Filesystem\FilesystemServiceProvider 注册的 singleton；
+     *     一旦它缺席，容器里解析 'files' 会直接抛
+     *     `Target class [files] does not exist`，进而让整个包无法装载。
+     *     故允许不传，由内部经 SafeFilesystem 安全解析（永远拿得到可用实例）。
      *  2. $namespace / $sortByPriority 显式收敛类型。本文件是 strict_types=1，
      *     而配置值是 mixed（env() 未定义时返回 null，"0"/"false" 是字符串），
      *     直接赋值会抛：
@@ -121,7 +126,7 @@ class Repository implements RepositoryInterface
         ?array $paths = null,
         ?string $namespace = null
     ) {
-        $this->files = $files ?? new Filesystem;
+        $this->files = $files ?? SafeFilesystem::instance();
 
         $this->namespace = (string) ($namespace
             ?: ModuleContext::getConfig('modules.namespace')
